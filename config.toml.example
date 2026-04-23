@@ -1,0 +1,33 @@
+# Interface mode: "tui", "discord", or "both"
+interface = "both"
+
+[model]
+provider = "lemonade"
+name = "Gemma-4-26B-A4B-it-GGUF"
+max_tokens = 8192
+
+[agent]
+max_tool_rounds = 50
+context_budget = 0.8
+context_limit = 131072
+model_timeout = 300000
+
+[runtime]
+working_dir = "./workspace"
+allowed_hosts = []
+timeout_ms = 30000
+max_code_size = 100000
+max_output_size = 500000
+unrestricted = true
+
+[embedding]
+provider = "ollama"
+model = "nomic-embed-text:v1.5"
+dimensions = 768
+
+# Discord bot config (optional — set DISCORD_BOT_TOKEN env var or token here)
+#[discord]
+# token = ""
+#prefix = "!"
+#allowed_channels = []  # empty = all channels
+#allowed_users = []     # empty = respond to everyone; add Discord user IDs to restrict
