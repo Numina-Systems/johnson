@@ -8,6 +8,7 @@ import ReviewPage from './ReviewPage.tsx';
 import type { Store } from '../store/store.ts';
 import type { SecretManager } from '../secrets/manager.ts';
 import { onLog } from '../util/log.ts';
+import { formatStats } from '../agent/format-stats.ts';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -16,8 +17,10 @@ type Message = {
   readonly text: string;
 };
 
+import type { ChatResult } from '../agent/types.ts';
+
 export type AppProps = {
-  readonly agent: { chat(msg: string): Promise<string>; reset(): void };
+  readonly agent: { chat(msg: string): Promise<ChatResult>; reset(): void };
   readonly modelName: string;
   readonly store?: Store;
   readonly secrets?: SecretManager;
@@ -93,9 +96,9 @@ export default function App({ agent, modelName, store, secrets }: AppProps): Rea
       setStatus('Thinking...');
 
       try {
-        const response = await agent.chat(input);
-        setMessages((prev) => [...prev, { role: 'agent', text: response }]);
-        setStatus('Ready');
+        const result = await agent.chat(input);
+        setMessages((prev) => [...prev, { role: 'agent', text: result.text }]);
+        setStatus(formatStats(result.stats));
       } catch (error) {
         const errMsg =
           error instanceof Error ? error.message : String(error);

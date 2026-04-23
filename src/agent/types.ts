@@ -16,6 +16,21 @@ export type AgentConfig = {
   readonly contextLimit: number;
   readonly modelTimeout: number;
   readonly temperature?: number;
+  readonly timezone: string;
+};
+
+export type ChatStats = {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly contextEstimate: number;  // estimated context size in tokens
+  readonly contextLimit: number;     // configured context budget
+  readonly rounds: number;           // number of model calls
+  readonly durationMs: number;       // wall-clock time for entire chat()
+};
+
+export type ChatResult = {
+  readonly text: string;
+  readonly stats: ChatStats;
 };
 
 export type AgentDependencies = {
@@ -45,6 +60,6 @@ export type ChatImage = {
 };
 
 export type Agent = {
-  chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<string>;
+  chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<ChatResult>;
   reset(): void;
 };

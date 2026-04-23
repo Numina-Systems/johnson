@@ -33,6 +33,9 @@ async function main(): Promise<void> {
   // Load config
   const config = loadConfig(CONFIG_PATH);
 
+  // Set process-wide timezone from config — affects Date formatting in the host process
+  process.env['TZ'] = config.agent.timezone;
+
   // Wire up shared dependencies
   const model = createModelProvider(config.model);
   const runtime = createDenoExecutor({ ...config.runtime, dataDir: DATA_DIR });
@@ -90,6 +93,7 @@ async function main(): Promise<void> {
         contextBudget: config.agent.contextBudget,
         contextLimit: config.agent.contextLimit,
         modelTimeout: config.agent.modelTimeout,
+        timezone: config.agent.timezone,
       },
       personaPath: PERSONA_PATH,
       embedding,

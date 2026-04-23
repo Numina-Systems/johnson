@@ -192,7 +192,8 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
         ? `Context from trigger:\n${triggerData}\n\n${live.state.prompt}`
         : live.state.prompt;
 
-      output = await agent.chat(prompt, context);
+      const result = await agent.chat(prompt, context);
+      output = result.text;
       success = true;
     } catch (err) {
       output = `Error: ${err instanceof Error ? err.message : String(err)}`;

@@ -11,7 +11,8 @@ import {
   type ThreadChannel,
 } from 'discord.js';
 import type { DiscordConfig } from '../config/types.ts';
-import type { Agent, ChatImage } from '../agent/types.ts';
+import type { Agent, ChatImage, ChatResult } from '../agent/types.ts';
+import { formatStats } from '../agent/format-stats.ts';
 
 type AgentFactory = () => Agent;
 
@@ -194,12 +195,16 @@ export function createDiscordBot(
         } catch { /* ignore */ }
       }, 8_000);
 
-      const response = await agent.chat(processed, { channelId }, images);
+      const result = await agent.chat(processed, { channelId }, images);
+      const response = result.text;
+      const statsLine = `-# ${formatStats(result.stats)}`;
 
       const chunks = splitMessage(response || '(no response)');
       for (const chunk of chunks) {
         await reply(chunk);
       }
+      // Send stats as a final subtle line
+      await reply(statsLine);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
       await reply(`❌ Error: ${errMsg.slice(0, 500)}`).catch(() => {});

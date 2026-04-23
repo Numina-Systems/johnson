@@ -18,8 +18,23 @@ export function buildSystemPrompt(
   selfDoc: string,
   skillNames: ReadonlyArray<string>,
   toolDocs: string = '',
+  timezone: string = 'UTC',
 ): string {
   const sections: Array<string> = [persona.trim()];
+
+  // Inject current local time so the model always knows the date/time/timezone
+  const now = new Date();
+  const formatted = now.toLocaleString('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+  sections.push(`\n## Current Time\n${formatted} (${timezone})\n\nAll times you present to the user MUST be in ${timezone}. Never use UTC unless explicitly asked.`);
 
   // Core memory (self document)
   if (selfDoc) {

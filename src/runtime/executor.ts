@@ -22,6 +22,7 @@ function buildSandboxEnv(grantedSecrets?: Record<string, string>): Record<string
   // Baseline: only PATH and HOME (Deno needs these to function)
   if (process.env['PATH']) safe['PATH'] = process.env['PATH'];
   if (process.env['HOME']) safe['HOME'] = process.env['HOME'];
+  if (process.env['TZ']) safe['TZ'] = process.env['TZ'];
 
   // Add any explicitly granted secrets
   if (grantedSecrets) {

@@ -8,8 +8,8 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
-import type { Agent, AgentDependencies, ChatContext, ChatImage } from './types.ts';
-import { buildSystemPrompt, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
+import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats } from './types.ts';
+import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 
@@ -51,7 +51,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
 
-  async function chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<string> {
+  async function chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<ChatResult> {
+    const chatStart = performance.now();
     currentContext = context ?? {};
 
     // Create tool registry (fresh each call — context may change)
@@ -75,7 +76,12 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       .map(d => d.rkey);
 
     // c. Build system prompt (now includes tool docs)
-    const systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs);
+    const systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+
+    // Track cumulative stats across rounds
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let rounds = 0;
 
     // d. Append user message
     if (images && images.length > 0) {
@@ -130,6 +136,11 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         // Re-throw so the caller can handle it (e.g. show error to user).
         throw new Error(`Model call failed: ${err instanceof Error ? err.message : err}`);
       }
+
+      // Accumulate usage stats
+      rounds++;
+      totalInputTokens += response.usage.input_tokens;
+      totalOutputTokens += response.usage.output_tokens;
 
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
@@ -191,15 +202,33 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // f. Extract final text from last assistant message
     const lastAssistant = history.findLast((msg) => msg.role === 'assistant');
-    if (!lastAssistant) return '';
+    const durationMs = Math.round(performance.now() - chatStart);
 
-    if (typeof lastAssistant.content === 'string') return lastAssistant.content;
+    // Estimate current context size
+    const contextEstimate = estimateTokens(systemPrompt) +
+      history.reduce((sum, msg) => {
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
+        return sum + estimateTokens(content);
+      }, 0);
+
+    const stats: ChatStats = {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      contextEstimate,
+      contextLimit: deps.config.contextLimit,
+      rounds,
+      durationMs,
+    };
+
+    if (!lastAssistant) return { text: '', stats };
+
+    if (typeof lastAssistant.content === 'string') return { text: lastAssistant.content, stats };
 
     const textBlocks = lastAssistant.content
       .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
       .map((block) => block.text);
 
-    return textBlocks.join('\n') || '';
+    return { text: textBlocks.join('\n') || '', stats };
   }
 
   function reset(): void {
