@@ -40,14 +40,14 @@ All agent memory is stored as documents, each identified by an `rkey` and contai
 #### Conventional rkeys
 
 | Prefix | Purpose | Auto-loaded? |
-||--------|---------|-------------|
-|| `self` | Agent identity, behavior notes | ✅ Yes — injected into system prompt every turn |
-|| `operator` | Compact user profile — key facts and pointers to `ref:*` docs | ❌ No — agent fetches on demand |
-|| `ref:<topic>` | Detailed reference material (vault structure, protocols, etc.) | ❌ No — fetched when `operator` points to them |
-|| `skill:<name>` | Reusable TypeScript skills | Names listed in system prompt |
-|| `task:<name>` | Long-running task state | ❌ No |
-|| `context/<ts>` | Context compaction snapshots | Used internally |
-|| *(anything else)* | Free-form notes, facts, reminders | ❌ No |
+|--------|---------|-------------|
+| `self` | Agent identity, behavior notes | ✅ Yes — injected into system prompt every turn |
+| `operator` | Compact user profile — key facts and pointers to `ref:*` docs | ❌ No — agent fetches on demand |
+| `ref:<topic>` | Detailed reference material (vault structure, protocols, etc.) | ❌ No — fetched when `operator` points to them |
+| `skill:<name>` | Reusable TypeScript skills | Names listed in system prompt |
+| `task:<name>` | Long-running task state | ❌ No |
+| `context/<ts>` | Context compaction snapshots | Used internally |
+| *(anything else)* | Free-form notes, facts, reminders | ❌ No |
 
 ### Skills
 
