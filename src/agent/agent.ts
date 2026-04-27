@@ -12,6 +12,7 @@ import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, Chat
 import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
+import { maybeGenerateSessionTitle } from './session-title.ts';
 
 const DENO_DIR = join(import.meta.dir, '..', 'runtime', 'deno');
 
@@ -281,15 +282,24 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       durationMs,
     };
 
-    if (!lastAssistant) return { text: '', stats };
+    let resultText = '';
+    if (!lastAssistant) {
+      resultText = '';
+    } else if (typeof lastAssistant.content === 'string') {
+      resultText = lastAssistant.content;
+    } else {
+      resultText = lastAssistant.content
+        .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n') || '';
+    }
 
-    if (typeof lastAssistant.content === 'string') return { text: lastAssistant.content, stats };
+    const result: ChatResult = { text: resultText, stats };
 
-    const textBlocks = lastAssistant.content
-      .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-      .map((block) => block.text);
+    maybeGenerateSessionTitle(deps.store, options?.sessionId, deps.subAgent, history)
+      .catch(() => {});
 
-    return { text: textBlocks.join('\n') || '', stats };
+    return result;
     } finally {
       // Restore original history if we swapped
       if (savedHistory !== null) {
