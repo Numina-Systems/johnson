@@ -50,6 +50,7 @@ Full tool reference with all available functions and their parameters is in your
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
+  let cachedSystemPrompt = '';
 
   // Serialize all chat() calls — history is shared mutable state.
   // Without this lock, a Discord message arriving during a TUI chat's
@@ -92,18 +93,25 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Generate tool docs for system prompt
     const toolDocs = registry.generateToolDocumentation();
 
-    // a. Read persona
-    const persona = await Bun.file(deps.personaPath).text();
-
-    // b. Load core memory (self document) and list skill names
-    const coreMemory = loadCoreMemoryFromStore(deps.store);
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter(d => d.rkey.startsWith('skill:'))
-      .map(d => d.rkey);
-
-    // c. Build system prompt (now includes tool docs)
-    const systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    // Build system prompt via provider (if set) or inline fallback
+    let systemPrompt: string;
+    if (deps.systemPromptProvider) {
+      try {
+        systemPrompt = await deps.systemPromptProvider(toolDocs);
+        cachedSystemPrompt = systemPrompt;
+      } catch (err) {
+        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
+        systemPrompt = cachedSystemPrompt;
+      }
+    } else {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter(d => d.rkey.startsWith('skill:'))
+        .map(d => d.rkey);
+      systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    }
 
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
