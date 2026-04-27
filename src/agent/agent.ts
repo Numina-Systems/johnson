@@ -146,22 +146,32 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // Build system prompt via provider (if set) or inline fallback
     let systemPrompt: string;
-    if (deps.systemPromptProvider) {
-      try {
-        systemPrompt = await deps.systemPromptProvider(toolDocs);
-        cachedSystemPrompt = systemPrompt;
-      } catch (err) {
-        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
-        systemPrompt = cachedSystemPrompt;
-      }
-    } else {
+    const buildInlinePrompt = async (): Promise<string> => {
       const persona = await Bun.file(deps.personaPath).text();
       const coreMemory = loadCoreMemoryFromStore(deps.store);
       const allDocs = deps.store.docList(500);
       const skillNames = allDocs.documents
         .filter(d => d.rkey.startsWith('skill:'))
         .map(d => d.rkey);
-      systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+      return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    };
+
+    if (deps.systemPromptProvider) {
+      try {
+        systemPrompt = await deps.systemPromptProvider(toolDocs);
+        cachedSystemPrompt = systemPrompt;
+      } catch (err) {
+        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
+        if (cachedSystemPrompt) {
+          systemPrompt = cachedSystemPrompt;
+        } else {
+          process.stderr.write(`[agent] no cached prompt; falling back to inline prompt build\n`);
+          systemPrompt = await buildInlinePrompt();
+          cachedSystemPrompt = systemPrompt;
+        }
+      }
+    } else {
+      systemPrompt = await buildInlinePrompt();
     }
 
     if (deps.customTools) {
@@ -324,6 +334,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         content: '[System: Max tool calls reached. Provide final response now.]',
       });
 
+      await emit('llm_start', { round: rounds, forced: true });
       const finalResponse = await deps.model.complete({
         system: systemPrompt,
         messages: history,
@@ -338,7 +349,18 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       totalInputTokens += finalResponse.usage.input_tokens;
       totalOutputTokens += finalResponse.usage.output_tokens;
 
-      history.push({ role: 'assistant', content: finalResponse.content });
+      await emit('llm_done', {
+        round: rounds - 1,
+        usage: finalResponse.usage,
+        stop_reason: finalResponse.stop_reason,
+        forced: true,
+      });
+
+      const finalAssistantMsg: Message = { role: 'assistant', content: finalResponse.content };
+      if (finalResponse.reasoning_content) {
+        finalAssistantMsg.reasoning_content = finalResponse.reasoning_content;
+      }
+      history.push(finalAssistantMsg);
     }
 
     // f. Extract final text from last assistant message

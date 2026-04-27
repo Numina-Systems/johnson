@@ -976,3 +976,143 @@ describe('GH02 event emission', () => {
     expect((preview as string).length).toBeLessThanOrEqual(200);
   });
 });
+
+describe('forced final response: events and reasoning_content', () => {
+  let tmpDir: string;
+  let personaPath: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'gh13-forced-final-test-'));
+    personaPath = join(tmpDir, 'persona.md');
+    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('emits llm_start and llm_done with forced:true around forced final model call', async () => {
+    const model: ModelProvider = {
+      complete: async (req) => {
+        if ((req.tools?.length ?? 0) === 0) {
+          return {
+            content: [{ type: 'text', text: 'Forced wrap-up' }],
+            stop_reason: 'end_turn',
+            usage: { input_tokens: 9, output_tokens: 6 },
+          };
+        }
+        return {
+          content: [{ type: 'tool_use', id: 't', name: 'execute_code', input: { code: 'output(1)' } }],
+          stop_reason: 'tool_use',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ maxToolRounds: 2 });
+    const agent = createAgent(makeDeps(model, config, personaPath));
+
+    const events: AgentEvent[] = [];
+    const onEvent = async (event: AgentEvent): Promise<void> => {
+      events.push(event);
+    };
+
+    const result = await agent.chat('hello', { onEvent });
+    expect(result.text).toBe('Forced wrap-up');
+
+    const forcedStart = events.find(
+      (e) => e.kind === 'llm_start' && e.data['forced'] === true,
+    );
+    expect(forcedStart).toBeDefined();
+
+    const forcedDone = events.find(
+      (e) => e.kind === 'llm_done' && e.data['forced'] === true,
+    );
+    expect(forcedDone).toBeDefined();
+    expect(forcedDone!.data['stop_reason']).toBe('end_turn');
+    expect(forcedDone!.data['usage']).toEqual({ input_tokens: 9, output_tokens: 6 });
+
+    const startIdx = events.indexOf(forcedStart!);
+    const doneIdx = events.indexOf(forcedDone!);
+    expect(startIdx).toBeLessThan(doneIdx);
+  });
+
+  test('preserves reasoning_content on forced final assistant message', async () => {
+    const receivedMessages: ReadonlyArray<Message>[] = [];
+    const model: ModelProvider = {
+      complete: async (req) => {
+        receivedMessages.push(req.messages);
+        if ((req.tools?.length ?? 0) === 0) {
+          return {
+            content: [{ type: 'text', text: 'forced final' }],
+            stop_reason: 'end_turn',
+            usage: { input_tokens: 9, output_tokens: 6 },
+            reasoning_content: 'Reasoning during forced wrap-up.',
+          };
+        }
+        return {
+          content: [{ type: 'tool_use', id: 't', name: 'execute_code', input: { code: 'output(1)' } }],
+          stop_reason: 'tool_use',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ maxToolRounds: 2 });
+    const agent = createAgent(makeDeps(model, config, personaPath));
+
+    await agent.chat('first');
+    await agent.chat('second');
+
+    const lastCallMessages = receivedMessages[receivedMessages.length - 1]!;
+    const assistantWithReasoning = lastCallMessages.find(
+      (m) => m.role === 'assistant' && m.reasoning_content === 'Reasoning during forced wrap-up.',
+    );
+    expect(assistantWithReasoning).toBeDefined();
+  });
+});
+
+describe('systemPromptProvider first-call failure', () => {
+  let tmpDir: string;
+  let personaPath: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'gh13-spp-first-fail-'));
+    personaPath = join(tmpDir, 'persona.md');
+    writeFileSync(personaPath, '# Inline Fallback Persona\nFallback content.');
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('falls back to inline prompt build when provider throws on first call', async () => {
+    let capturedSystem: string | undefined;
+    const mockModel: ModelProvider = {
+      complete: async (request) => {
+        capturedSystem = request.system;
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+
+    const provider = async (_toolDocs: string): Promise<string> => {
+      throw new Error('provider broke on first call');
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
+      systemPromptProvider: provider,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('hello');
+
+    expect(capturedSystem).toBeDefined();
+    expect(capturedSystem!.length).toBeGreaterThan(0);
+    expect(capturedSystem).toContain('Inline Fallback Persona');
+  });
+});
