@@ -9,6 +9,8 @@
 import { resolve } from 'path';
 import { loadConfig } from './config/loader.ts';
 import { createModelProvider } from './model/index.ts';
+import { createSubAgent, wrapMainModel } from './model/sub-agent.ts';
+import type { SubAgentLLM } from './model/sub-agent.ts';
 import { createDenoExecutor } from './runtime/executor.ts';
 import { createAgent } from './agent/agent.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
@@ -45,6 +47,12 @@ async function main(): Promise<void> {
 
   // Secret manager — flat JSON file for secret values (never in the DB)
   const secrets = createSecretManager(SECRETS_PATH);
+
+  // Sub-agent LLM — cheap model for compaction, titles, summarization.
+  // Falls back to wrapping the main model if [sub_model] not configured.
+  const subAgent: SubAgentLLM = config.subModel
+    ? createSubAgent(config.subModel)
+    : wrapMainModel(model, config.model.name, config.model.maxTokens);
 
   // Embedding + vector store (optional — gracefully degrades if Ollama is unavailable)
   let embedding: EmbeddingProvider | undefined;
@@ -91,6 +99,7 @@ async function main(): Promise<void> {
     get scheduler() { return scheduler; },
     store,
     secrets,
+    subAgent,
   };
   const sharedAgent = createAgent(agentDeps);
 
