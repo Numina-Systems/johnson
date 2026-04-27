@@ -6,6 +6,7 @@ import SessionsScreen from './screens/SessionsScreen.tsx';
 import ChatScreen from './screens/ChatScreen.tsx';
 import ToolsScreen from './screens/ToolsScreen.tsx';
 import SecretsScreen from './screens/SecretsScreen.tsx';
+import SchedulesScreen from './screens/SchedulesScreen.tsx';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -104,7 +105,15 @@ export default function App(deps: AppProps): React.ReactElement {
       }
       return <SecretsScreen secrets={deps.secrets} store={deps.store} onBack={pop} />;
     case 'schedules':
-      return <Text>Schedules screen (Phase 6) — press Escape to go back</Text>;
+      if (!deps.scheduler) {
+        return (
+          <Box flexDirection="column" padding={1}>
+            <Text color="yellow">Scheduler not available.</Text>
+            <Text dimColor>Press Escape to go back.</Text>
+          </Box>
+        );
+      }
+      return <SchedulesScreen scheduler={deps.scheduler} onBack={pop} />;
     case 'prompt':
       return <Text>System Prompt screen (Phase 7) — press Escape to go back</Text>;
   }

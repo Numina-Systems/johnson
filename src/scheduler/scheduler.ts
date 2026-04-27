@@ -261,12 +261,17 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
 
     const live: LiveTask = { state: task, cron, running: false };
 
-    // Schedule with callback — croner calls this on each tick
-    cron.schedule(() => {
-      runTask(live).catch((err) => {
-        log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
+    // Schedule with callback — croner calls this on each tick.
+    // Respect the enabled flag (treat undefined as enabled for backward compat).
+    if (task.enabled !== false) {
+      cron.schedule(() => {
+        runTask(live).catch((err) => {
+          log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
+        });
       });
-    });
+    } else {
+      cron.stop();
+    }
 
     return live;
   }
@@ -320,6 +325,29 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
 
     get(id: string): TaskState | undefined {
       return tasks.get(id)?.state;
+    },
+
+    setEnabled(id: string, enabled: boolean): boolean {
+      const live = tasks.get(id);
+      if (!live) return false;
+
+      if (enabled && !live.state.enabled) {
+        live.state = { ...live.state, enabled: true };
+        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true });
+        live.cron.schedule(() => {
+          runTask(live).catch((err) => {
+            log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
+          });
+        });
+        log(`[scheduler] Enabled "${live.state.name}"`);
+      } else if (!enabled && live.state.enabled) {
+        live.cron.stop();
+        live.state = { ...live.state, enabled: false };
+        log(`[scheduler] Disabled "${live.state.name}"`);
+      }
+
+      persist().catch(() => {});
+      return true;
     },
 
     start(): void {

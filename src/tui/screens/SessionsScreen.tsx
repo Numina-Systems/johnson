@@ -6,6 +6,7 @@ import type { Store } from '../../store/store.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { TaskStore } from '../../scheduler/types.ts';
 import type { TuiDependencies } from '../types.ts';
+import { formatDate } from '../util.ts';
 
 type SessionsScreenProps = {
   readonly store: Store;
@@ -23,20 +24,6 @@ type SessionRow = {
   readonly updatedAt: string;
   readonly messageCount: number;
 };
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return d.toLocaleDateString('en-CA');
-}
 
 export default function SessionsScreen(props: SessionsScreenProps): React.ReactElement {
   const { store, modelName, secrets, scheduler, customTools, onSelectSession, onNewSession } = props;

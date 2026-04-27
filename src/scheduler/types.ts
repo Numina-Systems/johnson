@@ -30,6 +30,7 @@ export type TaskStore = {
   cancel(id: string): boolean;
   list(): Array<TaskState>;
   get(id: string): TaskState | undefined;
+  setEnabled(id: string, enabled: boolean): boolean;
   start(): void;
   stop(): void;
 };
