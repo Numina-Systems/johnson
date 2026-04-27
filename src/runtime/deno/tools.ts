@@ -41,7 +41,27 @@ export async function cancel_task(params: { id: string }): Promise<unknown> {
   return callTool("cancel_task", params);
 }
 
+/** Search the web via Exa AI. Returns ranked results with title, URL, snippet, and relevance score. Use this when you need to find information across the web. Optional `summary_focus` provides a query-focused summary in each snippet. */
+export async function web_search(params: { query: string; num_results?: number; summary_focus?: string }): Promise<unknown> {
+  return callTool("web_search", params);
+}
+
+/** Fetch a single web page through Exa AI and return its extracted text content along with metadata (title, author, publish date). Use this when you have a URL and need the readable text. For raw HTTP responses, use http_get instead. */
+export async function fetch_page(params: { url: string; max_chars?: number }): Promise<unknown> {
+  return callTool("fetch_page", params);
+}
+
+/** Issue a plain HTTP GET request and return the response status, content type, and body (truncated). Use for raw API responses, JSON endpoints, or files. For readable web page extraction, use fetch_page instead. */
+export async function http_get(params: { url: string; max_chars?: number }): Promise<unknown> {
+  return callTool("http_get", params);
+}
+
 /** Send a message to Discord via webhook. Requires DISCORD_WEBHOOK_URL secret. If title is provided, sends as a rich embed; otherwise sends as a plain message. Content is truncated to 2000 characters. */
 export async function notify_discord(params: { content: string; title?: string }): Promise<unknown> {
   return callTool("notify_discord", params);
+}
+
+/** Summarize text using a sub-agent LLM. Returns a concise summary preserving key facts. */
+export async function summarize(params: { text: string; instructions?: string; max_length?: "short" | "medium" | "long" }): Promise<unknown> {
+  return callTool("summarize", params);
 }
