@@ -67,7 +67,7 @@ function convertMessages(
   for (const msg of messages) {
     if (typeof msg.content === 'string') {
       const openaiMsg: OpenAIMessage = { role: msg.role, content: msg.content };
-      if (msg.reasoning_content) {
+      if (msg.reasoning_content != null) {
         openaiMsg.reasoning_content = msg.reasoning_content;
       }
       result.push(openaiMsg);
@@ -99,8 +99,13 @@ function convertMessages(
         role: 'assistant',
         content: textParts.length > 0 ? textParts.join('\n') : null,
       };
-      if (msg.reasoning_content) {
+      if (msg.reasoning_content != null) {
         openaiMsg.reasoning_content = msg.reasoning_content;
+      } else if (toolCalls.length > 0) {
+        // DeepSeek reasoning models require reasoning_content on assistant
+        // messages that have tool_calls. If we lost it (e.g. DB reload),
+        // provide empty string to satisfy the API constraint.
+        openaiMsg.reasoning_content = '';
       }
       if (toolCalls.length > 0) {
         openaiMsg.tool_calls = toolCalls;
@@ -289,7 +294,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
           },
         };
 
-        if (choice.message.reasoning_content) {
+        if (choice.message.reasoning_content != null) {
           response.reasoning_content = choice.message.reasoning_content;
         }
 
