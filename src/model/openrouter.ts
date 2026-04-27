@@ -18,6 +18,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
+import { toolResultContentToString } from './types.ts';
 
 function convertMessages(
   messages: ReadonlyArray<Message>,
@@ -81,7 +82,7 @@ function convertMessages(
             result.push({
               role: 'tool',
               toolCallId: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }
@@ -97,7 +98,7 @@ function convertMessages(
             result.push({
               role: 'tool',
               toolCallId: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }

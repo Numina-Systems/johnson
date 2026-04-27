@@ -5,6 +5,7 @@ import type {
   Message,
   ToolUseBlock,
   ToolResultBlock,
+  ToolResultContentBlock,
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
@@ -48,9 +49,48 @@ Full tool reference with all available functions and their parameters is in your
   },
 };
 
+export function formatNativeToolResult(
+  toolUseId: string,
+  result: unknown,
+): ToolResultBlock {
+  if (typeof result === 'string') {
+    return { type: 'tool_result', tool_use_id: toolUseId, content: result };
+  }
+
+  if (
+    result !== null &&
+    typeof result === 'object' &&
+    'type' in result &&
+    (result as Record<string, unknown>).type === 'image_result'
+  ) {
+    const r = result as Record<string, unknown>;
+    const blocks: Array<ToolResultContentBlock> = [];
+
+    if (typeof r.text === 'string') {
+      blocks.push({ type: 'text', text: r.text });
+    }
+
+    if (r.image && typeof r.image === 'object') {
+      const img = r.image as Record<string, unknown>;
+      if (typeof img.data === 'string' && typeof img.media_type === 'string') {
+        const dataUri = `data:${img.media_type};base64,${img.data}`;
+        blocks.push({ type: 'image_url', image_url: { url: dataUri } });
+      }
+    }
+
+    if (blocks.length > 0) {
+      return { type: 'tool_result', tool_use_id: toolUseId, content: blocks };
+    }
+  }
+
+  const serialized = typeof result === 'undefined' ? '(no output)' : JSON.stringify(result);
+  return { type: 'tool_result', tool_use_id: toolUseId, content: serialized };
+}
+
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
+  let cachedSystemPrompt = '';
 
   // Serialize all chat() calls — history is shared mutable state.
   // Without this lock, a Discord message arriving during a TUI chat's
@@ -101,18 +141,38 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Generate tool docs for system prompt
     const toolDocs = registry.generateToolDocumentation();
 
-    // a. Read persona
-    const persona = await Bun.file(deps.personaPath).text();
+    // Native tools that the model invokes directly (not through execute_code)
+    const nativeTools = registry.generateToolDefinitions();
 
-    // b. Load core memory (self document) and list skill names
-    const coreMemory = loadCoreMemoryFromStore(deps.store);
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter(d => d.rkey.startsWith('skill:'))
-      .map(d => d.rkey);
+    // Build system prompt via provider (if set) or inline fallback
+    let systemPrompt: string;
+    if (deps.systemPromptProvider) {
+      try {
+        systemPrompt = await deps.systemPromptProvider(toolDocs);
+        cachedSystemPrompt = systemPrompt;
+      } catch (err) {
+        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
+        systemPrompt = cachedSystemPrompt;
+      }
+    } else {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter(d => d.rkey.startsWith('skill:'))
+        .map(d => d.rkey);
+      systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    }
 
-    // c. Build system prompt (now includes tool docs)
-    const systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    if (deps.customTools) {
+      const summaries = deps.customTools.getApprovedToolSummaries();
+      if (summaries.length > 0) {
+        const listing = summaries
+          .map(s => `- **${s.name}** — ${s.description}`)
+          .join('\n');
+        systemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
+      }
+    }
 
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
@@ -160,7 +220,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         response = await deps.model.complete({
           system: systemPrompt,
           messages: history,
-          tools: [EXECUTE_CODE_TOOL],
+          tools: [EXECUTE_CODE_TOOL, ...nativeTools],
           model: deps.config.model,
           max_tokens: deps.config.maxTokens,
           temperature: deps.config.temperature,
@@ -215,24 +275,29 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           const toolResults: Array<ToolResultBlock> = await Promise.all(
             toolUseBlocks.map(async (block): Promise<ToolResultBlock> => {
               try {
-                const code = (block.input as Record<string, unknown>)['code'];
-                if (typeof code !== 'string') {
-                  return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                if (block.name === 'execute_code') {
+                  const code = (block.input as Record<string, unknown>)['code'];
+                  if (typeof code !== 'string') {
+                    return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                  }
+
+                  await emit('tool_start', { tool: 'execute_code', code: code.slice(0, 500) });
+
+                  // IPC callback: dispatch tool calls from the sandbox through the registry
+                  const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
+                    return registry.execute(name, params);
+                  };
+
+                  const result = await deps.runtime.execute(code, undefined, onToolCall);
+                  await emit('tool_done', { tool: 'execute_code', success: result.success, preview: (result.output ?? '').slice(0, 200) });
+                  const output = result.success
+                    ? result.output || '(no output)'
+                    : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
+                  return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
+                } else {
+                  const result = await registry.execute(block.name, block.input);
+                  return formatNativeToolResult(block.id, result);
                 }
-
-                await emit('tool_start', { tool: 'execute_code', code: code.slice(0, 500) });
-
-                // IPC callback: dispatch tool calls from the sandbox through the registry
-                const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
-                  return registry.execute(name, params);
-                };
-
-                const result = await deps.runtime.execute(code, undefined, onToolCall);
-                await emit('tool_done', { tool: 'execute_code', success: result.success, preview: (result.output ?? '').slice(0, 200) });
-                const output = result.success
-                  ? result.output || '(no output)'
-                  : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
-                return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 return { type: 'tool_result', tool_use_id: block.id, content: `Tool error: ${message}`, is_error: true };
