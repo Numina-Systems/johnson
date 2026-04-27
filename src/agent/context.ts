@@ -52,7 +52,7 @@ export function buildSystemPrompt(
   }
 
   if (toolDocs) {
-    sections.push('\n\n## `tools` Namespace Reference\n\nThe following methods are available on the `tools` object **only inside TypeScript code you run via `execute_code`.** They are NOT callable as top-level functions. To use any of these, emit an `execute_code` tool call with TypeScript that does `await tools.<method>({...})`.\n');
+    sections.push('\n\n## Tool Reference\n\nTools marked with `tools.<name>` are available **only inside TypeScript code you run via `execute_code`.** Call them as `await tools.<method>({...})`. Tools marked *(direct tool call)* are called directly — do NOT use execute_code for those.\n');
     sections.push(toolDocs);
   }
 
@@ -161,6 +161,23 @@ export function trimOldToolResults(messages: Array<Message>): number {
       if (block.type !== 'tool_result') continue;
 
       const content = block.content;
+
+      // Handle array content (e.g., image tool results with [text, image] blocks)
+      if (Array.isArray(content)) {
+        const hasImage = content.some(
+          (b) => b.type === 'image' || b.type === 'image_url',
+        );
+        if (hasImage) {
+          (msg.content as Array<ContentBlock>)[j] = {
+            type: 'tool_result',
+            tool_use_id: block.tool_use_id,
+            content: '[image tool result trimmed for context savings]',
+          };
+          trimmed++;
+        }
+        continue;
+      }
+
       if (typeof content !== 'string') continue;
 
       // Skip if already trimmed or small

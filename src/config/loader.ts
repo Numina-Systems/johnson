@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import TOML from 'toml';
-import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode } from './types.ts';
+import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig } from './types.ts';
 
 type RawConfig = {
   model?: Partial<ModelConfig> & Record<string, unknown>;
@@ -11,6 +11,7 @@ type RawConfig = {
   agent?: Partial<AgentLoopConfig> & Record<string, unknown>;
   embedding?: Partial<EmbeddingConfig> & Record<string, unknown>;
   discord?: Partial<DiscordConfig> & Record<string, unknown>;
+  sub_model?: Partial<SubModelConfig> & Record<string, unknown>;
   interface?: string;
 };
 
@@ -117,9 +118,26 @@ export function loadConfig(configPath: string): AppConfig {
       }
     : undefined;
 
+  // Sub-model config (optional — for cheaper LLM calls in compaction, titles, etc.)
+  const subModelProvider = process.env['SUB_MODEL_PROVIDER']
+    ?? pick(raw.sub_model, 'provider', undefined);
+
+  const subModel: SubModelConfig | undefined = subModelProvider
+    ? {
+        provider: subModelProvider as SubModelConfig['provider'],
+        name: process.env['SUB_MODEL_NAME']
+          ?? pick(raw.sub_model, 'name', 'claude-haiku-4-5-20251001'),
+        maxTokens: pick(raw.sub_model, 'maxTokens', 8000),
+        apiKey: process.env['SUB_MODEL_API_KEY']
+          ?? resolveApiKey(subModelProvider, pick(raw.sub_model, 'apiKey', undefined)),
+        baseUrl: process.env['SUB_MODEL_BASE_URL']
+          ?? resolveBaseUrl(subModelProvider, pick(raw.sub_model, 'baseUrl', undefined)),
+      }
+    : undefined;
+
   const rawInterface = raw.interface ?? 'tui';
   const interfaceMode: InterfaceMode =
     rawInterface === 'discord' || rawInterface === 'both' ? rawInterface : 'tui';
 
-  return { model, runtime, agent, embedding, discord, interface: interfaceMode };
+  return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel };
 }

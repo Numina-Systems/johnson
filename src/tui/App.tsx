@@ -1,215 +1,155 @@
-// pattern: UI Shell — full-screen terminal interface using Ink
+// pattern: UI Shell — navigation shell for the multi-screen TUI
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import TextInput from 'ink-text-input';
-import Spinner from 'ink-spinner';
-import ReviewPage from './ReviewPage.tsx';
-import type { Store } from '../store/store.ts';
-import type { SecretManager } from '../secrets/manager.ts';
-import { onLog } from '../util/log.ts';
-import { formatStats } from '../agent/format-stats.ts';
+import SessionsScreen from './screens/SessionsScreen.tsx';
+import ChatScreen from './screens/ChatScreen.tsx';
+import ToolsScreen from './screens/ToolsScreen.tsx';
+import SecretsScreen from './screens/SecretsScreen.tsx';
+import SchedulesScreen from './screens/SchedulesScreen.tsx';
+import SystemPromptScreen from './screens/SystemPromptScreen.tsx';
+import { buildSystemPrompt, loadCoreMemoryFromStore } from '../agent/context.ts';
+import type { Screen, TuiDependencies } from './types.ts';
 
-// ── Types ──────────────────────────────────────────────────────────────────
+export type AppProps = TuiDependencies;
 
-type Message = {
-  readonly role: 'user' | 'agent' | 'system';
-  readonly text: string;
-};
-
-import type { ChatResult } from '../agent/types.ts';
-
-export type AppProps = {
-  readonly agent: { chat(msg: string): Promise<ChatResult>; reset(): void };
-  readonly modelName: string;
-  readonly store?: Store;
-  readonly secrets?: SecretManager;
-};
-
-type Page = 'chat' | 'review';
-
-// ── Component ──────────────────────────────────────────────────────────────
-
-export default function App({ agent, modelName, store, secrets }: AppProps): React.ReactElement {
+export default function App(deps: AppProps): React.ReactElement {
   const { exit } = useApp();
+  const [screenStack, setScreenStack] = useState<Screen[]>(['sessions']);
+  const currentScreen = screenStack[screenStack.length - 1]!;
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [subModeActive, setSubModeActive] = useState(false);
 
-  const [messages, setMessages] = useState<readonly Message[]>([]);
-  const [isThinking, setIsThinking] = useState(false);
-  const [status, setStatus] = useState('Ready');
-  const [inputValue, setInputValue] = useState('');
-  const [page, setPage] = useState<Page>('chat');
-
-  // Subscribe to background logs (scheduler, discord, etc.)
-  useEffect(() => {
-    const unsubscribe = onLog((line) => {
-      setMessages((prev) => [...prev, { role: 'system', text: line }]);
-    });
-    return unsubscribe;
+  const push = useCallback((screen: Screen) => {
+    setScreenStack((prev) => [...prev, screen]);
   }, []);
 
-  const handleSubmit = useCallback(
-    async (value: string) => {
-      const input = value.trim();
-      if (!input || isThinking) return;
+  const pop = useCallback(() => {
+    setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
+  }, []);
 
-      setInputValue('');
+  const getSystemPrompt = useCallback(async (): Promise<string> => {
+    let prompt: string;
+    if (deps.systemPromptProvider) {
+      prompt = await deps.systemPromptProvider(deps.toolDocs ?? '');
+    } else if (!deps.personaPath || !deps.timezone) {
+      return 'System prompt unavailable: personaPath/timezone not provided.';
+    } else {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter((d) => d.rkey.startsWith('skill:'))
+        .map((d) => d.rkey);
+      prompt = buildSystemPrompt(persona, coreMemory, skillNames, deps.toolDocs ?? '', deps.timezone);
+    }
 
-      // Handle commands
-      if (input === '/quit' || input === '/exit') {
-        exit();
-        process.exit(0);
+    if (deps.customTools) {
+      const summaries = deps.customTools.getApprovedToolSummaries();
+      if (summaries.length > 0) {
+        const listing = summaries
+          .map((s) => `- **${s.name}** — ${s.description}`)
+          .join('\n');
+        prompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
       }
+    }
 
-      if (input === '/reset') {
-        agent.reset();
-        setMessages((prev) => [
-          ...prev,
-          { role: 'system', text: '[conversation reset]' },
-        ]);
-        setStatus('Ready');
-        return;
-      }
+    return prompt;
+  }, [deps]);
 
-      if (input === '/review') {
-        if (!store || !secrets) {
-          setMessages((prev) => [
-            ...prev,
-            { role: 'system', text: '[grant system not configured]' },
-          ]);
-          return;
-        }
-        setPage('review');
-        return;
-      }
-
-      if (input === '/help') {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'system', text: 'Commands: /reset /review /help /quit' },
-        ]);
-        return;
-      }
-
-      // Add user message
-      setMessages((prev) => [...prev, { role: 'user', text: input }]);
-      setIsThinking(true);
-      setStatus('Thinking...');
-
-      try {
-        const result = await agent.chat(input);
-        setMessages((prev) => [...prev, { role: 'agent', text: result.text }]);
-        setStatus(formatStats(result.stats));
-      } catch (error) {
-        const errMsg =
-          error instanceof Error ? error.message : String(error);
-        setMessages((prev) => [
-          ...prev,
-          { role: 'system', text: `[error] ${errMsg}` },
-        ]);
-        setStatus('Error — see above');
-      } finally {
-        setIsThinking(false);
-      }
-    },
-    [agent, isThinking, exit, store, secrets],
-  );
-
-  // Ctrl+C fallback
-  useInput((_input, key) => {
-    if (key.ctrl && _input === 'c') {
+  // Ctrl+C fallback (always active)
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') {
       exit();
       process.exit(0);
     }
   });
 
-  // ── Review Page ──
-  if (page === 'review' && store && secrets) {
-    return (
-      <ReviewPage
-        store={store}
-        secrets={secrets}
-        onExit={() => setPage('chat')}
-      />
-    );
-  }
-
-  // ── Chat Page ──
-  return (
-    <Box flexDirection="column" height="100%">
-      {/* ── Header ───────────────────────────────────────────── */}
-      <Box paddingX={1}>
-        <Text bold color="white">
-          constellation-lite
-        </Text>
-        <Text color="gray"> — </Text>
-        <Text bold color="yellow">
-          {modelName}
-        </Text>
-      </Box>
-      <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-
-      {/* ── Chat area ────────────────────────────────────────── */}
-      <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingX={1}>
-        {messages.map((msg, i) => (
-          <Box key={i} marginBottom={0}>
-            {msg.role === 'user' && (
-              <Text wrap="wrap">
-                <Text color="cyan" bold>
-                  you&gt;{' '}
-                </Text>
-                <Text>{msg.text}</Text>
-              </Text>
-            )}
-            {msg.role === 'agent' && (
-              <Text wrap="wrap">
-                <Text color="green" bold>
-                  agent&gt;{' '}
-                </Text>
-                <Text>{msg.text}</Text>
-              </Text>
-            )}
-            {msg.role === 'system' && (
-              <Text wrap="wrap" color="yellow">
-                {msg.text}
-              </Text>
-            )}
-          </Box>
-        ))}
-
-        {isThinking && (
-          <Box>
-            <Text color="magenta">
-              <Spinner type="dots" />{' '}
-            </Text>
-            <Text color="magenta">{status}</Text>
-          </Box>
-        )}
-      </Box>
-
-      {/* ── Status bar ───────────────────────────────────────── */}
-      <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box paddingX={1}>
-        <Text color="gray">
-          [{status}] /review /reset /help /quit
-        </Text>
-      </Box>
-
-      {/* ── Input area ───────────────────────────────────────── */}
-      <Box paddingX={1}>
-        <Text color="cyan" bold>
-          {'> '}
-        </Text>
-        <TextInput
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleSubmit}
-          placeholder={isThinking ? 'waiting...' : 'Type a message...'}
-        />
-      </Box>
-    </Box>
+  // Global navigation — disabled on the chat screen (ChatScreen owns its own input)
+  // and disabled when a sub-screen is in a sub-mode that owns its own keybindings
+  // (e.g. ToolsScreen viewing skill code, where 'q' should mean "back to list").
+  const globalNavActive = currentScreen !== 'chat' && !subModeActive;
+  useInput(
+    (input, key) => {
+      if (input === 't') push('tools');
+      if (input === 's') push('secrets');
+      if (input === 'c') push('schedules');
+      if (input === 'p') push('prompt');
+      if (input === 'q') {
+        exit();
+        process.exit(0);
+      }
+      if (key.escape) pop();
+    },
+    { isActive: globalNavActive },
   );
+
+  switch (currentScreen) {
+    case 'sessions':
+      return (
+        <SessionsScreen
+          store={deps.store}
+          modelName={deps.modelName}
+          secrets={deps.secrets}
+          scheduler={deps.scheduler}
+          customTools={deps.customTools}
+          onSelectSession={(sessionId) => {
+            setActiveSessionId(sessionId);
+            push('chat');
+          }}
+          onNewSession={() => {
+            const id = crypto.randomUUID();
+            deps.store.createSession(id);
+            setActiveSessionId(id);
+            push('chat');
+          }}
+        />
+      );
+    case 'chat':
+      if (!activeSessionId) {
+        pop();
+        return <Text>No session selected</Text>;
+      }
+      return (
+        <ChatScreen
+          agent={deps.agent}
+          store={deps.store}
+          sessionId={activeSessionId}
+          onBack={pop}
+        />
+      );
+    case 'tools':
+      return (
+        <ToolsScreen
+          store={deps.store}
+          secrets={deps.secrets}
+          customTools={deps.customTools}
+          builtinTools={deps.builtinTools ?? []}
+          onBack={pop}
+          onSubModeChange={setSubModeActive}
+        />
+      );
+    case 'secrets':
+      if (!deps.secrets) {
+        return (
+          <Box flexDirection="column" padding={1}>
+            <Text color="yellow">Secret management not available.</Text>
+            <Text dimColor>Press Escape to go back.</Text>
+          </Box>
+        );
+      }
+      return <SecretsScreen secrets={deps.secrets} store={deps.store} onBack={pop} />;
+    case 'schedules':
+      if (!deps.scheduler) {
+        return (
+          <Box flexDirection="column" padding={1}>
+            <Text color="yellow">Scheduler not available.</Text>
+            <Text dimColor>Press Escape to go back.</Text>
+          </Box>
+        );
+      }
+      return <SchedulesScreen scheduler={deps.scheduler} onBack={pop} />;
+    case 'prompt':
+      return <SystemPromptScreen getSystemPrompt={getSystemPrompt} onBack={pop} />;
+  }
 }

@@ -190,6 +190,7 @@ export function createDiscordBot(
         context: { channelId },
         images,
         conversationOverride: history,
+        sessionId: channelId,
       });
       const response = result.text;
 

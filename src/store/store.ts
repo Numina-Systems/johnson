@@ -60,6 +60,8 @@ export interface Store {
   appendMessage(sessionId: string, role: string, content: string): void;
   getMessages(sessionId: string, limit?: number): Array<{ role: string; content: string; createdAt: string }>;
   clearMessages(sessionId: string): void;
+  deleteSession(id: string): boolean;
+  getSessionMessageCount(sessionId: string): number;
 
   // Tasks
   saveTask(task: {
@@ -288,6 +290,12 @@ export function createStore(dbPath: string): Store {
   const stmtClearMessages = db.prepare(
     `DELETE FROM messages WHERE session_id = ?`,
   );
+  const stmtDeleteSession = db.prepare(
+    `DELETE FROM sessions WHERE id = ?`,
+  );
+  const stmtSessionMessageCount = db.prepare(
+    `SELECT COUNT(*) as count FROM messages WHERE session_id = ?`,
+  );
 
   // Tasks
   const stmtSaveTask = db.prepare(
@@ -426,6 +434,16 @@ export function createStore(dbPath: string): Store {
 
     clearMessages(sessionId: string): void {
       stmtClearMessages.run(sessionId);
+    },
+
+    deleteSession(id: string): boolean {
+      stmtClearMessages.run(id);
+      return stmtDeleteSession.run(id).changes > 0;
+    },
+
+    getSessionMessageCount(sessionId: string): number {
+      const row = stmtSessionMessageCount.get(sessionId) as { count: number } | null;
+      return row?.count ?? 0;
     },
 
     // ── Tasks ─────────────────────────────────────────────────────

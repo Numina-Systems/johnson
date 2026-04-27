@@ -4,3 +4,6 @@ config.toml
 persona.md
 migrate-to-documents.sql
 /node_modules/
+/dist/
+.claude/
+.worktrees/

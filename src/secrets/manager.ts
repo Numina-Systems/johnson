@@ -13,16 +13,17 @@ export type SecretManager = {
   listKeys(): Array<string>;
   /** Get a secret value. Internal only — for env injection. */
   get(key: string): string | undefined;
-  /** Set a secret. */
-  set(key: string, value: string): void;
-  /** Delete a secret. */
-  remove(key: string): void;
+  /** Set a secret. Resolves when persisted to disk. */
+  set(key: string, value: string): Promise<void>;
+  /** Delete a secret. Resolves when persisted to disk. */
+  remove(key: string): Promise<void>;
   /** Resolve secrets for a skill → env var map. Takes an array of key names. */
   resolve(keys: ReadonlyArray<string>): Record<string, string>;
 };
 
 export function createSecretManager(path: string): SecretManager {
   let secrets: Record<string, string> = {};
+  let writeQueue: Promise<void> = Promise.resolve();
 
   // Load synchronously on creation (called once at startup)
   try {
@@ -37,10 +38,14 @@ export function createSecretManager(path: string): SecretManager {
     // File doesn't exist yet — start fresh
   }
 
-  function save(): void {
-    mkdir(dirname(path), { recursive: true })
-      .then(() => writeFile(path, JSON.stringify(secrets, null, 2) + '\n'))
-      .catch(() => {});
+  async function save(): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, JSON.stringify(secrets, null, 2) + '\n');
+  }
+
+  function enqueueSave(): Promise<void> {
+    writeQueue = writeQueue.then(save, save);
+    return writeQueue;
   }
 
   return {
@@ -52,14 +57,14 @@ export function createSecretManager(path: string): SecretManager {
       return secrets[key];
     },
 
-    set(key: string, value: string): void {
+    async set(key: string, value: string): Promise<void> {
       secrets[key] = value;
-      save();
+      await enqueueSave();
     },
 
-    remove(key: string): void {
+    async remove(key: string): Promise<void> {
       delete secrets[key];
-      save();
+      await enqueueSave();
     },
 
     resolve(keys: ReadonlyArray<string>): Record<string, string> {

@@ -9,11 +9,16 @@
 import { resolve } from 'path';
 import { loadConfig } from './config/loader.ts';
 import { createModelProvider } from './model/index.ts';
+import { createSubAgent, wrapMainModel } from './model/sub-agent.ts';
+import type { SubAgentLLM } from './model/sub-agent.ts';
 import { createDenoExecutor } from './runtime/executor.ts';
 import { createAgent } from './agent/agent.ts';
+import { createAgentTools } from './agent/tools.ts';
+import { buildSystemPrompt, loadCoreMemoryFromStore } from './agent/context.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
 import { createScheduler } from './scheduler/index.ts';
 import { createSecretManager } from './secrets/index.ts';
+import { createCustomToolManager } from './tools/index.ts';
 import { createStore } from './store/store.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
@@ -46,6 +51,15 @@ async function main(): Promise<void> {
   // Secret manager — flat JSON file for secret values (never in the DB)
   const secrets = createSecretManager(SECRETS_PATH);
 
+  // Sub-agent LLM — cheap model for compaction, titles, summarization.
+  // Falls back to wrapping the main model if [sub_model] not configured.
+  const subAgent: SubAgentLLM = config.subModel
+    ? createSubAgent(config.subModel)
+    : wrapMainModel(model, config.model.name, config.model.maxTokens);
+
+  // Custom tool manager — persists tool definitions in the documents store
+  const customTools = createCustomToolManager(store);
+
   // Embedding + vector store (optional — gracefully degrades if Ollama is unavailable)
   let embedding: EmbeddingProvider | undefined;
   if (config.embedding) {
@@ -74,6 +88,16 @@ async function main(): Promise<void> {
   // Persistent session history is passed via conversationOverride on each chat() call.
   // Note: scheduler is wired in below via agentDeps — the agent reads it at tool-call time,
   // not at construction, so the late binding is safe.
+  const systemPromptProvider = async (toolDocs: string): Promise<string> => {
+    const persona = await Bun.file(PERSONA_PATH).text();
+    const coreMemory = loadCoreMemoryFromStore(store);
+    const allDocs = store.docList(500);
+    const skillNames = allDocs.documents
+      .filter(d => d.rkey.startsWith('skill:'))
+      .map(d => d.rkey);
+    return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, config.agent.timezone);
+  };
+
   const agentDeps: AgentDependencies = {
     model,
     runtime,
@@ -91,6 +115,9 @@ async function main(): Promise<void> {
     get scheduler() { return scheduler; },
     store,
     secrets,
+    subAgent,
+    customTools,
+    systemPromptProvider,
   };
   const sharedAgent = createAgent(agentDeps);
 
@@ -111,7 +138,25 @@ async function main(): Promise<void> {
   if (mode === 'tui' || mode === 'both') {
     // TUI gets its own agent with in-memory history (no conversationOverride needed)
     const tuiAgent = createAgent({ ...agentDeps, scheduler });
-    startTUI({ agent: tuiAgent, modelName, store, secrets });
+    const tuiRegistry = createAgentTools({ ...agentDeps, scheduler }, {});
+    const builtinTools = tuiRegistry.list().map((t) => ({
+      name: t.name,
+      description: t.definition.description.split('\n')[0] ?? '',
+    }));
+    const toolDocs = tuiRegistry.generateToolDocumentation();
+    startTUI({
+      agent: tuiAgent,
+      modelName,
+      store,
+      secrets,
+      scheduler,
+      customTools,
+      systemPromptProvider,
+      toolDocs,
+      builtinTools,
+      personaPath: PERSONA_PATH,
+      timezone: config.agent.timezone,
+    });
   }
 
   if (mode === 'discord' || mode === 'both') {

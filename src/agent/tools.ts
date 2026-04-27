@@ -3,8 +3,13 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
+import { registerCustomTools } from '../tools/custom-tools.ts';
+import { registerWebTools } from '../tools/web.ts';
+import { registerImageTools } from '../tools/image.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
+import { registerNotifyTools } from '../tools/notify.ts';
+import { registerSummarizeTools } from '../tools/summarize.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -323,6 +328,26 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       return `✅ Task ${id} cancelled.`;
     },
   );
+
+  // Web tools (search, fetch, http)
+  registerWebTools(registry, deps);
+
+  // Notification tools
+  registerNotifyTools(registry, deps);
+
+  // Image tools
+  registerImageTools(registry);
+
+  // Summarize (via sub-agent)
+  registerSummarizeTools(registry, deps);
+
+  if (deps.customTools) {
+    registerCustomTools(registry, {
+      customTools: deps.customTools,
+      runtime: deps.runtime,
+      secrets: deps.secrets,
+    });
+  }
 
   return registry;
 }

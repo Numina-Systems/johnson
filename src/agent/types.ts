@@ -7,6 +7,8 @@ import type { VectorStore } from '../search/vector-store.ts';
 import type { TaskStore } from '../scheduler/types.ts';
 import type { Store } from '../store/store.ts';
 import type { SecretManager } from '../secrets/manager.ts';
+import type { SubAgentLLM } from '../model/sub-agent.ts';
+import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
 
 export type AgentConfig = {
   readonly model: string;
@@ -43,6 +45,9 @@ export type AgentDependencies = {
   readonly scheduler?: TaskStore;
   readonly store: Store;
   readonly secrets?: SecretManager;
+  readonly subAgent?: SubAgentLLM;
+  readonly customTools?: CustomToolManager;
+  readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
 };
 
 export type ConversationTurn = {
@@ -59,10 +64,19 @@ export type ChatImage = {
   filename?: string;
 };
 
+export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done';
+
+export type AgentEvent = {
+  readonly kind: AgentEventKind;
+  readonly data: Record<string, unknown>;
+};
+
 export type ChatOptions = {
   readonly context?: ChatContext;
   readonly images?: ChatImage[];
   readonly conversationOverride?: Array<Message>;
+  readonly onEvent?: (event: AgentEvent) => Promise<void>;
+  readonly sessionId?: string;
 };
 
 export type Agent = {
