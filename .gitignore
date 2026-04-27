@@ -7,3 +7,4 @@ migrate-to-documents.sql
 /dist/
 .claude/
 .worktrees/
+src/runtime/deno/tools.ts
