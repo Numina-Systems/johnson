@@ -14,7 +14,6 @@ import type {
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null;
-  reasoning_content?: string;
   tool_calls?: ReadonlyArray<{
     id: string;
     type: 'function';
@@ -36,7 +35,6 @@ type OpenAIChoice = {
   message: {
     role: 'assistant';
     content: string | null;
-    reasoning_content?: string | null;
     tool_calls?: Array<{
       id: string;
       type: 'function';
@@ -66,11 +64,7 @@ function convertMessages(
 
   for (const msg of messages) {
     if (typeof msg.content === 'string') {
-      const openaiMsg: OpenAIMessage = { role: msg.role, content: msg.content };
-      if (msg.reasoning_content != null) {
-        openaiMsg.reasoning_content = msg.reasoning_content;
-      }
-      result.push(openaiMsg);
+      result.push({ role: msg.role, content: msg.content });
       continue;
     }
 
@@ -99,14 +93,6 @@ function convertMessages(
         role: 'assistant',
         content: textParts.length > 0 ? textParts.join('\n') : null,
       };
-      if (msg.reasoning_content != null) {
-        openaiMsg.reasoning_content = msg.reasoning_content;
-      } else if (toolCalls.length > 0) {
-        // DeepSeek reasoning models require reasoning_content on assistant
-        // messages that have tool_calls. If we lost it (e.g. DB reload),
-        // provide empty string to satisfy the API constraint.
-        openaiMsg.reasoning_content = '';
-      }
       if (toolCalls.length > 0) {
         openaiMsg.tool_calls = toolCalls;
       }
@@ -228,7 +214,6 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
   }
 
   const endpoint = baseUrl.replace(/\/+$/, '') + '/chat/completions';
-  const isOpenRouter = baseUrl.includes('openrouter.ai');
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
@@ -244,10 +229,6 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
       if (request.temperature !== undefined) {
         body.temperature = request.temperature;
-      }
-
-      if (isOpenRouter) {
-        body.reasoning = { enabled: false };
       }
 
       const headers: Record<string, string> = {
@@ -290,7 +271,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
         const choice = data.choices[0]!;
 
-        const response: ModelResponse = {
+        return {
           content: mapResponseContent(choice),
           stop_reason: mapFinishReason(choice.finish_reason),
           usage: {
@@ -298,12 +279,6 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
             output_tokens: data.usage.completion_tokens,
           },
         };
-
-        if (choice.message.reasoning_content != null) {
-          response.reasoning_content = choice.message.reasoning_content;
-        }
-
-        return response;
       } finally {
         clearTimeout(timeoutId);
       }

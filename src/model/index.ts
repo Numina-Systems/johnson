@@ -5,10 +5,12 @@ import type { ModelProvider } from './types.ts';
 import { createAnthropicProvider } from './anthropic.ts';
 import { createOpenAICompatProvider } from './openai-compat.ts';
 import { createOllamaProvider } from './ollama.ts';
+import { createOpenRouterProvider } from './openrouter.ts';
 
 export { createAnthropicProvider } from './anthropic.ts';
 export { createOpenAICompatProvider } from './openai-compat.ts';
 export { createOllamaProvider } from './ollama.ts';
+export { createOpenRouterProvider } from './openrouter.ts';
 
 export function createModelProvider(config: Readonly<ModelConfig>): ModelProvider {
   switch (config.provider) {
@@ -26,11 +28,7 @@ export function createModelProvider(config: Readonly<ModelConfig>): ModelProvide
         apiKey: config.apiKey ?? 'lemonade',
       });
     case 'openrouter':
-      return createOpenAICompatProvider({
-        ...config,
-        provider: 'openai-compat',
-        baseUrl: config.baseUrl ?? 'https://openrouter.ai/api/v1',
-      });
+      return createOpenRouterProvider(config);
     default:
       throw new Error(`Unknown model provider: ${(config as Record<string, unknown>).provider}`);
   }

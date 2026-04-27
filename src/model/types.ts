@@ -35,7 +35,6 @@ export type ToolDefinition = {
 export type Message = {
   role: 'user' | 'assistant';
   content: string | Array<ContentBlock>;
-  reasoning_content?: string;
 };
 
 export type ModelRequest = {
@@ -61,7 +60,6 @@ export type ModelResponse = {
   content: Array<ContentBlock>;
   stop_reason: StopReason;
   usage: UsageStats;
-  reasoning_content?: string;
 };
 
 export type ModelProvider = {
