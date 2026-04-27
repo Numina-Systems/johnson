@@ -10,6 +10,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
+import { toolResultContentToString } from './types.ts';
 
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -35,6 +36,7 @@ type OpenAIChoice = {
   message: {
     role: 'assistant';
     content: string | null;
+    reasoning_content?: string | null;
     tool_calls?: Array<{
       id: string;
       type: 'function';
@@ -115,7 +117,7 @@ function convertMessages(
             toolResults.push({
               role: 'tool',
               tool_call_id: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }
@@ -132,7 +134,7 @@ function convertMessages(
           result.push({
             role: 'tool',
             tool_call_id: block.tool_use_id,
-            content: block.content,
+            content: toolResultContentToString(block.content),
           });
         }
       }
@@ -271,6 +273,10 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
         const choice = data.choices[0]!;
 
+        const reasoning_content = typeof choice.message.reasoning_content === 'string' && choice.message.reasoning_content.length > 0
+          ? choice.message.reasoning_content
+          : undefined;
+
         return {
           content: mapResponseContent(choice),
           stop_reason: mapFinishReason(choice.finish_reason),
@@ -278,6 +284,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
             input_tokens: data.usage.prompt_tokens,
             output_tokens: data.usage.completion_tokens,
           },
+          reasoning_content,
         };
       } finally {
         clearTimeout(timeoutId);

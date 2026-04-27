@@ -11,6 +11,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
+import { toolResultContentToString } from './types.ts';
 
 type OllamaMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -103,7 +104,7 @@ function convertMessages(
         } else if (block.type === 'tool_result') {
           result.push({
             role: 'tool',
-            content: block.content,
+            content: toolResultContentToString(block.content),
           });
         }
       }
