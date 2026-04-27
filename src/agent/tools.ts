@@ -7,6 +7,7 @@ import { registerCustomTools } from '../tools/custom-tools.ts';
 import { registerWebTools } from '../tools/web.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
+import { registerNotifyTools } from '../tools/notify.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -328,6 +329,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
 
   // Web tools (search, fetch, http)
   registerWebTools(registry, deps);
+
+  // Notification tools
+  registerNotifyTools(registry, deps);
 
   if (deps.customTools) {
     registerCustomTools(registry, {
