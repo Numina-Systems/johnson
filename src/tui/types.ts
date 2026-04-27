@@ -21,6 +21,7 @@ export type TuiDependencies = {
     revokeTool(name: string): void;
   };
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
+  readonly builtinTools?: ReadonlyArray<{ name: string; description: string }>;
 };
 
 // Navigation actions passed to screens as callbacks.

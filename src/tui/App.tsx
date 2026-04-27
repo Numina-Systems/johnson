@@ -4,6 +4,7 @@ import React, { useState, useCallback } from 'react';
 import { Text, useInput, useApp } from 'ink';
 import SessionsScreen from './screens/SessionsScreen.tsx';
 import ChatScreen from './screens/ChatScreen.tsx';
+import ToolsScreen from './screens/ToolsScreen.tsx';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -82,7 +83,15 @@ export default function App(deps: AppProps): React.ReactElement {
         />
       );
     case 'tools':
-      return <Text>Tools screen (Phase 4) — press Escape to go back</Text>;
+      return (
+        <ToolsScreen
+          store={deps.store}
+          secrets={deps.secrets}
+          customTools={deps.customTools}
+          builtinTools={deps.builtinTools ?? []}
+          onBack={pop}
+        />
+      );
     case 'secrets':
       return <Text>Secrets screen (Phase 5) — press Escape to go back</Text>;
     case 'schedules':

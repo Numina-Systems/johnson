@@ -13,6 +13,7 @@ import { createSubAgent, wrapMainModel } from './model/sub-agent.ts';
 import type { SubAgentLLM } from './model/sub-agent.ts';
 import { createDenoExecutor } from './runtime/executor.ts';
 import { createAgent } from './agent/agent.ts';
+import { createAgentTools } from './agent/tools.ts';
 import { buildSystemPrompt, loadCoreMemoryFromStore } from './agent/context.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
 import { createScheduler } from './scheduler/index.ts';
@@ -137,6 +138,11 @@ async function main(): Promise<void> {
   if (mode === 'tui' || mode === 'both') {
     // TUI gets its own agent with in-memory history (no conversationOverride needed)
     const tuiAgent = createAgent({ ...agentDeps, scheduler });
+    const tuiRegistry = createAgentTools({ ...agentDeps, scheduler }, {});
+    const builtinTools = tuiRegistry.list().map((t) => ({
+      name: t.name,
+      description: t.definition.description.split('\n')[0] ?? '',
+    }));
     startTUI({
       agent: tuiAgent,
       modelName,
@@ -145,6 +151,7 @@ async function main(): Promise<void> {
       scheduler,
       customTools,
       systemPromptProvider,
+      builtinTools,
     });
   }
 
