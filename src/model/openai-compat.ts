@@ -14,6 +14,7 @@ import type {
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string | Array<{ type: string; text?: string; image_url?: { url: string } }> | null;
+  reasoning_content?: string;
   tool_calls?: ReadonlyArray<{
     id: string;
     type: 'function';
@@ -35,6 +36,7 @@ type OpenAIChoice = {
   message: {
     role: 'assistant';
     content: string | null;
+    reasoning_content?: string | null;
     tool_calls?: Array<{
       id: string;
       type: 'function';
@@ -64,7 +66,11 @@ function convertMessages(
 
   for (const msg of messages) {
     if (typeof msg.content === 'string') {
-      result.push({ role: msg.role, content: msg.content });
+      const openaiMsg: OpenAIMessage = { role: msg.role, content: msg.content };
+      if (msg.reasoning_content) {
+        openaiMsg.reasoning_content = msg.reasoning_content;
+      }
+      result.push(openaiMsg);
       continue;
     }
 
@@ -93,6 +99,9 @@ function convertMessages(
         role: 'assistant',
         content: textParts.length > 0 ? textParts.join('\n') : null,
       };
+      if (msg.reasoning_content) {
+        openaiMsg.reasoning_content = msg.reasoning_content;
+      }
       if (toolCalls.length > 0) {
         openaiMsg.tool_calls = toolCalls;
       }
@@ -271,7 +280,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
         const choice = data.choices[0]!;
 
-        return {
+        const response: ModelResponse = {
           content: mapResponseContent(choice),
           stop_reason: mapFinishReason(choice.finish_reason),
           usage: {
@@ -279,6 +288,12 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
             output_tokens: data.usage.completion_tokens,
           },
         };
+
+        if (choice.message.reasoning_content) {
+          response.reasoning_content = choice.message.reasoning_content;
+        }
+
+        return response;
       } finally {
         clearTimeout(timeoutId);
       }

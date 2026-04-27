@@ -8,7 +8,7 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
-import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats } from './types.ts';
+import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions } from './types.ts';
 import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
@@ -51,9 +51,36 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
 
-  async function chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<ChatResult> {
+  // Serialize all chat() calls — history is shared mutable state.
+  // Without this lock, a Discord message arriving during a TUI chat's
+  // LLM await could corrupt the conversation.
+  let chatLock: Promise<void> = Promise.resolve();
+
+  async function chat(userMessage: string, options?: ChatOptions): Promise<ChatResult> {
+    let releaseLock: () => void;
+    const prevLock = chatLock;
+    chatLock = new Promise<void>((r) => { releaseLock = r; });
+
+    await prevLock;
+    try {
+      return await _chatImpl(userMessage, options);
+    } finally {
+      releaseLock!();
+    }
+  }
+
+  async function _chatImpl(userMessage: string, options?: ChatOptions): Promise<ChatResult> {
     const chatStart = performance.now();
-    currentContext = context ?? {};
+    currentContext = options?.context ?? {};
+    const images = options?.images;
+
+    // Swap history if conversationOverride provided
+    const savedHistory = options?.conversationOverride !== undefined ? history : null;
+    if (options?.conversationOverride !== undefined) {
+      history = [...options.conversationOverride];
+    }
+
+    try {
 
     // Create tool registry (fresh each call — context may change)
     const registry = createAgentTools(deps, currentContext);
@@ -144,6 +171,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
+      if (response.reasoning_content) {
+        assistantMessage.reasoning_content = response.reasoning_content;
+      }
       history.push(assistantMessage);
 
       // Check stop reason
@@ -229,6 +259,12 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       .map((block) => block.text);
 
     return { text: textBlocks.join('\n') || '', stats };
+    } finally {
+      // Restore original history if we swapped
+      if (savedHistory !== null) {
+        history = savedHistory;
+      }
+    }
   }
 
   function reset(): void {
