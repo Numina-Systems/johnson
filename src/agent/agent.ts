@@ -146,7 +146,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // e. Tool loop
     let nudgeCount = 0;
-    const MAX_NUDGES = 2;
+    let lastNudgedText = '';
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
       let response;
       try {
@@ -189,11 +189,20 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           prevMsg.content.some(b => b.type === 'tool_result');
         const hasTextOnly = toolBlocks === 0 && textBlocks > 0;
 
-        if (prevWasToolResult && hasTextOnly && nudgeCount < MAX_NUDGES) {
-          nudgeCount++;
-          process.stderr.write(`[agent] nudging (${nudgeCount}/${MAX_NUDGES}): model narrated after tool result\n`);
-          history.push({ role: 'user', content: 'Continue — execute the code now via execute_code. Do not explain what you plan to do, just do it.' });
-          continue;
+        if (prevWasToolResult && hasTextOnly) {
+          const currentText = response.content
+            .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+            .map(b => b.text).join('\n');
+
+          if (currentText === lastNudgedText) {
+            process.stderr.write(`[agent] model repeated itself after nudge, giving up\n`);
+          } else {
+            nudgeCount++;
+            lastNudgedText = currentText;
+            process.stderr.write(`[agent] nudging (${nudgeCount}): model narrated after tool result\n`);
+            history.push({ role: 'user', content: 'Continue — execute the code now via execute_code. Do not explain what you plan to do, just do it.' });
+            continue;
+          }
         }
 
         process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
