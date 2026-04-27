@@ -6,6 +6,7 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import { onLog } from '../util/log.ts';
 import { formatStats } from '../agent/format-stats.ts';
+import SessionsScreen from './screens/SessionsScreen.tsx';
 import type { Screen, TuiDependencies } from './types.ts';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -31,6 +32,7 @@ export default function App(deps: AppProps): React.ReactElement {
   const [isThinking, setIsThinking] = useState(false);
   const [status, setStatus] = useState('Ready');
   const [inputValue, setInputValue] = useState('');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const push = useCallback((screen: Screen) => {
     setScreenStack(prev => [...prev, screen]);
@@ -131,7 +133,25 @@ export default function App(deps: AppProps): React.ReactElement {
 
   switch (currentScreen) {
     case 'sessions':
-      return <Text>Sessions screen (Phase 2)</Text>;
+      return (
+        <SessionsScreen
+          store={deps.store}
+          modelName={deps.modelName}
+          secrets={deps.secrets}
+          scheduler={deps.scheduler}
+          customTools={deps.customTools}
+          onSelectSession={(sessionId) => {
+            setActiveSessionId(sessionId);
+            push('chat');
+          }}
+          onNewSession={() => {
+            const id = crypto.randomUUID();
+            deps.store.createSession(id);
+            setActiveSessionId(id);
+            push('chat');
+          }}
+        />
+      );
     case 'chat':
       return (
         <Box flexDirection="column" height="100%">

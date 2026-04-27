@@ -66,6 +66,8 @@ function makeMockStore(documents: Array<{ rkey: string; content: string }>): {
     appendMessage: () => {},
     getMessages: () => [],
     clearMessages: () => {},
+    deleteSession: () => false,
+    getSessionMessageCount: () => 0,
     saveTask: () => {},
     listTasks: () => [],
     getTask: () => null,

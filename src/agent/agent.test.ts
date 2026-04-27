@@ -40,6 +40,8 @@ function createNoopStore(): Store {
     appendMessage: () => {},
     getMessages: () => [],
     clearMessages: () => {},
+    deleteSession: () => false,
+    getSessionMessageCount: () => 0,
     saveTask: () => {},
     listTasks: () => [],
     getTask: () => null,
