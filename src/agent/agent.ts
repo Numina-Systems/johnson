@@ -72,8 +72,10 @@ export function formatNativeToolResult(
     if (r.image && typeof r.image === 'object') {
       const img = r.image as Record<string, unknown>;
       if (typeof img.data === 'string' && typeof img.media_type === 'string') {
-        const dataUri = `data:${img.media_type};base64,${img.data}`;
-        blocks.push({ type: 'image_url', image_url: { url: dataUri } });
+        blocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: img.media_type, data: img.data },
+        });
       }
     }
 

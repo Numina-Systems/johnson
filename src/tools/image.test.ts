@@ -18,14 +18,15 @@ const TINY_PNG = new Uint8Array([
   0x60, 0x82,
 ]);
 
-type FetchArgs = { input: RequestInfo | URL; init?: RequestInit };
+type FetchInput = Parameters<typeof fetch>[0];
+type FetchArgs = { input: FetchInput; init?: RequestInit };
 
 const originalFetch = globalThis.fetch;
 let fetchCalls: FetchArgs[] = [];
 
-function installFetchMock(impl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>): void {
+function installFetchMock(impl: (input: FetchInput, init?: RequestInit) => Promise<Response>): void {
   fetchCalls = [];
-  globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = ((input: FetchInput, init?: RequestInit) => {
     fetchCalls.push({ input, init });
     return impl(input, init);
   }) as typeof fetch;
@@ -82,19 +83,24 @@ describe('viewImage', () => {
   it('GH09.AC2.1: rejects when content-length header exceeds 10MB without reading body', async () => {
     let arrayBufferCalled = false;
     installFetchMock(async () => {
-      const response = new Response(new Uint8Array(0), {
+      const inner = new Response(new Uint8Array(0), {
         status: 200,
         headers: {
           'content-type': 'image/png',
           'content-length': String(20 * 1024 * 1024),
         },
       });
-      const originalArrayBuffer = response.arrayBuffer.bind(response);
-      response.arrayBuffer = async () => {
-        arrayBufferCalled = true;
-        return originalArrayBuffer();
-      };
-      return response;
+      const wrapper = {
+        ok: inner.ok,
+        status: inner.status,
+        statusText: inner.statusText,
+        headers: inner.headers,
+        arrayBuffer: async (): Promise<ArrayBuffer> => {
+          arrayBufferCalled = true;
+          return inner.arrayBuffer();
+        },
+      } as unknown as Response;
+      return wrapper;
     });
 
     await expect(viewImage('https://example.com/huge.png')).rejects.toThrow(/too large/);

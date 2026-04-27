@@ -161,6 +161,23 @@ export function trimOldToolResults(messages: Array<Message>): number {
       if (block.type !== 'tool_result') continue;
 
       const content = block.content;
+
+      // Handle array content (e.g., image tool results with [text, image] blocks)
+      if (Array.isArray(content)) {
+        const hasImage = content.some(
+          (b) => b.type === 'image' || b.type === 'image_url',
+        );
+        if (hasImage) {
+          (msg.content as Array<ContentBlock>)[j] = {
+            type: 'tool_result',
+            tool_use_id: block.tool_use_id,
+            content: '[image tool result trimmed for context savings]',
+          };
+          trimmed++;
+        }
+        continue;
+      }
+
       if (typeof content !== 'string') continue;
 
       // Skip if already trimmed or small

@@ -535,19 +535,21 @@ describe('formatNativeToolResult', () => {
     expect(block.content).toBe('(no output)');
   });
 
-  test('image_result with text and image returns array content with text + data URI image block', () => {
+  test('GH09.AC4.1 / AC4.2 / AC4.3: image_result returns array content with text + Anthropic-native image block', () => {
     const block = formatNativeToolResult('id1', {
       type: 'image_result',
-      text: 'An image',
-      image: { data: 'base64data', media_type: 'image/png' },
+      text: 'Image from https://example.com/photo.png',
+      image: { type: 'base64', data: 'iVBOR...', media_type: 'image/png' },
     });
+    expect(block.type).toBe('tool_result');
+    expect(block.tool_use_id).toBe('id1');
     expect(Array.isArray(block.content)).toBe(true);
     const blocks = block.content as ToolResultContentBlock[];
     expect(blocks.length).toBe(2);
-    expect(blocks[0]).toEqual({ type: 'text', text: 'An image' });
+    expect(blocks[0]).toEqual({ type: 'text', text: 'Image from https://example.com/photo.png' });
     expect(blocks[1]).toEqual({
-      type: 'image_url',
-      image_url: { url: 'data:image/png;base64,base64data' },
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'iVBOR...' },
     });
   });
 
@@ -560,5 +562,80 @@ describe('formatNativeToolResult', () => {
     const blocks = block.content as ToolResultContentBlock[];
     expect(blocks.length).toBe(1);
     expect(blocks[0]).toEqual({ type: 'text', text: 'An image' });
+  });
+
+  test('GH09.AC5.1: plain string result produces ToolResultBlock with string content', () => {
+    const block = formatNativeToolResult('id2', 'Document saved: foo');
+    expect(block.content).toBe('Document saved: foo');
+  });
+
+  test('GH09.AC5.2: object result produces ToolResultBlock with JSON-stringified content', () => {
+    const block = formatNativeToolResult('id3', { count: 3, items: ['a', 'b', 'c'] });
+    expect(block.content).toBe(JSON.stringify({ count: 3, items: ['a', 'b', 'c'] }));
+  });
+
+  test('null result is JSON-stringified as "null"', () => {
+    const block = formatNativeToolResult('id4', null);
+    expect(block.content).toBe('null');
+  });
+});
+
+describe('trimOldToolResults — image tool results', () => {
+  test('older image tool results are replaced with placeholder', async () => {
+    const { trimOldToolResults } = await import('./context.ts');
+    const messages: Message[] = [];
+    // Add an older user message with an image tool result
+    messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'old-img-1',
+          content: [
+            { type: 'text', text: 'Image from https://example.com/old.png' },
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          ],
+        },
+      ],
+    });
+    // Pad with enough messages so the image tool result is outside the preserve window (8 most recent)
+    for (let i = 0; i < 10; i++) {
+      messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `padding ${i}` });
+    }
+
+    const trimmed = trimOldToolResults(messages);
+
+    expect(trimmed).toBeGreaterThanOrEqual(1);
+    const trimmedBlock = (messages[0]!.content as Array<unknown>)[0] as { content: unknown };
+    expect(trimmedBlock.content).toBe('[image tool result trimmed for context savings]');
+  });
+
+  test('recent image tool results are preserved (within preserve window)', async () => {
+    const { trimOldToolResults } = await import('./context.ts');
+    const messages: Message[] = [];
+    // First a few older messages so the image is at index 0 but within preserve window
+    for (let i = 0; i < 4; i++) {
+      messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `padding ${i}` });
+    }
+    // Add an image tool result still within last 8
+    const imageBlock = {
+      type: 'tool_result' as const,
+      tool_use_id: 'recent-img',
+      content: [
+        { type: 'text' as const, text: 'Recent image' },
+        { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png', data: 'BBBB' } },
+      ],
+    };
+    messages.push({ role: 'user', content: [imageBlock] });
+    for (let i = 0; i < 3; i++) {
+      messages.push({ role: i % 2 === 0 ? 'user' : 'assistant', content: `tail ${i}` });
+    }
+
+    const beforeContent = (messages[messages.length - 4]!.content as Array<unknown>)[0];
+    trimOldToolResults(messages);
+    const afterContent = (messages[messages.length - 4]!.content as Array<unknown>)[0];
+
+    // The image tool result should be unchanged — same reference
+    expect(afterContent).toBe(beforeContent);
   });
 });
