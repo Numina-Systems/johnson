@@ -9,6 +9,7 @@ import { registerImageTools } from '../tools/image.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
 import { registerNotifyTools } from '../tools/notify.ts';
+import { registerSummarizeTools } from '../tools/summarize.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -336,6 +337,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
 
   // Image tools
   registerImageTools(registry);
+
+  // Summarize (via sub-agent)
+  registerSummarizeTools(registry, deps);
 
   if (deps.customTools) {
     registerCustomTools(registry, {
