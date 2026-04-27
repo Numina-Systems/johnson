@@ -152,6 +152,8 @@ async function main(): Promise<void> {
       customTools,
       systemPromptProvider,
       builtinTools,
+      personaPath: PERSONA_PATH,
+      timezone: config.agent.timezone,
     });
   }
 

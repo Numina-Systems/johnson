@@ -5,6 +5,7 @@ import { Box, Text, useInput } from 'ink';
 import type { Store, GrantStatus } from '../../store/store.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { TuiDependencies } from '../types.ts';
+import { parseDescription } from '../util.ts';
 
 type ToolsScreenProps = {
   readonly store: Store;
@@ -24,15 +25,6 @@ type SkillEntry = {
   readonly grantStatus: GrantStatus;
   readonly secrets: ReadonlyArray<string>;
 };
-
-function parseDescription(content: string): string {
-  const lines = content.split('\n').slice(0, 10);
-  for (const line of lines) {
-    const match = line.match(/^\/\/\s*Description:\s*(.+)/i);
-    if (match) return match[1]!.trim();
-  }
-  return '';
-}
 
 const SECTIONS: ReadonlyArray<Section> = ['custom', 'builtin', 'skills'];
 

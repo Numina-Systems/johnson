@@ -1,5 +1,18 @@
 // pattern: Functional Core — shared TUI helpers
 
+/**
+ * Parse a description from a skill/tool document's header comment.
+ * Looks for `// Description: ...` in the first few lines.
+ */
+export function parseDescription(content: string): string {
+  const lines = content.split('\n').slice(0, 10);
+  for (const line of lines) {
+    const match = line.match(/^\/\/\s*Description:\s*(.+)/i);
+    if (match) return match[1]!.trim();
+  }
+  return '';
+}
+
 export function formatDate(iso: string): string {
   const d = new Date(iso);
   const now = new Date();

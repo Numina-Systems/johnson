@@ -22,6 +22,8 @@ export type TuiDependencies = {
   };
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
   readonly builtinTools?: ReadonlyArray<{ name: string; description: string }>;
+  readonly personaPath?: string;
+  readonly timezone?: string;
 };
 
 // Navigation actions passed to screens as callbacks.

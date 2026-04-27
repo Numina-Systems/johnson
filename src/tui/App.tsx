@@ -7,6 +7,8 @@ import ChatScreen from './screens/ChatScreen.tsx';
 import ToolsScreen from './screens/ToolsScreen.tsx';
 import SecretsScreen from './screens/SecretsScreen.tsx';
 import SchedulesScreen from './screens/SchedulesScreen.tsx';
+import SystemPromptScreen from './screens/SystemPromptScreen.tsx';
+import { buildSystemPrompt, loadCoreMemoryFromStore } from '../agent/context.ts';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -24,6 +26,22 @@ export default function App(deps: AppProps): React.ReactElement {
   const pop = useCallback(() => {
     setScreenStack((prev) => (prev.length > 1 ? prev.slice(0, -1) : prev));
   }, []);
+
+  const getSystemPrompt = useCallback(async (): Promise<string> => {
+    if (deps.systemPromptProvider) {
+      return deps.systemPromptProvider('');
+    }
+    if (!deps.personaPath || !deps.timezone) {
+      return 'System prompt unavailable: personaPath/timezone not provided.';
+    }
+    const persona = await Bun.file(deps.personaPath).text();
+    const coreMemory = loadCoreMemoryFromStore(deps.store);
+    const allDocs = deps.store.docList(500);
+    const skillNames = allDocs.documents
+      .filter((d) => d.rkey.startsWith('skill:'))
+      .map((d) => d.rkey);
+    return buildSystemPrompt(persona, coreMemory, skillNames, '', deps.timezone);
+  }, [deps]);
 
   // Ctrl+C fallback (always active)
   useInput((input, key) => {
@@ -115,6 +133,6 @@ export default function App(deps: AppProps): React.ReactElement {
       }
       return <SchedulesScreen scheduler={deps.scheduler} onBack={pop} />;
     case 'prompt':
-      return <Text>System Prompt screen (Phase 7) — press Escape to go back</Text>;
+      return <SystemPromptScreen getSystemPrompt={getSystemPrompt} onBack={pop} />;
   }
 }
