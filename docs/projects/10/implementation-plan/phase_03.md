@@ -106,36 +106,14 @@ Expected: Type-checks without errors
 
 **Implementation:**
 
-After the `skillNames` extraction (around line 101-103 in `_chatImpl`), fetch approved custom tool summaries and pass them into `buildSystemPrompt`. There are two approaches — this task uses the simpler one: append custom tool docs directly to the system prompt string after `buildSystemPrompt` returns, rather than modifying the `buildSystemPrompt` signature.
+**IMPORTANT — alignment with GH12 (Dynamic System Prompt Provider):** GH12 refactors the system prompt building in `_chatImpl`. If GH12 is merged first (it's in Wave 1, same as #10's dependency #3), the inline `buildSystemPrompt()` call is now inside an `else` branch (the fallback path when no `systemPromptProvider` is set). The main path calls `deps.systemPromptProvider(toolDocs)`.
 
-After line 106 (`const systemPrompt = buildSystemPrompt(...)`) and before the token tracking section:
+Therefore, the custom tool summaries should be appended to the system prompt AFTER the provider/fallback decision, not inside the fallback path. The correct location is after the `systemPrompt` variable is assigned (regardless of which path set it).
+
+Find the `systemPrompt` variable in `_chatImpl` — after GH12, it's set either by the provider or by the inline fallback. After that assignment, append custom tool listings:
 
 ```typescript
     // Append custom tool listings for discoverability
-    let finalSystemPrompt = systemPrompt;
-    if (deps.customTools) {
-      const summaries = deps.customTools.getApprovedToolSummaries();
-      if (summaries.length > 0) {
-        const listing = summaries
-          .map(s => `- **${s.name}** — ${s.description}`)
-          .join('\n');
-        finalSystemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
-      }
-    }
-```
-
-Then update all references to `systemPrompt` in the rest of `_chatImpl` to use `finalSystemPrompt` instead. There are 4 references:
-1. Line ~134: `if (needsCompaction(history, systemPrompt, ...))` -> `finalSystemPrompt`
-2. Line ~152: `system: systemPrompt,` -> `system: finalSystemPrompt,`
-3. Line ~240: `const contextEstimate = estimateTokens(systemPrompt) +` -> `estimateTokens(finalSystemPrompt)`
-
-Alternatively, rename `systemPrompt` to `baseSystemPrompt` at line 106 and use `systemPrompt` for the final version — this minimizes the diff:
-
-```typescript
-    const baseSystemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
-
-    // Append custom tool listings for discoverability
-    let systemPrompt = baseSystemPrompt;
     if (deps.customTools) {
       const summaries = deps.customTools.getApprovedToolSummaries();
       if (summaries.length > 0) {
@@ -147,7 +125,9 @@ Alternatively, rename `systemPrompt` to `baseSystemPrompt` at line 106 and use `
     }
 ```
 
-This second approach is preferred — it changes one line (`const systemPrompt` -> `const baseSystemPrompt`) and adds the block, without needing to update downstream references.
+This works regardless of whether GH12's `systemPromptProvider` path or the inline fallback path was taken, because both paths produce a `systemPrompt` string. The variable is `let` (GH12 changes it from `const` to `let` for the caching logic), so appending with `+=` is valid.
+
+If GH12 is NOT merged yet (the inline `buildSystemPrompt` call is still there), the same code works — just place it after the `const systemPrompt = buildSystemPrompt(...)` line and change `const` to `let`.
 
 **Verification:**
 Run: `cd /Users/scarndp/dev/johnson/.worktrees/GH10 && npx tsc --noEmit`
