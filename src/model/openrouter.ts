@@ -225,6 +225,8 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
           throw new Error('OpenRouter API returned no choices');
         }
 
+        process.stderr.write(`[openrouter] finish_reason=${choice.finishReason} tool_calls=${choice.message.toolCalls?.length ?? 0} content_len=${typeof choice.message.content === 'string' ? choice.message.content.length : 0}\n`);
+
         return {
           content: mapResponseContent(choice.message),
           stop_reason: mapFinishReason(choice.finishReason),
