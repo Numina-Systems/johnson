@@ -17,7 +17,12 @@ export type ImageBlock = {
   image_url: { url: string };
 };
 
-export type ToolResultContentBlock = TextBlock | ImageBlock;
+export type ImageSourceBlock = {
+  type: 'image';
+  source: { type: 'base64'; media_type: string; data: string };
+};
+
+export type ToolResultContentBlock = TextBlock | ImageBlock | ImageSourceBlock;
 
 export type ToolResultBlock = {
   type: 'tool_result';
@@ -26,7 +31,7 @@ export type ToolResultBlock = {
   is_error?: boolean;
 };
 
-export type ContentBlock = TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock;
+export type ContentBlock = TextBlock | ImageBlock | ImageSourceBlock | ToolUseBlock | ToolResultBlock;
 
 export type ToolDefinition = {
   name: string;
@@ -84,6 +89,7 @@ export function toolResultContentToString(
     .map((block) => {
       if (block.type === 'text') return block.text;
       if (block.type === 'image_url') return '[image]';
+      if (block.type === 'image') return '[image]';
       return '';
     })
     .filter(Boolean)

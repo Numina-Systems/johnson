@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
 import { registerCustomTools } from '../tools/custom-tools.ts';
 import { registerWebTools } from '../tools/web.ts';
+import { registerImageTools } from '../tools/image.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
 import { registerNotifyTools } from '../tools/notify.ts';
@@ -332,6 +333,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
 
   // Notification tools
   registerNotifyTools(registry, deps);
+
+  // Image tools
+  registerImageTools(registry);
 
   if (deps.customTools) {
     registerCustomTools(registry, {
