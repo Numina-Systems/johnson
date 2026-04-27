@@ -69,9 +69,13 @@ describe('ToolRegistry mode filtering', () => {
 
     const docs = reg.generateToolDocumentation();
 
+    expect(docs).toContain('sand_tool');
+    expect(docs).toContain('nat_tool');
+    expect(docs).toContain('both_tool');
     expect(docs).toContain('tools.sand_tool');
-    expect(docs).toContain('tools.nat_tool');
-    expect(docs).toContain('tools.both_tool');
+    expect(docs).toContain('Description for sand_tool');
+    expect(docs).toContain('Description for nat_tool');
+    expect(docs).toContain('Description for both_tool');
   });
 
   it('GH03.AC1.5: register() without mode defaults to sandbox', () => {

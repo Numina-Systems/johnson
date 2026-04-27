@@ -200,8 +200,21 @@ export function createToolRegistry(): ToolRegistry {
 
     for (const [name, entry] of entries) {
       const def = entry.definition;
-      sections.push(`### \`tools.${name}\``);
-      sections.push("");
+
+      if (entry.mode === 'native' || entry.mode === 'both') {
+        sections.push(`### \`${name}\` *(direct tool call)*`);
+        sections.push("");
+        if (entry.mode === 'both') {
+          sections.push(`> Available as both a direct tool call and via \`tools.${name}()\` in execute_code.`);
+        } else {
+          sections.push(`> Call this tool directly — do NOT use execute_code for this tool.`);
+        }
+        sections.push("");
+      } else {
+        sections.push(`### \`tools.${name}\``);
+        sections.push("");
+      }
+
       sections.push(def.description);
       sections.push("");
 
