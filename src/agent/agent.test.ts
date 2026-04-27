@@ -63,13 +63,12 @@ const noopRuntime: CodeRuntime = {
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
-    model: 'test-model',
-    maxTokens: 1024,
-    maxToolRounds: 2,
+    model: 'mock-model',
+    maxTokens: 100,
+    maxToolRounds: 3,
     contextBudget: 0.9,
     contextLimit: 100_000,
     modelTimeout: 30_000,
-    temperature: 0,
     timezone: 'UTC',
     ...overrides,
   };

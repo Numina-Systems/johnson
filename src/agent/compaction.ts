@@ -6,8 +6,9 @@
 // 3. Summarize all older context documents into one paragraph
 // 4. Return rebuilt context for the agent to continue with
 
-import type { Message, ModelProvider } from '../model/types.ts';
+import type { Message } from '../model/types.ts';
 import { toolResultContentToString } from '../model/types.ts';
+import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from './context.ts';
 
@@ -95,33 +96,19 @@ export function needsCompaction(
  * Uses a dedicated LLM call (option A — mechanical, out of the agent's way).
  */
 async function summarizeOlderContext(
-  model: ModelProvider,
-  modelName: string,
-  maxTokens: number,
+  subAgent: SubAgentLLM,
   notes: ReadonlyArray<string>,
 ): Promise<string> {
   if (notes.length === 0) return '';
 
-  // Combine all older notes, truncating each to keep the summary call manageable
   const combined = notes
     .map((text, i) => `--- Context ${i + 1} ---\n${text.slice(0, 3000)}`)
     .join('\n\n');
 
-  const response = await model.complete({
-    system:
-      'You are a context summarizer. Given conversation logs, produce a concise 2-4 sentence summary capturing the key topics discussed, decisions made, and any important facts or preferences revealed. Focus on what would be useful for continuing the conversation. Do not use markdown headers or bullet points — write flowing prose.',
-    messages: [{ role: 'user', content: combined }],
-    tools: [],
-    model: modelName,
-    max_tokens: Math.min(maxTokens, 512),
-  });
+  const system =
+    'You are a context summarizer. Given conversation logs, produce a concise 2-4 sentence summary capturing the key topics discussed, decisions made, and any important facts or preferences revealed. Focus on what would be useful for continuing the conversation. Do not use markdown headers or bullet points — write flowing prose.';
 
-  // Extract text from response
-  const text = response.content
-    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
-    .map((block) => block.text)
-    .join(' ');
-
+  const text = await subAgent.complete(combined, system);
   return text || '(summary unavailable)';
 }
 
@@ -136,9 +123,7 @@ export async function compactContext(
   messages: ReadonlyArray<Message>,
   deps: {
     store: Store;
-    model: ModelProvider;
-    modelName: string;
-    maxTokens: number;
+    subAgent: SubAgentLLM;
   },
 ): Promise<Array<Message>> {
   // 1. Save current conversation
@@ -162,9 +147,7 @@ export async function compactContext(
   let olderSummary = '';
   if (olderDocs.length > 0) {
     olderSummary = await summarizeOlderContext(
-      deps.model,
-      deps.modelName,
-      deps.maxTokens,
+      deps.subAgent,
       olderDocs.map((d) => d.content),
     );
   }
