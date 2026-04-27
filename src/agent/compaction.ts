@@ -7,6 +7,7 @@
 // 4. Return rebuilt context for the agent to continue with
 
 import type { Message, ModelProvider } from '../model/types.ts';
+import { toolResultContentToString } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from './context.ts';
 
@@ -27,7 +28,7 @@ export function formatConversation(messages: ReadonlyArray<Message>): string {
                 if (block.type === 'text') return block.text;
                 if (block.type === 'image_url') return '[image]';
                 if (block.type === 'tool_use') return `[tool_use: ${block.name}]`;
-                if (block.type === 'tool_result') return `[tool_result: ${block.content?.toString().slice(0, 200) ?? ''}]`;
+                if (block.type === 'tool_result') return `[tool_result: ${toolResultContentToString(block.content).slice(0, 200)}]`;
                 return '';
               })
               .filter(Boolean)

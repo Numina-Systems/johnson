@@ -10,6 +10,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
+import { toolResultContentToString } from './types.ts';
 
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -116,7 +117,7 @@ function convertMessages(
             toolResults.push({
               role: 'tool',
               tool_call_id: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }
@@ -133,7 +134,7 @@ function convertMessages(
           result.push({
             role: 'tool',
             tool_call_id: block.tool_use_id,
-            content: block.content,
+            content: toolResultContentToString(block.content),
           });
         }
       }
