@@ -4,7 +4,8 @@ import type { EmbeddingConfig } from '../config/types.ts';
 import type { EmbeddingProvider } from './types.ts';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
-const CHARS_PER_TOKEN = 3.5;
+// Conservative estimate — code, URLs, and non-Latin text tokenize at fewer chars per token
+const CHARS_PER_TOKEN = 2.5;
 
 function truncateToContext(text: string, contextLength: number): string {
   const maxChars = Math.floor(contextLength * CHARS_PER_TOKEN);

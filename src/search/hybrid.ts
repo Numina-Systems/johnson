@@ -166,11 +166,26 @@ export async function reindexEmbeddings(deps: HybridSearchDeps, model: string): 
   for (let i = 0; i < stale.length; i += BATCH_SIZE) {
     const batch = stale.slice(i, i + BATCH_SIZE);
     const texts = batch.map((entry) => entry.content);
-    const embeddings = await deps.embedding.embedBatch(texts);
 
-    for (let j = 0; j < batch.length; j++) {
-      deps.store.saveEmbedding(batch[j]!.rkey, embeddings[j]!, model);
-      count++;
+    try {
+      const embeddings = await deps.embedding.embedBatch(texts);
+      for (let j = 0; j < batch.length; j++) {
+        deps.store.saveEmbedding(batch[j]!.rkey, embeddings[j]!, model);
+        count++;
+      }
+    } catch {
+      // Batch failed (likely context length) — fall back to one-by-one
+      for (const entry of batch) {
+        try {
+          const [embedding] = await deps.embedding.embedBatch([entry.content]);
+          if (embedding) {
+            deps.store.saveEmbedding(entry.rkey, embedding, model);
+            count++;
+          }
+        } catch {
+          // Skip this document — too large even individually
+        }
+      }
     }
   }
 
