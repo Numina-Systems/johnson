@@ -207,10 +207,18 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
       );
 
       try {
-        const response = await client.chat.send(
-          { chatRequest: { ...chatRequest, stream: false } as any },
-          { fetchOptions: { signal: controller.signal } },
-        ) as ChatResult;
+        let response: ChatResult;
+        try {
+          response = await client.chat.send(
+            { chatRequest: { ...chatRequest, stream: false } as any },
+            { fetchOptions: { signal: controller.signal } },
+          ) as ChatResult;
+        } catch (err: unknown) {
+          const detail = err instanceof Error
+            ? (err as any).body ?? (err as any).rawResponse ?? err.message
+            : err;
+          throw new Error(`OpenRouter API error: ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`);
+        }
 
         const choice = response.choices[0];
         if (!choice) {
