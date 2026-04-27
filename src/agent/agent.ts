@@ -134,9 +134,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     if (needsCompaction(history, systemPrompt, deps.config.contextLimit, deps.config.contextBudget)) {
       const compacted = await compactContext(history, {
         store: deps.store,
-        model: deps.model,
-        modelName: deps.config.model,
-        maxTokens: deps.config.maxTokens,
+        subAgent: deps.subAgent!,
       });
       // Replace history with compacted context + current user message
       const currentMessage = history[history.length - 1];

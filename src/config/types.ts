@@ -11,6 +11,14 @@ export type ModelConfig = {
   readonly reasoning?: ReasoningEffort;
 };
 
+export type SubModelConfig = {
+  readonly provider: 'anthropic' | 'openai-compat' | 'openrouter' | 'ollama' | 'lemonade';
+  readonly name: string;
+  readonly maxTokens: number;
+  readonly baseUrl?: string;
+  readonly apiKey?: string;
+};
+
 export type RuntimeConfig = {
   readonly workingDir: string;
   readonly dataDir?: string;  // protected directory — deny read/write in sandbox
@@ -53,4 +61,5 @@ export type AppConfig = {
   readonly embedding?: EmbeddingConfig;
   readonly discord?: DiscordConfig;
   readonly interface: InterfaceMode;
+  readonly subModel?: SubModelConfig;
 };
