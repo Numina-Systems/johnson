@@ -20,7 +20,7 @@ function mapStopReason(reason: string | null): StopReason {
   }
 }
 
-function mapContentBlock(block: Anthropic.ContentBlock): ContentBlock {
+function mapContentBlock(block: Anthropic.ContentBlock): ContentBlock | null {
   if (block.type === 'text') {
     return { type: 'text', text: block.text };
   }
@@ -31,6 +31,9 @@ function mapContentBlock(block: Anthropic.ContentBlock): ContentBlock {
       name: block.name,
       input: block.input as Record<string, unknown>,
     };
+  }
+  if (block.type === 'thinking' || block.type === 'redacted_thinking') {
+    return null;
   }
   // Fallback: treat unknown block types as text
   return { type: 'text', text: String((block as unknown as Record<string, unknown>)['text'] ?? '') };
@@ -71,7 +74,16 @@ export function createAnthropicProvider(config: Readonly<ModelConfig>): ModelPro
         timeout: request.timeout ?? 120_000,
       });
 
-      const content: Array<ContentBlock> = response.content.map(mapContentBlock);
+      const content: Array<ContentBlock> = response.content
+        .map(mapContentBlock)
+        .filter((b): b is ContentBlock => b !== null);
+
+      const thinkingTexts = response.content
+        .filter((b): b is Anthropic.ThinkingBlock => b.type === 'thinking')
+        .map((b) => b.thinking);
+      const reasoning_content = thinkingTexts.length > 0
+        ? thinkingTexts.join('\n\n')
+        : undefined;
 
       return {
         content,
@@ -86,6 +98,7 @@ export function createAnthropicProvider(config: Readonly<ModelConfig>): ModelPro
             (response.usage as unknown as Record<string, unknown>)['cache_read_input_tokens'] as
               number | null | undefined ?? null,
         },
+        reasoning_content,
       };
     },
   };
