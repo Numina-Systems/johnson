@@ -48,7 +48,7 @@ Full tool reference with all available functions and their parameters is in your
   },
 };
 
-function formatNativeToolResult(
+export function formatNativeToolResult(
   toolUseId: string,
   result: unknown,
 ): ToolResultBlock {

@@ -4,13 +4,14 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAgent } from './agent.ts';
+import { createAgent, formatNativeToolResult } from './agent.ts';
 import type { AgentConfig, AgentDependencies } from './types.ts';
 import type {
   Message,
   ModelProvider,
   ModelRequest,
   ModelResponse,
+  ToolResultContentBlock,
 } from '../model/types.ts';
 import type { CodeRuntime, ExecutionResult } from '../runtime/types.ts';
 import type { Store, DocumentRow, GrantRow } from '../store/store.ts';
@@ -378,5 +379,186 @@ describe('graceful max-iteration exhaustion', () => {
       (m) => m.role === 'user' && m.content === '[System: Max tool calls reached. Provide final response now.]',
     );
     expect(nudgeMessage).toBeDefined();
+  });
+});
+
+describe('agent loop tool dispatch routing', () => {
+  let tmpDir3: string;
+  let personaPath: string;
+
+  beforeAll(() => {
+    tmpDir3 = mkdtempSync(join(tmpdir(), 'gh03-agent-test-'));
+    personaPath = join(tmpDir3, 'persona.md');
+    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir3, { recursive: true, force: true });
+  });
+
+  test('GH03.AC6.1 / GH03.AC11.1: execute_code tool_use dispatches through Deno sandbox runtime', async () => {
+    const runtimeCalls: Array<{ code: string }> = [];
+    const recordingRuntime: CodeRuntime = {
+      async execute(code: string): Promise<ExecutionResult> {
+        runtimeCalls.push({ code });
+        return { success: true, output: 'hello', error: null, duration_ms: 1 };
+      },
+    };
+
+    let callIndex = 0;
+    const responses: ModelResponse[] = [
+      {
+        content: [{ type: 'tool_use', id: 'tu1', name: 'execute_code', input: { code: 'output("hello")' } }],
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+      {
+        content: [{ type: 'text', text: 'Done — got hello.' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 12, output_tokens: 4 },
+      },
+    ];
+
+    const mockModel: ModelProvider = {
+      async complete(_req: Readonly<ModelRequest>): Promise<ModelResponse> {
+        const r = responses[callIndex++];
+        if (!r) throw new Error('Unexpected extra model call');
+        return r;
+      },
+    };
+
+    const deps: AgentDependencies = {
+      model: mockModel,
+      runtime: recordingRuntime,
+      config: makeConfig({ maxToolRounds: 5 }),
+      personaPath,
+      store: createNoopStore(),
+    };
+
+    const agent = createAgent(deps);
+    const result = await agent.chat('please run hello');
+
+    expect(runtimeCalls.length).toBe(1);
+    expect(runtimeCalls[0]?.code).toBe('output("hello")');
+    expect(result.text).toBe('Done — got hello.');
+  });
+
+  test('GH03.AC5.1 / GH03.AC10.1: non-execute_code tool_use bypasses sandbox and goes through registry', async () => {
+    const runtimeCalls: Array<{ code: string }> = [];
+    const recordingRuntime: CodeRuntime = {
+      async execute(code: string): Promise<ExecutionResult> {
+        runtimeCalls.push({ code });
+        return { success: true, output: 'should not happen', error: null, duration_ms: 1 };
+      },
+    };
+
+    const modelCalls: ReadonlyArray<Message>[] = [];
+    let callIndex = 0;
+    const responses: ModelResponse[] = [
+      {
+        content: [{ type: 'tool_use', id: 'tu1', name: 'some_native_tool', input: { x: 1 } }],
+        stop_reason: 'tool_use',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      },
+      {
+        content: [{ type: 'text', text: 'Acknowledged the error.' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 12, output_tokens: 4 },
+      },
+    ];
+
+    const mockModel: ModelProvider = {
+      async complete(req: Readonly<ModelRequest>): Promise<ModelResponse> {
+        modelCalls.push(req.messages);
+        const r = responses[callIndex++];
+        if (!r) throw new Error('Unexpected extra model call');
+        return r;
+      },
+    };
+
+    const deps: AgentDependencies = {
+      model: mockModel,
+      runtime: recordingRuntime,
+      config: makeConfig({ maxToolRounds: 5 }),
+      personaPath,
+      store: createNoopStore(),
+    };
+
+    const agent = createAgent(deps);
+    const result = await agent.chat('call the native tool');
+
+    expect(runtimeCalls.length).toBe(0);
+
+    const secondCallMessages = modelCalls[1];
+    expect(secondCallMessages).toBeDefined();
+
+    const toolResultMsg = secondCallMessages!.find(
+      (m) =>
+        m.role === 'user' &&
+        Array.isArray(m.content) &&
+        m.content.some((b) => b.type === 'tool_result' && b.tool_use_id === 'tu1'),
+    );
+    expect(toolResultMsg).toBeDefined();
+
+    const blocks = toolResultMsg!.content as ReadonlyArray<{
+      type: string;
+      tool_use_id: string;
+      content: unknown;
+      is_error?: boolean;
+    }>;
+    const resultBlock = blocks.find((b) => b.type === 'tool_result' && b.tool_use_id === 'tu1');
+    expect(resultBlock).toBeDefined();
+    expect(resultBlock!.is_error).toBe(true);
+    expect(resultBlock!.content).toContain('Tool error');
+    expect(resultBlock!.content).toContain('Unknown tool: some_native_tool');
+
+    expect(result.text).toBe('Acknowledged the error.');
+  });
+});
+
+describe('formatNativeToolResult', () => {
+  test('string result is used directly as content', () => {
+    const block = formatNativeToolResult('id1', 'hello');
+    expect(block.type).toBe('tool_result');
+    expect(block.tool_use_id).toBe('id1');
+    expect(block.content).toBe('hello');
+    expect(block.is_error).toBeUndefined();
+  });
+
+  test('object result is JSON.stringified', () => {
+    const block = formatNativeToolResult('id1', { key: 'value', n: 7 });
+    expect(block.content).toBe(JSON.stringify({ key: 'value', n: 7 }));
+  });
+
+  test('undefined result is rendered as (no output)', () => {
+    const block = formatNativeToolResult('id1', undefined);
+    expect(block.content).toBe('(no output)');
+  });
+
+  test('image_result with text and image returns array content with text + data URI image block', () => {
+    const block = formatNativeToolResult('id1', {
+      type: 'image_result',
+      text: 'An image',
+      image: { data: 'base64data', media_type: 'image/png' },
+    });
+    expect(Array.isArray(block.content)).toBe(true);
+    const blocks = block.content as ToolResultContentBlock[];
+    expect(blocks.length).toBe(2);
+    expect(blocks[0]).toEqual({ type: 'text', text: 'An image' });
+    expect(blocks[1]).toEqual({
+      type: 'image_url',
+      image_url: { url: 'data:image/png;base64,base64data' },
+    });
+  });
+
+  test('image_result with missing image returns array content with just the text block', () => {
+    const block = formatNativeToolResult('id1', {
+      type: 'image_result',
+      text: 'An image',
+    });
+    expect(Array.isArray(block.content)).toBe(true);
+    const blocks = block.content as ToolResultContentBlock[];
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toEqual({ type: 'text', text: 'An image' });
   });
 });
