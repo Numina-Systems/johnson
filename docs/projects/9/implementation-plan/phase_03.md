@@ -2,7 +2,7 @@
 
 **Goal:** Wire the `view_image` tool's `ImageResult` return value into the agent loop so that image data is formatted as a multi-content `ToolResultBlock` (text + image block) that the model can see.
 
-**Architecture:** Add a `formatNativeToolResult()` helper in `src/agent/agent.ts` that detects `ImageResult` objects and formats them as `ToolResultBlock` with an array content field containing both a text block and an `ImageSourceBlock`. Non-image results stringify normally. This helper is called from the native tool dispatch branch that #3 added.
+**Architecture:** GH03 Phase 3 already added a `formatNativeToolResult()` helper in `src/agent/agent.ts` that handles image results by detecting `type: 'image_result'` and formatting them using `ImageBlock` (`type: 'image_url'` with a data URI). This phase updates that existing helper to use the Anthropic-native `ImageSourceBlock` format (`type: 'image'` with `source.type: 'base64'`) instead of data URIs, which is more efficient and directly supported by the Anthropic API. It also updates `ToolResultContentBlock` in `src/model/types.ts` to include `ImageSourceBlock`. The context trimming logic in `context.ts` is updated to handle array-valued tool result content containing image blocks.
 
 **Tech Stack:** TypeScript, Bun runtime
 
@@ -40,77 +40,47 @@ This phase implements and tests:
 
 **Implementation:**
 
-Add a `formatNativeToolResult` function to `src/agent/agent.ts`. This is a pure function (no side effects) that takes a tool_use ID and the raw result from a native tool handler, and returns a properly formatted `ToolResultBlock`.
+**IMPORTANT — alignment with GH03:** GH03 Phase 3 already created `formatNativeToolResult` in `src/agent/agent.ts`. That version handles image results by wrapping them as `ImageBlock` (`type: 'image_url'` with a `data:` URI). This phase must UPDATE that existing function, not create a second one.
 
-Place it as a module-level function above `createAgent`, since it doesn't need closure state:
+Two changes are needed:
 
+**Change 1: Update `ToolResultContentBlock` in `src/model/types.ts`** to include `ImageSourceBlock`:
+
+GH03 Phase 2 defined:
 ```typescript
-import type { ImageSourceBlock } from '../model/types.ts';
+export type ToolResultContentBlock = TextBlock | ImageBlock;
+```
 
-function isImageResult(value: unknown): value is { type: 'image_result'; text: string; image: { type: 'base64'; media_type: string; data: string } } {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as Record<string, unknown>)['type'] === 'image_result' &&
-    typeof (value as Record<string, unknown>)['text'] === 'string' &&
-    typeof (value as Record<string, unknown>)['image'] === 'object'
-  );
-}
+Update it to:
+```typescript
+export type ToolResultContentBlock = TextBlock | ImageBlock | ImageSourceBlock;
+```
 
-function formatNativeToolResult(toolUseId: string, result: unknown): ToolResultBlock {
-  if (isImageResult(result)) {
-    return {
-      type: 'tool_result',
-      tool_use_id: toolUseId,
-      content: [
-        { type: 'text', text: result.text },
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: result.image.media_type,
-            data: result.image.data,
-          },
-        } satisfies ImageSourceBlock,
-      ],
-    };
-  }
+This allows tool result content arrays to contain the Anthropic-native image format (`type: 'image'` with `source.type: 'base64'`), which is more efficient than data URIs.
 
-  const text = typeof result === 'string' ? result : JSON.stringify(result);
-  return { type: 'tool_result', tool_use_id: toolUseId, content: text };
+**Change 2: Update the image branch in `formatNativeToolResult`** (in `src/agent/agent.ts`). GH03's version wraps images as `{ type: 'image_url', image_url: { url: dataUri } }`. Replace this with the Anthropic-native format:
+
+Replace the image-result branch from:
+```typescript
+if (typeof img.data === 'string' && typeof img.media_type === 'string') {
+  const dataUri = `data:${img.media_type};base64,${img.data}`;
+  blocks.push({ type: 'image_url', image_url: { url: dataUri } });
 }
 ```
 
-Key design decisions:
-- **Type guard over import:** `isImageResult` uses structural duck-typing rather than importing `ImageResult` from `src/tools/image.ts`. This avoids coupling the agent loop to a specific tool module. Any tool that returns `{ type: 'image_result', text, image }` will get image formatting.
-- **`satisfies ImageSourceBlock`:** Ensures the image block conforms to the type at compile time without a runtime cast.
-- **Exported for testing:** Export `formatNativeToolResult` so it can be unit-tested directly. Add `export` to the function declaration.
-
-Then, in the native dispatch branch of the tool loop (added by #3), use `formatNativeToolResult` instead of the default string-based formatting. The #3 native dispatch branch currently looks roughly like:
-
+To:
 ```typescript
-} else {
-  // native tool: dispatch directly through registry
-  const result = await registry.execute(block.name, block.input);
-  const text = typeof result === 'string' ? result : JSON.stringify(result);
-  return { type: 'tool_result', tool_use_id: block.id, content: text };
+if (typeof img.data === 'string' && typeof img.media_type === 'string') {
+  blocks.push({
+    type: 'image',
+    source: { type: 'base64', media_type: img.media_type, data: img.data },
+  });
 }
 ```
 
-Replace the result formatting with:
+This produces `ImageSourceBlock` instead of `ImageBlock`, which the Anthropic API handles natively without the overhead of a base64 data URI wrapper. The `ToolResultContentBlock` union now includes `ImageSourceBlock`, so this is type-safe.
 
-```typescript
-} else {
-  // native tool: dispatch directly through registry
-  try {
-    const result = await registry.execute(block.name, block.input as Record<string, unknown>);
-    return formatNativeToolResult(block.id, result);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { type: 'tool_result', tool_use_id: block.id, content: `Tool error: ${message}`, is_error: true };
-  }
-}
-```
+The native dispatch branch in the agent loop (also from GH03 Phase 3) already uses `formatNativeToolResult` — no changes needed there.
 
 **Verification:**
 

@@ -63,6 +63,14 @@ export type ContentBlock = TextBlock | ImageBlock | ImageSourceBlock | ToolUseBl
 
 Note: `ImageBlock` (existing, `type: 'image_url'`) is for user-sent images via Discord/TUI. `ImageSourceBlock` (new, `type: 'image'`) is for base64 images returned in tool results, matching the Anthropic API's image content block format.
 
+**IMPORTANT — also update `ToolResultContentBlock`:** GH03 Phase 2 introduced `ToolResultContentBlock = TextBlock | ImageBlock` to define what can appear inside array-valued tool result content. This must be updated to include `ImageSourceBlock`:
+
+```typescript
+export type ToolResultContentBlock = TextBlock | ImageBlock | ImageSourceBlock;
+```
+
+Without this, the `formatNativeToolResult` helper (updated in Phase 3) will produce a type error when it creates `ImageSourceBlock` entries in tool result content arrays.
+
 **Verification:**
 
 ```bash
