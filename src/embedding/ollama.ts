@@ -4,16 +4,28 @@ import type { EmbeddingConfig } from '../config/types.ts';
 import type { EmbeddingProvider } from './types.ts';
 
 const DEFAULT_ENDPOINT = 'http://localhost:11434';
+const CHARS_PER_TOKEN = 3.5;
+
+function truncateToContext(text: string, contextLength: number): string {
+  const maxChars = Math.floor(contextLength * CHARS_PER_TOKEN);
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars);
+}
 
 export function createOllamaEmbedding(config: Readonly<EmbeddingConfig>): EmbeddingProvider {
   const endpoint = config.endpoint ?? DEFAULT_ENDPOINT;
   const url = `${endpoint}/api/embed`;
+  const contextLength = config.contextLength;
 
   async function requestEmbeddings(input: string | ReadonlyArray<string>): Promise<Array<Array<number>>> {
+    const truncated = typeof input === 'string'
+      ? truncateToContext(input, contextLength)
+      : input.map((t) => truncateToContext(t, contextLength));
+
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: config.model, input }),
+      body: JSON.stringify({ model: config.model, input: truncated }),
     });
 
     if (!response.ok) {

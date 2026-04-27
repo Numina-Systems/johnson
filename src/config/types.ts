@@ -31,6 +31,7 @@ export type EmbeddingConfig = {
   readonly model: string;
   readonly endpoint?: string;
   readonly dimensions: number;
+  readonly contextLength: number;
 };
 
 export type DiscordConfig = {
