@@ -59,10 +59,18 @@ export type ChatImage = {
   filename?: string;
 };
 
+export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done';
+
+export type AgentEvent = {
+  readonly kind: AgentEventKind;
+  readonly data: Record<string, unknown>;
+};
+
 export type ChatOptions = {
   readonly context?: ChatContext;
   readonly images?: ChatImage[];
   readonly conversationOverride?: Array<Message>;
+  readonly onEvent?: (event: AgentEvent) => Promise<void>;
 };
 
 export type Agent = {

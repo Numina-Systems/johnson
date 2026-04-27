@@ -8,7 +8,7 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
-import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions } from './types.ts';
+import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind } from './types.ts';
 import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
@@ -71,6 +71,14 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
   async function _chatImpl(userMessage: string, options?: ChatOptions): Promise<ChatResult> {
     const chatStart = performance.now();
+    const emit = async (kind: AgentEventKind, data: Record<string, unknown>): Promise<void> => {
+      if (!options?.onEvent) return;
+      try {
+        await options.onEvent({ kind, data });
+      } catch (err) {
+        process.stderr.write(`[agent] event callback error (${kind}): ${err}\n`);
+      }
+    };
     currentContext = options?.context ?? {};
     const images = options?.images;
 
@@ -149,6 +157,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
       let response;
       try {
+        await emit('llm_start', { round });
         response = await deps.model.complete({
           system: systemPrompt,
           messages: history,
@@ -169,6 +178,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       rounds++;
       totalInputTokens += response.usage.input_tokens;
       totalOutputTokens += response.usage.output_tokens;
+
+      await emit('llm_done', { round, usage: response.usage, stop_reason: response.stop_reason });
 
       const toolBlocks = response.content.filter(b => b.type === 'tool_use').length;
       const textBlocks = response.content.filter(b => b.type === 'text').length;
@@ -210,12 +221,15 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
                   return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
                 }
 
+                await emit('tool_start', { tool: 'execute_code', code: code.slice(0, 500) });
+
                 // IPC callback: dispatch tool calls from the sandbox through the registry
                 const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
                   return registry.execute(name, params);
                 };
 
                 const result = await deps.runtime.execute(code, undefined, onToolCall);
+                await emit('tool_done', { tool: 'execute_code', success: result.success, preview: (result.output ?? '').slice(0, 200) });
                 const output = result.success
                   ? result.output || '(no output)'
                   : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
