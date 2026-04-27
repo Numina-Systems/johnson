@@ -175,6 +175,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
+      if (response.reasoning_content) {
+        assistantMessage.reasoning_content = response.reasoning_content;
+      }
       history.push(assistantMessage);
 
       // Check stop reason
