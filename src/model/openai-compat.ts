@@ -228,6 +228,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
   }
 
   const endpoint = baseUrl.replace(/\/+$/, '') + '/chat/completions';
+  const isOpenRouter = baseUrl.includes('openrouter.ai');
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
@@ -243,6 +244,10 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
       if (request.temperature !== undefined) {
         body.temperature = request.temperature;
+      }
+
+      if (isOpenRouter) {
+        body.reasoning = { enabled: false };
       }
 
       const headers: Record<string, string> = {
