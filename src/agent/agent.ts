@@ -169,12 +169,17 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       totalInputTokens += response.usage.input_tokens;
       totalOutputTokens += response.usage.output_tokens;
 
+      const toolBlocks = response.content.filter(b => b.type === 'tool_use').length;
+      const textBlocks = response.content.filter(b => b.type === 'text').length;
+      process.stderr.write(`[agent] round=${round} stop_reason=${response.stop_reason} content_blocks=${response.content.length} tool_use=${toolBlocks} text=${textBlocks}\n`);
+
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
       history.push(assistantMessage);
 
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
+        process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
         break;
       }
 
