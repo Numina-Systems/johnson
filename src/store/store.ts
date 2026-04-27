@@ -53,11 +53,13 @@ export interface Store {
 
   // Sessions
   createSession(id: string, title?: string): void;
+  ensureSession(id: string, title?: string): void;
   getSession(id: string): { id: string; title: string | null; createdAt: string; updatedAt: string } | null;
   listSessions(limit?: number): Array<{ id: string; title: string | null; updatedAt: string }>;
   updateSessionTitle(id: string, title: string): void;
   appendMessage(sessionId: string, role: string, content: string): void;
   getMessages(sessionId: string, limit?: number): Array<{ role: string; content: string; createdAt: string }>;
+  clearMessages(sessionId: string): void;
 
   // Tasks
   saveTask(task: {
@@ -280,6 +282,12 @@ export function createStore(dbPath: string): Store {
   const stmtGetMessages = db.prepare(
     `SELECT role, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ?`,
   );
+  const stmtEnsureSession = db.prepare(
+    `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+  );
+  const stmtClearMessages = db.prepare(
+    `DELETE FROM messages WHERE session_id = ?`,
+  );
 
   // Tasks
   const stmtSaveTask = db.prepare(
@@ -385,6 +393,11 @@ export function createStore(dbPath: string): Store {
       stmtCreateSession.run(id, title ?? null, now, now);
     },
 
+    ensureSession(id: string, title?: string): void {
+      const now = iso();
+      stmtEnsureSession.run(id, title ?? null, now, now);
+    },
+
     getSession(id: string): { id: string; title: string | null; createdAt: string; updatedAt: string } | null {
       const row = stmtGetSession.get(id) as any | null;
       if (!row) return null;
@@ -409,6 +422,10 @@ export function createStore(dbPath: string): Store {
     getMessages(sessionId: string, limit = 200): Array<{ role: string; content: string; createdAt: string }> {
       const rows = stmtGetMessages.all(sessionId, limit) as Array<{ role: string; content: string; created_at: string }>;
       return rows.map((r) => ({ role: r.role, content: r.content, createdAt: r.created_at }));
+    },
+
+    clearMessages(sessionId: string): void {
+      stmtClearMessages.run(sessionId);
     },
 
     // ── Tasks ─────────────────────────────────────────────────────

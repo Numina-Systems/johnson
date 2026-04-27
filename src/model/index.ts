@@ -25,6 +25,12 @@ export function createModelProvider(config: Readonly<ModelConfig>): ModelProvide
         baseUrl: config.baseUrl ?? 'http://localhost:13305/api/v1',
         apiKey: config.apiKey ?? 'lemonade',
       });
+    case 'openrouter':
+      return createOpenAICompatProvider({
+        ...config,
+        provider: 'openai-compat',
+        baseUrl: config.baseUrl ?? 'https://openrouter.ai/api/v1',
+      });
     default:
       throw new Error(`Unknown model provider: ${(config as Record<string, unknown>).provider}`);
   }

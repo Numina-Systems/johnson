@@ -1,7 +1,7 @@
 // pattern: Functional Core
 
 export type ModelConfig = {
-  readonly provider: 'anthropic' | 'openai-compat' | 'ollama' | 'lemonade';
+  readonly provider: 'anthropic' | 'openai-compat' | 'ollama' | 'lemonade' | 'openrouter';
   readonly name: string;
   readonly maxTokens: number;
   readonly baseUrl?: string;

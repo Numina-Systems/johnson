@@ -14,6 +14,7 @@ import { dirname } from "node:path";
 import { Cron } from "croner";
 import type { ScheduledTask, TaskRun, TaskState, TaskStore } from "./types.ts";
 import type { Agent, ChatContext } from "../agent/types.ts";
+import { loadConversation } from "../agent/messages.ts";
 import type { CodeRuntime } from "../runtime/types.ts";
 import type { Store } from "../store/store.ts";
 import type { SecretManager } from "../secrets/manager.ts";
@@ -29,11 +30,11 @@ type AgentFactory = () => Agent;
 type DiscordSender = (channelId: string, message: string) => Promise<void>;
 
 type SchedulerDeps = {
-  readonly createAgent: AgentFactory;
+  readonly agent: Agent;
   readonly persistPath: string;
   readonly sendDiscord?: DiscordSender;
   readonly runtime?: CodeRuntime; // needed for triggers
-  readonly store?: Store; // needed to look up skill grant status/secrets
+  readonly store?: Store; // needed to look up skill grant status/secrets + persistent sessions
   readonly secrets?: SecretManager; // needed to resolve secret values for triggers
 };
 
@@ -177,6 +178,9 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
           log(
             `[scheduler] Trigger for "${live.state.name}" returned empty — skipping`,
           );
+          if (result.error) {
+            log(`[scheduler] Trigger stderr: ${result.error.slice(0, 2000)}`);
+          }
           live.running = false;
           return;
         }
@@ -184,17 +188,33 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
         triggerData = trimmed;
       }
 
-      // Phase 2: Fire prompt through agent
-      const agent = deps.createAgent();
+      // Phase 2: Fire prompt through agent with persistent session
+      const sessionId = `task:${live.state.id}`;
       const context: ChatContext = { channelId: live.state.deliverTo };
 
       const prompt = triggerData
         ? `Context from trigger:\n${triggerData}\n\n${live.state.prompt}`
         : live.state.prompt;
 
-      const result = await agent.chat(prompt, context);
+      // Load run-to-run conversation history for this task
+      let history: import("../model/types.ts").Message[] = [];
+      if (deps.store) {
+        deps.store.ensureSession(sessionId, live.state.name);
+        history = loadConversation(deps.store, sessionId);
+        deps.store.appendMessage(sessionId, 'user', prompt);
+      }
+
+      const result = await deps.agent.chat(prompt, {
+        context,
+        conversationOverride: history,
+      });
       output = result.text;
       success = true;
+
+      // Save agent response for run-to-run memory
+      if (deps.store) {
+        deps.store.appendMessage(sessionId, 'assistant', output);
+      }
     } catch (err) {
       output = `Error: ${err instanceof Error ? err.message : String(err)}`;
       success = false;

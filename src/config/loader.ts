@@ -42,6 +42,7 @@ function resolveApiKey(provider: string, explicit: string | undefined): string |
   if (provider === 'anthropic') return process.env['ANTHROPIC_API_KEY'];
   if (provider === 'openai-compat') return process.env['OPENAI_COMPAT_API_KEY'];
   if (provider === 'lemonade') return process.env['LEMONADE_API_KEY'] ?? 'lemonade';
+  if (provider === 'openrouter') return process.env['OPENROUTER_API_KEY'];
   return undefined;
 }
 
@@ -50,6 +51,7 @@ function resolveBaseUrl(provider: string, explicit: string | undefined): string 
   if (provider === 'openai-compat') return process.env['OPENAI_COMPAT_BASE_URL'];
   if (provider === 'ollama') return process.env['OLLAMA_BASE_URL'];
   if (provider === 'lemonade') return process.env['LEMONADE_BASE_URL'];
+  if (provider === 'openrouter') return 'https://openrouter.ai/api/v1';
   return undefined;
 }
 

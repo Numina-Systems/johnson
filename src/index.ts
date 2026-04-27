@@ -18,7 +18,7 @@ import { createStore } from './store/store.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
 import { createDiscordBot } from './discord/index.ts';
-import type { Agent } from './agent/types.ts';
+import type { Agent, AgentDependencies } from './agent/types.ts';
 import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
 import { log } from './util/log.ts';
@@ -70,54 +70,56 @@ async function main(): Promise<void> {
   let bot: ReturnType<typeof createDiscordBot> | undefined;
   let sendDiscord: ((channelId: string, message: string) => Promise<void>) | undefined;
 
+  // Shared agent for Discord + scheduler.
+  // Persistent session history is passed via conversationOverride on each chat() call.
+  // Note: scheduler is wired in below via agentDeps — the agent reads it at tool-call time,
+  // not at construction, so the late binding is safe.
+  const agentDeps: AgentDependencies = {
+    model,
+    runtime,
+    config: {
+      model: config.model.name,
+      maxTokens: config.model.maxTokens,
+      maxToolRounds: config.agent.maxToolRounds,
+      contextBudget: config.agent.contextBudget,
+      contextLimit: config.agent.contextLimit,
+      modelTimeout: config.agent.modelTimeout,
+      timezone: config.agent.timezone,
+    },
+    personaPath: PERSONA_PATH,
+    embedding,
+    get scheduler() { return scheduler; },
+    store,
+    secrets,
+  };
+  const sharedAgent = createAgent(agentDeps);
+
   // Scheduler — always created, Discord delivery wired in after bot starts
   const scheduler: TaskStore = createScheduler({
-    createAgent: makeAgent,
+    agent: sharedAgent,
     persistPath: TASKS_PATH,
     get sendDiscord() { return sendDiscord; },
     runtime,       // for trigger execution
-    store,         // for skill lookup
+    store,         // for skill lookup + persistent sessions
     secrets,       // for trigger secret resolution
   });
-
-  // Agent factory — creates a fresh agent with shared deps.
-  // Each agent holds its own conversation history.
-  function makeAgent(): Agent {
-    return createAgent({
-      model,
-      runtime,
-      config: {
-        model: config.model.name,
-        maxTokens: config.model.maxTokens,
-        maxToolRounds: config.agent.maxToolRounds,
-        contextBudget: config.agent.contextBudget,
-        contextLimit: config.agent.contextLimit,
-        modelTimeout: config.agent.modelTimeout,
-        timezone: config.agent.timezone,
-      },
-      personaPath: PERSONA_PATH,
-      embedding,
-      scheduler,
-      store,
-      secrets,
-    });
-  }
 
   const modelName = `${config.model.provider}/${config.model.name}`;
   const mode = config.interface;
 
   // Launch interface(s)
   if (mode === 'tui' || mode === 'both') {
-    const agent = makeAgent();
-    startTUI({ agent, modelName, store, secrets });
+    // TUI gets its own agent with in-memory history (no conversationOverride needed)
+    const tuiAgent = createAgent({ ...agentDeps, scheduler });
+    startTUI({ agent: tuiAgent, modelName, store, secrets });
   }
 
   if (mode === 'discord' || mode === 'both') {
     if (!config.discord) {
-      log('�� Discord interface requested but no [discord] config or DISCORD_BOT_TOKEN found.');
+      log('⚠ Discord interface requested but no [discord] config or DISCORD_BOT_TOKEN found.');
       if (mode === 'discord') process.exit(1);
     } else {
-      bot = createDiscordBot(config.discord, makeAgent);
+      bot = createDiscordBot(config.discord, sharedAgent, store);
       await bot.start();
 
       // Wire up Discord delivery for the scheduler

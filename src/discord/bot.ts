@@ -11,7 +11,9 @@ import {
   type ThreadChannel,
 } from 'discord.js';
 import type { DiscordConfig } from '../config/types.ts';
-import type { Agent, ChatImage, ChatResult } from '../agent/types.ts';
+import type { Agent, ChatImage } from '../agent/types.ts';
+import type { Store } from '../store/store.ts';
+import { loadConversation } from '../agent/messages.ts';
 import { formatStats } from '../agent/format-stats.ts';
 
 type AgentFactory = () => Agent;
@@ -94,7 +96,8 @@ function splitMessage(text: string): Array<string> {
 
 export function createDiscordBot(
   config: Readonly<DiscordConfig>,
-  createAgent: AgentFactory,
+  agent: Agent,
+  store: Store,
 ): { start(): Promise<void>; stop(): void; sendToChannel(channelId: string, message: string): Promise<void> } {
   const client = new Client({
     intents: [
@@ -105,9 +108,6 @@ export function createDiscordBot(
     ],
     partials: [Partials.Channel, Partials.Message, Partials.User],
   });
-
-  // Per-channel/thread agent instances (keyed by channel/thread ID)
-  const agents = new Map<string, Agent>();
 
   // Track which threads we've created (thread ID → parent channel ID)
   const managedThreads = new Set<string>();
@@ -121,15 +121,6 @@ export function createDiscordBot(
   const allowedUsers = config.allowedUsers && config.allowedUsers.length > 0
     ? new Set(config.allowedUsers)
     : null;
-
-  function getAgent(channelId: string): Agent {
-    let agent = agents.get(channelId);
-    if (!agent) {
-      agent = createAgent();
-      agents.set(channelId, agent);
-    }
-    return agent;
-  }
 
   /**
    * Process an incoming message. Works for both discord.js Message objects
@@ -166,17 +157,17 @@ export function createDiscordBot(
 
     // Handle reset command
     if (processed === 'reset') {
-      const agent = agents.get(channelId);
-      if (agent) {
-        agent.reset();
-        agents.delete(channelId);
-      }
+      store.clearMessages(channelId);
       await reply('🔄 Conversation reset.');
       return;
     }
 
-    // Run through agent
-    const agent = getAgent(channelId);
+    // Ensure session exists and load conversation history
+    store.ensureSession(channelId);
+    const history = loadConversation(store, channelId);
+
+    // Save user message to DB (before calling agent — for persistence)
+    store.appendMessage(channelId, 'user', content);
 
     // Send typing indicator
     try {
@@ -195,8 +186,16 @@ export function createDiscordBot(
         } catch { /* ignore */ }
       }, 8_000);
 
-      const result = await agent.chat(processed, { channelId }, images);
+      const result = await agent.chat(processed, {
+        context: { channelId },
+        images,
+        conversationOverride: history,
+      });
       const response = result.text;
+
+      // Save assistant response to DB
+      store.appendMessage(channelId, 'assistant', response);
+
       const statsLine = `-# ${formatStats(result.stats)}`;
 
       const chunks = splitMessage(response || '(no response)');

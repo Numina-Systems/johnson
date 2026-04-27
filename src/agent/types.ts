@@ -59,7 +59,13 @@ export type ChatImage = {
   filename?: string;
 };
 
+export type ChatOptions = {
+  readonly context?: ChatContext;
+  readonly images?: ChatImage[];
+  readonly conversationOverride?: Array<Message>;
+};
+
 export type Agent = {
-  chat(userMessage: string, context?: ChatContext, images?: ChatImage[]): Promise<ChatResult>;
+  chat(userMessage: string, options?: ChatOptions): Promise<ChatResult>;
   reset(): void;
 };
