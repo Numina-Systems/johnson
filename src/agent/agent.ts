@@ -145,6 +145,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     }
 
     // e. Tool loop
+    let nudgeCount = 0;
+    const MAX_NUDGES = 2;
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
       let response;
       try {
@@ -179,6 +181,21 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
+        // If the model narrates intent after a tool result instead of acting,
+        // nudge it to continue. Only nudge once to avoid infinite loops.
+        const prevMsg = history.length >= 2 ? history[history.length - 2] : null;
+        const prevWasToolResult = prevMsg?.role === 'user' &&
+          Array.isArray(prevMsg.content) &&
+          prevMsg.content.some(b => b.type === 'tool_result');
+        const hasTextOnly = toolBlocks === 0 && textBlocks > 0;
+
+        if (prevWasToolResult && hasTextOnly && nudgeCount < MAX_NUDGES) {
+          nudgeCount++;
+          process.stderr.write(`[agent] nudging (${nudgeCount}/${MAX_NUDGES}): model narrated after tool result\n`);
+          history.push({ role: 'user', content: 'Continue — execute the code now via execute_code. Do not explain what you plan to do, just do it.' });
+          continue;
+        }
+
         process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
         break;
       }
