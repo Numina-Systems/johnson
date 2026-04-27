@@ -4,6 +4,7 @@ import type { Agent } from '../agent/types.ts';
 import type { Store } from '../store/store.ts';
 import type { SecretManager } from '../secrets/manager.ts';
 import type { TaskStore } from '../scheduler/types.ts';
+import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
 
 // Screen identifiers for stack-based navigation.
 export type Screen = 'sessions' | 'chat' | 'tools' | 'secrets' | 'schedules' | 'prompt';
@@ -15,12 +16,9 @@ export type TuiDependencies = {
   readonly store: Store;
   readonly secrets?: SecretManager;
   readonly scheduler?: TaskStore;
-  readonly customTools?: {
-    listTools(): Array<{ name: string; description: string; approved: boolean }>;
-    approveTool(name: string): void;
-    revokeTool(name: string): void;
-  };
+  readonly customTools?: CustomToolManager;
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
+  readonly toolDocs?: string;
   readonly builtinTools?: ReadonlyArray<{ name: string; description: string }>;
   readonly personaPath?: string;
   readonly timezone?: string;

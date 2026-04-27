@@ -346,7 +346,7 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
         log(`[scheduler] Disabled "${live.state.name}"`);
       }
 
-      persist().catch(() => {});
+      persist().catch((err) => process.stderr.write('[scheduler] persist failed: ' + String(err) + '\n'));
       return true;
     },
 

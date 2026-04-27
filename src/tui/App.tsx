@@ -28,19 +28,32 @@ export default function App(deps: AppProps): React.ReactElement {
   }, []);
 
   const getSystemPrompt = useCallback(async (): Promise<string> => {
+    let prompt: string;
     if (deps.systemPromptProvider) {
-      return deps.systemPromptProvider('');
-    }
-    if (!deps.personaPath || !deps.timezone) {
+      prompt = await deps.systemPromptProvider(deps.toolDocs ?? '');
+    } else if (!deps.personaPath || !deps.timezone) {
       return 'System prompt unavailable: personaPath/timezone not provided.';
+    } else {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter((d) => d.rkey.startsWith('skill:'))
+        .map((d) => d.rkey);
+      prompt = buildSystemPrompt(persona, coreMemory, skillNames, deps.toolDocs ?? '', deps.timezone);
     }
-    const persona = await Bun.file(deps.personaPath).text();
-    const coreMemory = loadCoreMemoryFromStore(deps.store);
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter((d) => d.rkey.startsWith('skill:'))
-      .map((d) => d.rkey);
-    return buildSystemPrompt(persona, coreMemory, skillNames, '', deps.timezone);
+
+    if (deps.customTools) {
+      const summaries = deps.customTools.getApprovedToolSummaries();
+      if (summaries.length > 0) {
+        const listing = summaries
+          .map((s) => `- **${s.name}** — ${s.description}`)
+          .join('\n');
+        prompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
+      }
+    }
+
+    return prompt;
   }, [deps]);
 
   // Ctrl+C fallback (always active)

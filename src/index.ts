@@ -143,6 +143,7 @@ async function main(): Promise<void> {
       name: t.name,
       description: t.definition.description.split('\n')[0] ?? '',
     }));
+    const toolDocs = tuiRegistry.generateToolDocumentation();
     startTUI({
       agent: tuiAgent,
       modelName,
@@ -151,6 +152,7 @@ async function main(): Promise<void> {
       scheduler,
       customTools,
       systemPromptProvider,
+      toolDocs,
       builtinTools,
       personaPath: PERSONA_PATH,
       timezone: config.agent.timezone,

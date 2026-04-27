@@ -211,9 +211,10 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // Handle context overflow via compaction
     if (needsCompaction(history, systemPrompt, deps.config.contextLimit, deps.config.contextBudget)) {
+      if (!deps.subAgent) throw new Error('subAgent required for compaction');
       const compacted = await compactContext(history, {
         store: deps.store,
-        subAgent: deps.subAgent!,
+        subAgent: deps.subAgent,
       });
       // Replace history with compacted context + current user message
       const currentMessage = history[history.length - 1];
