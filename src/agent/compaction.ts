@@ -16,7 +16,7 @@ const RECENT_NOTES_COUNT = 3;
 /**
  * Format a conversation history as readable markdown.
  */
-function formatConversation(messages: ReadonlyArray<Message>): string {
+export function formatConversation(messages: ReadonlyArray<Message>): string {
   return messages
     .map((msg) => {
       const content =
@@ -32,7 +32,13 @@ function formatConversation(messages: ReadonlyArray<Message>): string {
               })
               .filter(Boolean)
               .join('\n');
-      return `### ${msg.role}\n${content}`;
+
+      const sections: string[] = [];
+      if (msg.reasoning_content) {
+        sections.push(`### ${msg.role} (reasoning)\n${msg.reasoning_content}`);
+      }
+      sections.push(`### ${msg.role}\n${content}`);
+      return sections.join('\n\n');
     })
     .join('\n\n');
 }
