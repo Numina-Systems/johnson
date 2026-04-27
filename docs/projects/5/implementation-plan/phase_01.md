@@ -49,27 +49,21 @@ This phase implements and tests:
 **Verifies:** GH05.AC6.1
 
 **Files:**
-- Create: `src/agent/sub-agent-types.ts`
 - Modify: `src/agent/types.ts:62-66`
 
 **Implementation:**
 
-Create `src/agent/sub-agent-types.ts` — a minimal type contract for the sub-agent LLM. This is the interface that #4 (Sub-Agent LLM) will implement. We define it here so #5 can program against it without waiting for #4.
+**IMPORTANT — SubAgentLLM type alignment with GH04:** Do NOT create a separate `src/agent/sub-agent-types.ts` file. GH04 (Sub-Agent LLM) defines and exports `SubAgentLLM` from `src/model/sub-agent.ts` with the exact same signature: `complete(prompt: string, system?: string): Promise<string>`. GH04 also adds `subAgent?: SubAgentLLM` to `AgentDependencies` in its Phase 3.
 
-```typescript
-// pattern: Functional Core
+Since GH05 depends on GH04 (per the DAG: `#5 → #4`), the `SubAgentLLM` type and the `subAgent` field on `AgentDependencies` will already exist when GH05 is implemented. Do NOT duplicate these definitions.
 
-/**
- * Minimal sub-agent LLM interface.
- * A lightweight model for auxiliary tasks (title generation, summarization).
- * Full implementation provided by #4 (Sub-Agent LLM).
- */
-export type SubAgentLLM = {
-  complete(prompt: string, system?: string): Promise<string>;
-};
-```
+**What GH05 Task 1 actually needs to do:**
 
-Then update `ChatOptions` in `src/agent/types.ts` to add `sessionId`:
+1. Verify that `SubAgentLLM` is exported from `src/model/sub-agent.ts` (added by GH04)
+2. Verify that `AgentDependencies` already has `subAgent?: SubAgentLLM` (added by GH04 Phase 3)
+3. Only add `sessionId` to `ChatOptions`
+
+Update `ChatOptions` in `src/agent/types.ts` to add `sessionId`:
 
 Current (lines 62-66):
 ```typescript
@@ -90,41 +84,7 @@ export type ChatOptions = {
 };
 ```
 
-Also add `subAgent` to `AgentDependencies` in the same file (lines 36-46):
-
-Current:
-```typescript
-export type AgentDependencies = {
-  readonly model: ModelProvider;
-  readonly runtime: CodeRuntime;
-  readonly config: AgentConfig;
-  readonly personaPath: string;
-  readonly embedding?: EmbeddingProvider;
-  readonly vectorStore?: VectorStore;
-  readonly scheduler?: TaskStore;
-  readonly store: Store;
-  readonly secrets?: SecretManager;
-};
-```
-
-Updated (add import + field):
-```typescript
-import type { SubAgentLLM } from './sub-agent-types.ts';
-// ... existing imports ...
-
-export type AgentDependencies = {
-  readonly model: ModelProvider;
-  readonly runtime: CodeRuntime;
-  readonly config: AgentConfig;
-  readonly personaPath: string;
-  readonly embedding?: EmbeddingProvider;
-  readonly vectorStore?: VectorStore;
-  readonly scheduler?: TaskStore;
-  readonly store: Store;
-  readonly secrets?: SecretManager;
-  readonly subAgent?: SubAgentLLM;
-};
-```
+No changes to `AgentDependencies` — GH04 Phase 3 already adds the `subAgent` field.
 
 **Verification:**
 Run: `bunx tsc --noEmit`
@@ -149,7 +109,7 @@ Create `src/agent/session-title.ts` with the `maybeGenerateSessionTitle` functio
 // pattern: Imperative Shell — async coordination with sub-agent and store
 
 import type { Store } from '../store/store.ts';
-import type { SubAgentLLM } from './sub-agent-types.ts';
+import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { Message } from '../model/types.ts';
 
 const MAX_MESSAGES = 10;
