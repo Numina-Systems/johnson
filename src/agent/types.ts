@@ -65,6 +65,7 @@ export type ChatOptions = {
   readonly context?: ChatContext;
   readonly images?: ChatImage[];
   readonly conversationOverride?: Array<Message>;
+  readonly sessionId?: string;
 };
 
 export type Agent = {
