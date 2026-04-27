@@ -76,6 +76,7 @@ export function loadConfig(configPath: string): AppConfig {
     maxTokens: pick(raw.model, 'maxTokens', DEFAULT_MODEL.maxTokens),
     apiKey: resolveApiKey(provider, pick(raw.model, 'apiKey', undefined)),
     baseUrl: resolveBaseUrl(provider, pick(raw.model, 'baseUrl', undefined)),
+    reasoning: pick(raw.model, 'reasoning', undefined),
   };
 
   const rawWorkingDir = pick(raw.runtime, 'workingDir', DEFAULT_RUNTIME.workingDir);

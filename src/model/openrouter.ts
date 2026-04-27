@@ -179,6 +179,7 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
   }
 
   const client = new OpenRouter({ apiKey });
+  const reasoningEffort = config.reasoning ?? 'none';
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
@@ -188,7 +189,7 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
         model: request.model,
         messages,
         maxTokens: request.max_tokens,
-        reasoning: { effort: 'none' },
+        reasoning: { effort: reasoningEffort },
       };
 
       if (request.tools && request.tools.length > 0) {

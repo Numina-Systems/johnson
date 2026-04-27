@@ -1,11 +1,14 @@
 // pattern: Functional Core
 
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
+
 export type ModelConfig = {
   readonly provider: 'anthropic' | 'openai-compat' | 'ollama' | 'lemonade' | 'openrouter';
   readonly name: string;
   readonly maxTokens: number;
   readonly baseUrl?: string;
   readonly apiKey?: string;
+  readonly reasoning?: ReasoningEffort;
 };
 
 export type RuntimeConfig = {
