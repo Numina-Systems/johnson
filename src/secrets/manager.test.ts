@@ -40,6 +40,7 @@ describe('SecretManager', () => {
     await mgr.set('X', 'Y');
     const result = mgr.remove('X');
     expect(result).toBeInstanceOf(Promise);
+    await result;
   });
 
   test('get() retrieves a previously set value', async () => {
@@ -120,11 +121,12 @@ describe('SecretManager', () => {
     expect(data).toEqual({ DEEP: 'value' });
   });
 
-  test('ignoring returned promise does not throw (backward compat)', () => {
+  test('ignoring returned promise does not throw (backward compat)', async () => {
     const mgr = createSecretManager(TEST_PATH);
-    // Existing callers call set()/remove() without await — this must not throw
-    mgr.set('IGNORED', 'promise');
-    mgr.remove('IGNORED');
-    // If we get here without error, backward compat is satisfied
+    // Existing callers call set()/remove() without await — this must not throw synchronously
+    const p1 = mgr.set('IGNORED', 'promise');
+    const p2 = mgr.remove('IGNORED');
+    await p1;
+    await p2;
   });
 });
