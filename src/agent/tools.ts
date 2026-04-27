@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
+import { registerNotifyTools } from '../tools/notify.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -323,6 +324,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       return `✅ Task ${id} cancelled.`;
     },
   );
+
+  // ── Notification tools ───────────────────────────────────────────────────
+  registerNotifyTools(registry, deps);
 
   return registry;
 }

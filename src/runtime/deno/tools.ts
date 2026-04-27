@@ -40,3 +40,8 @@ export async function list_tasks(params: Record<string, unknown>): Promise<unkno
 export async function cancel_task(params: { id: string }): Promise<unknown> {
   return callTool("cancel_task", params);
 }
+
+/** Send a message to Discord via webhook. Requires DISCORD_WEBHOOK_URL secret. If title is provided, sends as a rich embed; otherwise sends as a plain message. Content is truncated to 2000 characters. */
+export async function notify_discord(params: { content: string; title?: string }): Promise<unknown> {
+  return callTool("notify_discord", params);
+}
