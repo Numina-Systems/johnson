@@ -52,7 +52,7 @@ export function buildSystemPrompt(
   }
 
   if (toolDocs) {
-    sections.push('\n\n## `tools` Namespace Reference\n\nThe following methods are available on the `tools` object **only inside TypeScript code you run via `execute_code`.** They are NOT callable as top-level functions. To use any of these, emit an `execute_code` tool call with TypeScript that does `await tools.<method>({...})`.\n');
+    sections.push('\n\n## Tool Reference\n\nTools marked with `tools.<name>` are available **only inside TypeScript code you run via `execute_code`.** Call them as `await tools.<method>({...})`. Tools marked *(direct tool call)* are called directly — do NOT use execute_code for those.\n');
     sections.push(toolDocs);
   }
 

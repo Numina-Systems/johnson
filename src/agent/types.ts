@@ -43,6 +43,7 @@ export type AgentDependencies = {
   readonly scheduler?: TaskStore;
   readonly store: Store;
   readonly secrets?: SecretManager;
+  readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
 };
 
 export type ConversationTurn = {

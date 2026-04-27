@@ -5,6 +5,7 @@ import type {
   Message,
   ToolUseBlock,
   ToolResultBlock,
+  ToolResultContentBlock,
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
@@ -47,9 +48,48 @@ Full tool reference with all available functions and their parameters is in your
   },
 };
 
+export function formatNativeToolResult(
+  toolUseId: string,
+  result: unknown,
+): ToolResultBlock {
+  if (typeof result === 'string') {
+    return { type: 'tool_result', tool_use_id: toolUseId, content: result };
+  }
+
+  if (
+    result !== null &&
+    typeof result === 'object' &&
+    'type' in result &&
+    (result as Record<string, unknown>).type === 'image_result'
+  ) {
+    const r = result as Record<string, unknown>;
+    const blocks: Array<ToolResultContentBlock> = [];
+
+    if (typeof r.text === 'string') {
+      blocks.push({ type: 'text', text: r.text });
+    }
+
+    if (r.image && typeof r.image === 'object') {
+      const img = r.image as Record<string, unknown>;
+      if (typeof img.data === 'string' && typeof img.media_type === 'string') {
+        const dataUri = `data:${img.media_type};base64,${img.data}`;
+        blocks.push({ type: 'image_url', image_url: { url: dataUri } });
+      }
+    }
+
+    if (blocks.length > 0) {
+      return { type: 'tool_result', tool_use_id: toolUseId, content: blocks };
+    }
+  }
+
+  const serialized = typeof result === 'undefined' ? '(no output)' : JSON.stringify(result);
+  return { type: 'tool_result', tool_use_id: toolUseId, content: serialized };
+}
+
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
+  let cachedSystemPrompt = '';
 
   // Serialize all chat() calls — history is shared mutable state.
   // Without this lock, a Discord message arriving during a TUI chat's
@@ -92,18 +132,28 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Generate tool docs for system prompt
     const toolDocs = registry.generateToolDocumentation();
 
-    // a. Read persona
-    const persona = await Bun.file(deps.personaPath).text();
+    // Native tools that the model invokes directly (not through execute_code)
+    const nativeTools = registry.generateToolDefinitions();
 
-    // b. Load core memory (self document) and list skill names
-    const coreMemory = loadCoreMemoryFromStore(deps.store);
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter(d => d.rkey.startsWith('skill:'))
-      .map(d => d.rkey);
-
-    // c. Build system prompt (now includes tool docs)
-    const systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    // Build system prompt via provider (if set) or inline fallback
+    let systemPrompt: string;
+    if (deps.systemPromptProvider) {
+      try {
+        systemPrompt = await deps.systemPromptProvider(toolDocs);
+        cachedSystemPrompt = systemPrompt;
+      } catch (err) {
+        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
+        systemPrompt = cachedSystemPrompt;
+      }
+    } else {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter(d => d.rkey.startsWith('skill:'))
+        .map(d => d.rkey);
+      systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
+    }
 
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
@@ -145,13 +195,14 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     }
 
     // e. Tool loop
+    let exitedNormally = false;
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
       let response;
       try {
         response = await deps.model.complete({
           system: systemPrompt,
           messages: history,
-          tools: [EXECUTE_CODE_TOOL],
+          tools: [EXECUTE_CODE_TOOL, ...nativeTools],
           model: deps.config.model,
           max_tokens: deps.config.maxTokens,
           temperature: deps.config.temperature,
@@ -175,11 +226,15 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
+      if (response.reasoning_content) {
+        assistantMessage.reasoning_content = response.reasoning_content;
+      }
       history.push(assistantMessage);
 
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
         process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
+        exitedNormally = true;
         break;
       }
 
@@ -200,21 +255,26 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           const toolResults: Array<ToolResultBlock> = await Promise.all(
             toolUseBlocks.map(async (block): Promise<ToolResultBlock> => {
               try {
-                const code = (block.input as Record<string, unknown>)['code'];
-                if (typeof code !== 'string') {
-                  return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                if (block.name === 'execute_code') {
+                  const code = (block.input as Record<string, unknown>)['code'];
+                  if (typeof code !== 'string') {
+                    return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                  }
+
+                  // IPC callback: dispatch tool calls from the sandbox through the registry
+                  const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
+                    return registry.execute(name, params);
+                  };
+
+                  const result = await deps.runtime.execute(code, undefined, onToolCall);
+                  const output = result.success
+                    ? result.output || '(no output)'
+                    : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
+                  return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
+                } else {
+                  const result = await registry.execute(block.name, block.input);
+                  return formatNativeToolResult(block.id, result);
                 }
-
-                // IPC callback: dispatch tool calls from the sandbox through the registry
-                const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
-                  return registry.execute(name, params);
-                };
-
-                const result = await deps.runtime.execute(code, undefined, onToolCall);
-                const output = result.success
-                  ? result.output || '(no output)'
-                  : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
-                return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 return { type: 'tool_result', tool_use_id: block.id, content: `Tool error: ${message}`, is_error: true };
@@ -230,6 +290,32 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           throw new Error(`Tool dispatch failed: ${err instanceof Error ? err.message : err}`);
         }
       }
+    }
+
+    // g. Handle max-iteration exhaustion — force a text-only wrap-up
+    if (!exitedNormally) {
+      process.stderr.write(`[agent] max tool rounds (${deps.config.maxToolRounds}) exhausted, forcing final response\n`);
+
+      history.push({
+        role: 'user',
+        content: '[System: Max tool calls reached. Provide final response now.]',
+      });
+
+      const finalResponse = await deps.model.complete({
+        system: systemPrompt,
+        messages: history,
+        tools: [],
+        model: deps.config.model,
+        max_tokens: deps.config.maxTokens,
+        temperature: deps.config.temperature,
+        timeout: deps.config.modelTimeout,
+      });
+
+      rounds++;
+      totalInputTokens += finalResponse.usage.input_tokens;
+      totalOutputTokens += finalResponse.usage.output_tokens;
+
+      history.push({ role: 'assistant', content: finalResponse.content });
     }
 
     // f. Extract final text from last assistant message
