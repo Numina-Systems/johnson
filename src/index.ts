@@ -137,7 +137,15 @@ async function main(): Promise<void> {
   if (mode === 'tui' || mode === 'both') {
     // TUI gets its own agent with in-memory history (no conversationOverride needed)
     const tuiAgent = createAgent({ ...agentDeps, scheduler });
-    startTUI({ agent: tuiAgent, modelName, store, secrets });
+    startTUI({
+      agent: tuiAgent,
+      modelName,
+      store,
+      secrets,
+      scheduler,
+      customTools,
+      systemPromptProvider,
+    });
   }
 
   if (mode === 'discord' || mode === 'both') {
