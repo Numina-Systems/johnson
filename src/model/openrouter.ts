@@ -18,6 +18,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
+import { toolResultContentToString } from './types.ts';
 
 function convertMessages(
   messages: ReadonlyArray<Message>,
@@ -81,7 +82,7 @@ function convertMessages(
             result.push({
               role: 'tool',
               toolCallId: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }
@@ -97,7 +98,7 @@ function convertMessages(
             result.push({
               role: 'tool',
               toolCallId: block.tool_use_id,
-              content: block.content,
+              content: toolResultContentToString(block.content),
             });
           }
         }
@@ -227,6 +228,10 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
 
         process.stderr.write(`[openrouter] finish_reason=${choice.finishReason} tool_calls=${choice.message.toolCalls?.length ?? 0} content_len=${typeof choice.message.content === 'string' ? choice.message.content.length : 0}\n`);
 
+        const reasoning_content = typeof choice.message.reasoning === 'string' && choice.message.reasoning.length > 0
+          ? choice.message.reasoning
+          : undefined;
+
         return {
           content: mapResponseContent(choice.message),
           stop_reason: mapFinishReason(choice.finishReason),
@@ -234,6 +239,7 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
             input_tokens: response.usage?.promptTokens ?? 0,
             output_tokens: response.usage?.completionTokens ?? 0,
           },
+          reasoning_content,
         };
       } finally {
         clearTimeout(timeoutId);

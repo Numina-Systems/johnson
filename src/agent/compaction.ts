@@ -7,6 +7,7 @@
 // 4. Return rebuilt context for the agent to continue with
 
 import type { Message, ModelProvider } from '../model/types.ts';
+import { toolResultContentToString } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from './context.ts';
 
@@ -16,7 +17,7 @@ const RECENT_NOTES_COUNT = 3;
 /**
  * Format a conversation history as readable markdown.
  */
-function formatConversation(messages: ReadonlyArray<Message>): string {
+export function formatConversation(messages: ReadonlyArray<Message>): string {
   return messages
     .map((msg) => {
       const content =
@@ -27,12 +28,18 @@ function formatConversation(messages: ReadonlyArray<Message>): string {
                 if (block.type === 'text') return block.text;
                 if (block.type === 'image_url') return '[image]';
                 if (block.type === 'tool_use') return `[tool_use: ${block.name}]`;
-                if (block.type === 'tool_result') return `[tool_result: ${block.content?.toString().slice(0, 200) ?? ''}]`;
+                if (block.type === 'tool_result') return `[tool_result: ${toolResultContentToString(block.content).slice(0, 200)}]`;
                 return '';
               })
               .filter(Boolean)
               .join('\n');
-      return `### ${msg.role}\n${content}`;
+
+      const sections: string[] = [];
+      if (msg.reasoning_content) {
+        sections.push(`### ${msg.role} (reasoning)\n${msg.reasoning_content}`);
+      }
+      sections.push(`### ${msg.role}\n${content}`);
+      return sections.join('\n\n');
     })
     .join('\n\n');
 }

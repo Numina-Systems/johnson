@@ -12,9 +12,12 @@ export type ToolHandler = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
+export type ToolMode = 'sandbox' | 'native' | 'both';
+
 type RegistryEntry = {
   definition: ToolDefinition;
   handler: ToolHandler;
+  mode: ToolMode;
 };
 
 export type ToolRegistry = {
@@ -22,12 +25,14 @@ export type ToolRegistry = {
     name: string,
     definition: ToolDefinition,
     handler: ToolHandler,
+    mode?: ToolMode,
   ): void;
   get(
     name: string,
   ): { definition: ToolDefinition; handler: ToolHandler } | undefined;
   list(): Array<{ name: string; definition: ToolDefinition }>;
   execute(name: string, params: Record<string, unknown>): Promise<unknown>;
+  generateToolDefinitions(): ToolDefinition[];
   generateTypeScriptStubs(): string;
   generateToolDocumentation(): string;
 };
@@ -117,8 +122,19 @@ export function createToolRegistry(): ToolRegistry {
     name: string,
     definition: ToolDefinition,
     handler: ToolHandler,
+    mode: ToolMode = 'sandbox',
   ): void {
-    entries.set(name, { definition, handler });
+    entries.set(name, { definition, handler, mode });
+  }
+
+  function generateToolDefinitions(): ToolDefinition[] {
+    const definitions: ToolDefinition[] = [];
+    for (const [, entry] of entries) {
+      if (entry.mode === 'native' || entry.mode === 'both') {
+        definitions.push(entry.definition);
+      }
+    }
+    return definitions;
   }
 
   function get(
@@ -159,6 +175,7 @@ export function createToolRegistry(): ToolRegistry {
     ];
 
     for (const [name, entry] of entries) {
+      if (entry.mode === 'native') continue;
       const paramsType = buildParamsType(entry.definition.input_schema);
       // Escape */ in descriptions to avoid prematurely closing JSDoc comments
       const safeDesc = (entry.definition.description ?? '').split('\n')[0]!.replace(/\*\//g, '*\\/');
@@ -183,8 +200,21 @@ export function createToolRegistry(): ToolRegistry {
 
     for (const [name, entry] of entries) {
       const def = entry.definition;
-      sections.push(`### \`tools.${name}\``);
-      sections.push("");
+
+      if (entry.mode === 'native' || entry.mode === 'both') {
+        sections.push(`### \`${name}\` *(direct tool call)*`);
+        sections.push("");
+        if (entry.mode === 'both') {
+          sections.push(`> Available as both a direct tool call and via \`tools.${name}()\` in execute_code.`);
+        } else {
+          sections.push(`> Call this tool directly — do NOT use execute_code for this tool.`);
+        }
+        sections.push("");
+      } else {
+        sections.push(`### \`tools.${name}\``);
+        sections.push("");
+      }
+
       sections.push(def.description);
       sections.push("");
 
@@ -213,6 +243,7 @@ export function createToolRegistry(): ToolRegistry {
     get,
     list,
     execute,
+    generateToolDefinitions,
     generateTypeScriptStubs,
     generateToolDocumentation,
   };
