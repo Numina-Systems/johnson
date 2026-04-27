@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { randomUUID } from 'node:crypto';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
+import { registerWebTools } from '../tools/web.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
 
@@ -323,6 +324,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       return `✅ Task ${id} cancelled.`;
     },
   );
+
+  // Web tools (search, fetch, http)
+  registerWebTools(registry, deps);
 
   return registry;
 }
