@@ -370,3 +370,80 @@ describe('graceful max-iteration exhaustion', () => {
     expect(nudgeMessage).toBeDefined();
   });
 });
+
+describe('systemPromptProvider', () => {
+  let tmpDir: string;
+  let personaPath: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'gh12-agent-test-'));
+    personaPath = join(tmpDir, 'persona.md');
+    writeFileSync(personaPath, 'unused persona');
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('GH12.AC7.1: uses provider return value as system prompt', async () => {
+    const expectedPrompt = 'Custom system prompt from provider';
+    let capturedSystem: string | undefined;
+
+    const mockModel: ModelProvider = {
+      complete: async (request) => {
+        capturedSystem = request.system;
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
+      systemPromptProvider: async (_toolDocs: string) => expectedPrompt,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('hello');
+
+    expect(capturedSystem).toBe(expectedPrompt);
+  });
+
+  test('GH12.AC6.1: falls back to cached prompt when provider throws', async () => {
+    const goodPrompt = 'Good system prompt';
+    let providerCalls = 0;
+    const capturedSystems: Array<string | undefined> = [];
+
+    const mockModel: ModelProvider = {
+      complete: async (request) => {
+        capturedSystems.push(request.system);
+        return {
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        };
+      },
+    };
+
+    const provider = async (_toolDocs: string): Promise<string> => {
+      providerCalls++;
+      if (providerCalls === 1) return goodPrompt;
+      throw new Error('provider broke');
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
+      systemPromptProvider: provider,
+    };
+
+    const agent = createAgent(deps);
+
+    await agent.chat('hello');
+    expect(capturedSystems[0]).toBe(goodPrompt);
+
+    await agent.chat('hello again');
+    expect(capturedSystems[1]).toBe(goodPrompt);
+  });
+});
