@@ -368,9 +368,10 @@ describe('graceful max-iteration exhaustion', () => {
     expect(result.stats.outputTokens).toBe(5 * 3 + 6);
 
     expect(calls.length).toBe(4);
-    expect(calls[0]?.toolsCount).toBe(1);
-    expect(calls[1]?.toolsCount).toBe(1);
-    expect(calls[2]?.toolsCount).toBe(1);
+    const initialToolsCount = calls[0]?.toolsCount ?? 0;
+    expect(initialToolsCount).toBeGreaterThan(0);
+    expect(calls[1]?.toolsCount).toBe(initialToolsCount);
+    expect(calls[2]?.toolsCount).toBe(initialToolsCount);
     expect(calls[3]?.toolsCount).toBe(0);
 
     const finalReq = calls[3]?.request;

@@ -5,19 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
+import { str, optStr } from '../tools/helpers.ts';
+import { registerSummarizeTools } from '../tools/summarize.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-function str(input: Record<string, unknown>, key: string): string {
-  const val = input[key];
-  if (typeof val !== 'string') throw new Error(`missing required param: ${key}`);
-  return val;
-}
-
-function optStr(input: Record<string, unknown>, key: string, fallback: string = ''): string {
-  const val = input[key];
-  return typeof val === 'string' ? val : fallback;
-}
 
 function hashCode(code: string): string {
   return createHash('sha256').update(code).digest('hex').slice(0, 16);
@@ -323,6 +314,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       return `✅ Task ${id} cancelled.`;
     },
   );
+
+  // ── summarize (via sub-agent) ──────────────────────────────────────────
+  registerSummarizeTools(registry, deps);
 
   return registry;
 }

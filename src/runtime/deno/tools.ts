@@ -40,3 +40,8 @@ export async function list_tasks(params: Record<string, unknown>): Promise<unkno
 export async function cancel_task(params: { id: string }): Promise<unknown> {
   return callTool("cancel_task", params);
 }
+
+/** Summarize text using a sub-agent LLM. Returns a concise summary preserving key facts. */
+export async function summarize(params: { text: string; instructions?: string; max_length?: "short" | "medium" | "long" }): Promise<unknown> {
+  return callTool("summarize", params);
+}
