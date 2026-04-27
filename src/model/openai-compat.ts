@@ -35,6 +35,7 @@ type OpenAIChoice = {
   message: {
     role: 'assistant';
     content: string | null;
+    reasoning_content?: string | null;
     tool_calls?: Array<{
       id: string;
       type: 'function';
@@ -271,6 +272,10 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
         const choice = data.choices[0]!;
 
+        const reasoning_content = typeof choice.message.reasoning_content === 'string' && choice.message.reasoning_content.length > 0
+          ? choice.message.reasoning_content
+          : undefined;
+
         return {
           content: mapResponseContent(choice),
           stop_reason: mapFinishReason(choice.finish_reason),
@@ -278,6 +283,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
             input_tokens: data.usage.prompt_tokens,
             output_tokens: data.usage.completion_tokens,
           },
+          reasoning_content,
         };
       } finally {
         clearTimeout(timeoutId);
