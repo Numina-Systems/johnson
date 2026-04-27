@@ -15,6 +15,7 @@ import { buildSystemPrompt, loadCoreMemoryFromStore } from './agent/context.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
 import { createScheduler } from './scheduler/index.ts';
 import { createSecretManager } from './secrets/index.ts';
+import { createCustomToolManager } from './tools/index.ts';
 import { createStore } from './store/store.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
@@ -46,6 +47,9 @@ async function main(): Promise<void> {
 
   // Secret manager — flat JSON file for secret values (never in the DB)
   const secrets = createSecretManager(SECRETS_PATH);
+
+  // Custom tool manager — persists tool definitions in the documents store
+  const customTools = createCustomToolManager(store);
 
   // Embedding + vector store (optional — gracefully degrades if Ollama is unavailable)
   let embedding: EmbeddingProvider | undefined;
@@ -102,6 +106,7 @@ async function main(): Promise<void> {
     get scheduler() { return scheduler; },
     store,
     secrets,
+    customTools,
     systemPromptProvider,
   };
   const sharedAgent = createAgent(agentDeps);

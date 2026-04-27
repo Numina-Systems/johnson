@@ -155,6 +155,16 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       systemPrompt = buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
     }
 
+    if (deps.customTools) {
+      const summaries = deps.customTools.getApprovedToolSummaries();
+      if (summaries.length > 0) {
+        const listing = summaries
+          .map(s => `- **${s.name}** — ${s.description}`)
+          .join('\n');
+        systemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
+      }
+    }
+
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
     let totalOutputTokens = 0;

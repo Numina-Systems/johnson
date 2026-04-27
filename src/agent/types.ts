@@ -7,6 +7,7 @@ import type { VectorStore } from '../search/vector-store.ts';
 import type { TaskStore } from '../scheduler/types.ts';
 import type { Store } from '../store/store.ts';
 import type { SecretManager } from '../secrets/manager.ts';
+import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
 
 export type AgentConfig = {
   readonly model: string;
@@ -43,6 +44,7 @@ export type AgentDependencies = {
   readonly scheduler?: TaskStore;
   readonly store: Store;
   readonly secrets?: SecretManager;
+  readonly customTools?: CustomToolManager;
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
 };
 
