@@ -5,6 +5,7 @@ import type {
   Message,
   ToolUseBlock,
   ToolResultBlock,
+  ToolResultContentBlock,
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
@@ -46,6 +47,44 @@ Full tool reference with all available functions and their parameters is in your
     required: ['code'],
   },
 };
+
+function formatNativeToolResult(
+  toolUseId: string,
+  result: unknown,
+): ToolResultBlock {
+  if (typeof result === 'string') {
+    return { type: 'tool_result', tool_use_id: toolUseId, content: result };
+  }
+
+  if (
+    result !== null &&
+    typeof result === 'object' &&
+    'type' in result &&
+    (result as Record<string, unknown>).type === 'image_result'
+  ) {
+    const r = result as Record<string, unknown>;
+    const blocks: Array<ToolResultContentBlock> = [];
+
+    if (typeof r.text === 'string') {
+      blocks.push({ type: 'text', text: r.text });
+    }
+
+    if (r.image && typeof r.image === 'object') {
+      const img = r.image as Record<string, unknown>;
+      if (typeof img.data === 'string' && typeof img.media_type === 'string') {
+        const dataUri = `data:${img.media_type};base64,${img.data}`;
+        blocks.push({ type: 'image_url', image_url: { url: dataUri } });
+      }
+    }
+
+    if (blocks.length > 0) {
+      return { type: 'tool_result', tool_use_id: toolUseId, content: blocks };
+    }
+  }
+
+  const serialized = typeof result === 'undefined' ? '(no output)' : JSON.stringify(result);
+  return { type: 'tool_result', tool_use_id: toolUseId, content: serialized };
+}
 
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
@@ -91,6 +130,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // Generate tool docs for system prompt
     const toolDocs = registry.generateToolDocumentation();
+
+    // Native tools that the model invokes directly (not through execute_code)
+    const nativeTools = registry.generateToolDefinitions();
 
     // a. Read persona
     const persona = await Bun.file(deps.personaPath).text();
@@ -152,7 +194,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         response = await deps.model.complete({
           system: systemPrompt,
           messages: history,
-          tools: [EXECUTE_CODE_TOOL],
+          tools: [EXECUTE_CODE_TOOL, ...nativeTools],
           model: deps.config.model,
           max_tokens: deps.config.maxTokens,
           temperature: deps.config.temperature,
@@ -205,21 +247,26 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           const toolResults: Array<ToolResultBlock> = await Promise.all(
             toolUseBlocks.map(async (block): Promise<ToolResultBlock> => {
               try {
-                const code = (block.input as Record<string, unknown>)['code'];
-                if (typeof code !== 'string') {
-                  return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                if (block.name === 'execute_code') {
+                  const code = (block.input as Record<string, unknown>)['code'];
+                  if (typeof code !== 'string') {
+                    return { type: 'tool_result', tool_use_id: block.id, content: 'Error: missing code parameter', is_error: true };
+                  }
+
+                  // IPC callback: dispatch tool calls from the sandbox through the registry
+                  const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
+                    return registry.execute(name, params);
+                  };
+
+                  const result = await deps.runtime.execute(code, undefined, onToolCall);
+                  const output = result.success
+                    ? result.output || '(no output)'
+                    : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
+                  return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
+                } else {
+                  const result = await registry.execute(block.name, block.input);
+                  return formatNativeToolResult(block.id, result);
                 }
-
-                // IPC callback: dispatch tool calls from the sandbox through the registry
-                const onToolCall = async (name: string, params: Record<string, unknown>): Promise<unknown> => {
-                  return registry.execute(name, params);
-                };
-
-                const result = await deps.runtime.execute(code, undefined, onToolCall);
-                const output = result.success
-                  ? result.output || '(no output)'
-                  : `Error: ${result.error ?? 'unknown error'}\n${result.output}`;
-                return { type: 'tool_result', tool_use_id: block.id, content: output, is_error: !result.success };
               } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 return { type: 'tool_result', tool_use_id: block.id, content: `Tool error: ${message}`, is_error: true };
