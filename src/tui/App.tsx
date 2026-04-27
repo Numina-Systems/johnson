@@ -18,6 +18,7 @@ export default function App(deps: AppProps): React.ReactElement {
   const [screenStack, setScreenStack] = useState<Screen[]>(['sessions']);
   const currentScreen = screenStack[screenStack.length - 1]!;
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [subModeActive, setSubModeActive] = useState(false);
 
   const push = useCallback((screen: Screen) => {
     setScreenStack((prev) => [...prev, screen]);
@@ -65,7 +66,9 @@ export default function App(deps: AppProps): React.ReactElement {
   });
 
   // Global navigation — disabled on the chat screen (ChatScreen owns its own input)
-  const globalNavActive = currentScreen !== 'chat';
+  // and disabled when a sub-screen is in a sub-mode that owns its own keybindings
+  // (e.g. ToolsScreen viewing skill code, where 'q' should mean "back to list").
+  const globalNavActive = currentScreen !== 'chat' && !subModeActive;
   useInput(
     (input, key) => {
       if (input === 't') push('tools');
@@ -123,6 +126,7 @@ export default function App(deps: AppProps): React.ReactElement {
           customTools={deps.customTools}
           builtinTools={deps.builtinTools ?? []}
           onBack={pop}
+          onSubModeChange={setSubModeActive}
         />
       );
     case 'secrets':

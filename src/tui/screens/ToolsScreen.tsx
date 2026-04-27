@@ -13,6 +13,7 @@ type ToolsScreenProps = {
   readonly customTools?: TuiDependencies['customTools'];
   readonly builtinTools: ReadonlyArray<{ name: string; description: string }>;
   readonly onBack: () => void;
+  readonly onSubModeChange?: (active: boolean) => void;
 };
 
 type Section = 'custom' | 'builtin' | 'skills';
@@ -29,10 +30,15 @@ type SkillEntry = {
 const SECTIONS: ReadonlyArray<Section> = ['custom', 'builtin', 'skills'];
 
 export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement {
-  const { store, secrets, customTools, builtinTools } = props;
+  const { store, secrets, customTools, builtinTools, onSubModeChange } = props;
 
   const [section, setSection] = useState<Section>('custom');
   const [mode, setMode] = useState<Mode>('list');
+
+  useEffect(() => {
+    onSubModeChange?.(mode !== 'list');
+    return () => onSubModeChange?.(false);
+  }, [mode, onSubModeChange]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
 

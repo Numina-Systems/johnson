@@ -23,6 +23,7 @@ export type SecretManager = {
 
 export function createSecretManager(path: string): SecretManager {
   let secrets: Record<string, string> = {};
+  let writeQueue: Promise<void> = Promise.resolve();
 
   // Load synchronously on creation (called once at startup)
   try {
@@ -42,6 +43,11 @@ export function createSecretManager(path: string): SecretManager {
     await writeFile(path, JSON.stringify(secrets, null, 2) + '\n');
   }
 
+  function enqueueSave(): Promise<void> {
+    writeQueue = writeQueue.then(save, save);
+    return writeQueue;
+  }
+
   return {
     listKeys(): Array<string> {
       return Object.keys(secrets).sort();
@@ -53,12 +59,12 @@ export function createSecretManager(path: string): SecretManager {
 
     async set(key: string, value: string): Promise<void> {
       secrets[key] = value;
-      await save();
+      await enqueueSave();
     },
 
     async remove(key: string): Promise<void> {
       delete secrets[key];
-      await save();
+      await enqueueSave();
     },
 
     resolve(keys: ReadonlyArray<string>): Record<string, string> {

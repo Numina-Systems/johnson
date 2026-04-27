@@ -75,7 +75,7 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
           ...prev,
           {
             role: 'system',
-            text: 'Commands: /reset /help /quit | Esc=back to sessions | t=tools s=secrets c=schedules p=prompt',
+            text: 'Commands: /reset /help /quit | Esc=back to Sessions (for screen navigation: tools, secrets, schedules, prompt)',
           },
         ]);
         return;

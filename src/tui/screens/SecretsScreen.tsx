@@ -59,12 +59,16 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
     } else if (input === 'd') {
       const k = keys[selectedIdx];
       if (k) {
-        secrets.remove(k).catch((err) => {
-          setStatusMsg(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`);
-        });
-        setStatusMsg(`Removed: ${k}`);
-        setSelectedIdx((i) => Math.max(0, i - 1));
-        refresh();
+        void (async () => {
+          try {
+            await secrets.remove(k);
+            setStatusMsg(`Removed: ${k}`);
+            setSelectedIdx((i) => Math.max(0, i - 1));
+            refresh();
+          } catch (err) {
+            setStatusMsg(`Failed to delete: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        })();
       }
     }
   });
