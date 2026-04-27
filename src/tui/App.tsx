@@ -1,10 +1,11 @@
 // pattern: UI Shell — navigation shell for the multi-screen TUI
 
 import React, { useState, useCallback } from 'react';
-import { Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput, useApp } from 'ink';
 import SessionsScreen from './screens/SessionsScreen.tsx';
 import ChatScreen from './screens/ChatScreen.tsx';
 import ToolsScreen from './screens/ToolsScreen.tsx';
+import SecretsScreen from './screens/SecretsScreen.tsx';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -93,7 +94,15 @@ export default function App(deps: AppProps): React.ReactElement {
         />
       );
     case 'secrets':
-      return <Text>Secrets screen (Phase 5) — press Escape to go back</Text>;
+      if (!deps.secrets) {
+        return (
+          <Box flexDirection="column" padding={1}>
+            <Text color="yellow">Secret management not available.</Text>
+            <Text dimColor>Press Escape to go back.</Text>
+          </Box>
+        );
+      }
+      return <SecretsScreen secrets={deps.secrets} store={deps.store} onBack={pop} />;
     case 'schedules':
       return <Text>Schedules screen (Phase 6) — press Escape to go back</Text>;
     case 'prompt':
