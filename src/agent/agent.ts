@@ -145,6 +145,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     }
 
     // e. Tool loop
+    let exitedNormally = false;
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
       let response;
       try {
@@ -183,6 +184,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
         process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
+        exitedNormally = true;
         break;
       }
 
@@ -233,6 +235,32 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           throw new Error(`Tool dispatch failed: ${err instanceof Error ? err.message : err}`);
         }
       }
+    }
+
+    // g. Handle max-iteration exhaustion — force a text-only wrap-up
+    if (!exitedNormally) {
+      process.stderr.write(`[agent] max tool rounds (${deps.config.maxToolRounds}) exhausted, forcing final response\n`);
+
+      history.push({
+        role: 'user',
+        content: '[System: Max tool calls reached. Provide final response now.]',
+      });
+
+      const finalResponse = await deps.model.complete({
+        system: systemPrompt,
+        messages: history,
+        tools: [],
+        model: deps.config.model,
+        max_tokens: deps.config.maxTokens,
+        temperature: deps.config.temperature,
+        timeout: deps.config.modelTimeout,
+      });
+
+      rounds++;
+      totalInputTokens += finalResponse.usage.input_tokens;
+      totalOutputTokens += finalResponse.usage.output_tokens;
+
+      history.push({ role: 'assistant', content: finalResponse.content });
     }
 
     // f. Extract final text from last assistant message
