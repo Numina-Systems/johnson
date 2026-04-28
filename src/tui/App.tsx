@@ -138,7 +138,7 @@ export default function App(deps: AppProps): React.ReactElement {
           </Box>
         );
       }
-      return <SecretsScreen secrets={deps.secrets} store={deps.store} onBack={pop} />;
+      return <SecretsScreen secrets={deps.secrets} store={deps.store} customTools={deps.customTools ?? undefined} onBack={pop} />;
     case 'schedules':
       if (!deps.scheduler) {
         return (
