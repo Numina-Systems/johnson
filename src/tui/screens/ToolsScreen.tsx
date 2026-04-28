@@ -44,7 +44,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
   const [skills, setSkills] = useState<ReadonlyArray<SkillEntry>>([]);
   const [codeContent, setCodeContent] = useState('');
-  const [editSecretSkill, setEditSecretSkill] = useState('');
+  const [editSecretTarget, setEditSecretTarget] = useState<{ section: Section; name: string }>({ section: 'skills', name: '' });
   const [editSecretChecked, setEditSecretChecked] = useState<Set<string>>(new Set());
   const [editSecretIdx, setEditSecretIdx] = useState(0);
   const [codeScrollOffset, setCodeScrollOffset] = useState(0);
@@ -131,9 +131,14 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
     if (mode === 'edit_secrets') {
       if (key.escape) {
-        store.updateGrantSecrets(editSecretSkill, Array.from(editSecretChecked));
-        setStatusMsg(`Updated secrets for ${editSecretSkill}`);
-        refreshSkills();
+        const secretList = Array.from(editSecretChecked);
+        if (editSecretTarget.section === 'skills') {
+          store.updateGrantSecrets(editSecretTarget.name, secretList);
+          refreshSkills();
+        } else if (editSecretTarget.section === 'custom' && customTools) {
+          customTools.updateSecrets(editSecretTarget.name, secretList);
+        }
+        setStatusMsg(`Updated secrets for ${editSecretTarget.name}`);
         setMode('list');
         return;
       }
@@ -184,6 +189,15 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
       } else if (input === 'r') {
         customTools.revokeTool(tool.name);
         setStatusMsg(`Revoked: ${tool.name}`);
+      } else if (input === 'v') {
+        setCodeContent(tool.code);
+        setCodeScrollOffset(0);
+        setMode('view_code');
+      } else if (input === 's') {
+        setEditSecretTarget({ section: 'custom', name: tool.name });
+        setEditSecretChecked(new Set(tool.secrets));
+        setEditSecretIdx(0);
+        setMode('edit_secrets');
       }
       return;
     }
@@ -204,7 +218,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
         setCodeScrollOffset(0);
         setMode('view_code');
       } else if (input === 's') {
-        setEditSecretSkill(skill.rkey);
+        setEditSecretTarget({ section: 'skills', name: skill.rkey });
         setEditSecretChecked(new Set(skill.secrets));
         setEditSecretIdx(0);
         setMode('edit_secrets');
@@ -255,7 +269,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     return (
       <Box flexDirection="column" padding={1}>
         <Text bold color="cyan">
-          Secrets for: {editSecretSkill}
+          Secrets for: {editSecretTarget.name}
         </Text>
         <Text dimColor>Space/Enter to toggle, Esc to save & go back</Text>
         <Box marginTop={1} flexDirection="column">
@@ -305,9 +319,11 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
         {customToolList.map((tool, i) => {
           const cursor = i === selectedIdx ? '>' : ' ';
           const icon = tool.approved ? 'OK ' : 'PEN';
+          const secretCount = tool.secrets.length;
+          const secretSuffix = secretCount > 0 ? ` [${secretCount} secret${secretCount > 1 ? 's' : ''}]` : '';
           return (
             <Text key={tool.name}>
-              {cursor} {icon} {tool.name} — {tool.description}
+              {cursor} {icon} {tool.name} — {tool.description}{secretSuffix}
             </Text>
           );
         })}
@@ -359,7 +375,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   const sectionFooter = (() => {
     switch (section) {
       case 'custom':
-        return 'a=approve r=revoke';
+        return 'a=approve r=revoke v=view s=secrets';
       case 'builtin':
         return '(read-only)';
       case 'skills':

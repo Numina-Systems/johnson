@@ -25,6 +25,7 @@ export type CustomToolManager = {
   }): CustomTool;
   approveTool(name: string): boolean;
   revokeTool(name: string): boolean;
+  updateSecrets(name: string, secrets: ReadonlyArray<string>): boolean;
   getApprovedToolSummaries(): Array<{ name: string; description: string }>;
 };
 
@@ -112,11 +113,19 @@ export function createCustomToolManager(store: Store): CustomToolManager {
     return true;
   }
 
+  function updateSecrets(name: string, secrets: ReadonlyArray<string>): boolean {
+    const existing = getTool(name);
+    if (!existing) return false;
+    const updated: CustomTool = { ...existing, secrets };
+    store.docUpsert(rkey(name), JSON.stringify(updated));
+    return true;
+  }
+
   function getApprovedToolSummaries(): Array<{ name: string; description: string }> {
     return listTools()
       .filter(t => t.approved)
       .map(t => ({ name: t.name, description: t.description }));
   }
 
-  return { listTools, getTool, saveTool, approveTool, revokeTool, getApprovedToolSummaries };
+  return { listTools, getTool, saveTool, approveTool, revokeTool, updateSecrets, getApprovedToolSummaries };
 }
