@@ -1,7 +1,7 @@
 // pattern: UI Shell — unified tools, built-in tools, and skill management
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import type { Store, GrantStatus } from '../../store/store.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { TuiDependencies } from '../types.ts';
@@ -47,6 +47,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   const [editSecretSkill, setEditSecretSkill] = useState('');
   const [editSecretChecked, setEditSecretChecked] = useState<Set<string>>(new Set());
   const [editSecretIdx, setEditSecretIdx] = useState(0);
+  const [codeScrollOffset, setCodeScrollOffset] = useState(0);
 
   const refreshSkills = useCallback(() => {
     const result = store.docList(500);
@@ -97,10 +98,33 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     });
   }, []);
 
+  const { stdout } = useStdout();
+  const termHeight = stdout?.rows ?? 24;
+  const termWidth = stdout?.columns ?? 80;
+
+  const codeLines = mode === 'view_code' ? codeContent.split('\n') : [];
+  const CODE_PAGE_SIZE = Math.max(5, termHeight - 6);
+
   useInput((input, key) => {
     if (mode === 'view_code') {
       if (key.escape || input === 'q') {
+        setCodeScrollOffset(0);
         setMode('list');
+        return;
+      }
+      const maxOffset = Math.max(0, codeLines.length - CODE_PAGE_SIZE);
+      if (input === 'j' || key.downArrow) {
+        setCodeScrollOffset((o) => Math.min(o + 1, maxOffset));
+      } else if (input === 'k' || key.upArrow) {
+        setCodeScrollOffset((o) => Math.max(o - 1, 0));
+      } else if (input === 'd' && key.ctrl) {
+        setCodeScrollOffset((o) => Math.min(o + Math.floor(CODE_PAGE_SIZE / 2), maxOffset));
+      } else if (input === 'u' && key.ctrl) {
+        setCodeScrollOffset((o) => Math.max(o - Math.floor(CODE_PAGE_SIZE / 2), 0));
+      } else if (input === 'g') {
+        setCodeScrollOffset(0);
+      } else if (input === 'G') {
+        setCodeScrollOffset(maxOffset);
       }
       return;
     }
@@ -177,6 +201,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
         refreshSkills();
       } else if (input === 'v') {
         setCodeContent(skill.content);
+        setCodeScrollOffset(0);
         setMode('view_code');
       } else if (input === 's') {
         setEditSecretSkill(skill.rkey);
@@ -195,22 +220,31 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
   // ── View Code Mode ──
   if (mode === 'view_code') {
-    const lines = codeContent.split('\n');
+    const visibleLines = codeLines.slice(codeScrollOffset, codeScrollOffset + CODE_PAGE_SIZE);
+    const lineEnd = Math.min(codeScrollOffset + CODE_PAGE_SIZE, codeLines.length);
+    const separatorWidth = Math.max(20, termWidth - 4);
     return (
-      <Box flexDirection="column" padding={1}>
+      <Box flexDirection="column" padding={1} width={termWidth}>
         <Text bold color="cyan">
           Skill Code
         </Text>
-        <Box marginTop={1} flexDirection="column">
-          {lines.slice(0, 30).map((line, i) => (
-            <Text key={i} dimColor>
-              {line}
+        <Box>
+          <Text dimColor>{'─'.repeat(separatorWidth)}</Text>
+        </Box>
+        <Box flexDirection="column">
+          {visibleLines.map((line, i) => (
+            <Text key={codeScrollOffset + i} dimColor>
+              {line || ' '}
             </Text>
           ))}
-          {lines.length > 30 && <Text dimColor>... ({lines.length} lines total)</Text>}
         </Box>
         <Box marginTop={1}>
-          <Text dimColor>Press q/Esc to go back</Text>
+          <Text dimColor>{'─'.repeat(separatorWidth)}</Text>
+        </Box>
+        <Box>
+          <Text color="gray">
+            Lines {codeScrollOffset + 1}–{lineEnd} of {codeLines.length} | j/k=scroll Ctrl-d/u=page g/G=top/bottom q/Esc=back
+          </Text>
         </Box>
       </Box>
     );
