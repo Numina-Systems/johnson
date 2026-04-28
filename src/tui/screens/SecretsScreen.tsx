@@ -53,7 +53,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
 
   useInput((input, key) => {
     if (mode === 'edit_skills') {
-      if (key.escape || input === 'q') {
+      if (key.escape) {
         const grantMap = new Map(store.listGrants().map((g) => [g.skillName, g]));
         for (const name of skillNames) {
           const grant = grantMap.get(name);
@@ -207,7 +207,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
         <Text bold color="cyan">
           Assign skills for: {editSkillsSecret}
         </Text>
-        <Text dimColor>Space/Enter to toggle, q/Esc to save & go back</Text>
+        <Text dimColor>Space/Enter to toggle, Esc to save & go back</Text>
         <Box marginTop={1} flexDirection="column">
           {skillNames.length === 0 ? (
             <Text dimColor>(no skills — create one first)</Text>

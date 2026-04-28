@@ -107,7 +107,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
   useInput((input, key) => {
     if (mode === 'view_code') {
-      if (key.escape || input === 'q') {
+      if (key.escape) {
         setCodeScrollOffset(0);
         setMode('list');
         return;
@@ -130,7 +130,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     }
 
     if (mode === 'edit_secrets') {
-      if (key.escape || input === 'q') {
+      if (key.escape) {
         store.updateGrantSecrets(editSecretSkill, Array.from(editSecretChecked));
         setStatusMsg(`Updated secrets for ${editSecretSkill}`);
         refreshSkills();
@@ -243,7 +243,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
         </Box>
         <Box>
           <Text color="gray">
-            Lines {codeScrollOffset + 1}–{lineEnd} of {codeLines.length} | j/k=scroll Ctrl-d/u=page g/G=top/bottom q/Esc=back
+            Lines {codeScrollOffset + 1}–{lineEnd} of {codeLines.length} | j/k=scroll Ctrl-d/u=page g/G=top/bottom Esc=back
           </Text>
         </Box>
       </Box>
@@ -257,7 +257,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
         <Text bold color="cyan">
           Secrets for: {editSecretSkill}
         </Text>
-        <Text dimColor>Space/Enter to toggle, q/Esc to save & go back</Text>
+        <Text dimColor>Space/Enter to toggle, Esc to save & go back</Text>
         <Box marginTop={1} flexDirection="column">
           {allSecretKeys.length === 0 ? (
             <Text dimColor>(no secrets in vault — add via the Secrets screen)</Text>
