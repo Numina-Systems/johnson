@@ -7,35 +7,41 @@ Why Johnson? Because I thought it would be very amusing to say things like "John
 > [!WARNING]
 > Tools run in a Deno sandbox. This offers reasonable isolation, but not a security guarantee. Exercise judgement.
 
-## TUI Commands
+## TUI
 
-| Command | Description |
-|---------|-------------|
-| `/reset` | Clear conversation history |
-| `/review` | Open the skill grant management page |
-| `/help` | Show help |
-| `/quit` | Exit |
+The terminal UI has six screens, navigable via global keyboard shortcuts:
+
+| Key | Screen | Description |
+|-----|--------|-------------|
+| — | **Sessions** | List, create, and delete sessions (home screen) |
+| — | **Chat** | Conversation interface with event-driven status indicators |
+| `t` | **Tools** | Manage skills, custom tools, and view built-in tool listings |
+| `s` | **Secrets** | Add/remove API keys and credentials |
+| `c` | **Schedules** | View and toggle scheduled tasks |
+| `p` | **System Prompt** | Inspect the current system prompt (read-only, scrollable) |
+
+`Escape` goes back, `q` quits. Chat-screen slash commands: `/reset`, `/help`, `/quit`.
 
 ## Tools
 
-The agent exposes eight built-in tools across four categories.
+The agent exposes tools across seven categories. Each tool has a mode: **sandbox** (callable via `execute_code`), **native** (direct model tool call), or **both**.
 
 ### Code Execution
 
-| Tool | Description |
-|------|-------------|
-| `execute_code` | Run TypeScript in the Deno sandbox. The only top-level callable function. |
+| Tool | Mode | Description |
+|------|------|-------------|
+| `execute_code` | native | Run TypeScript in the Deno sandbox. The primary callable function. |
 
 ### Documents
 
 All agent memory is stored as documents, each identified by an `rkey` and containing free-form `content`. This unified document store — rather than separate subsystems for notes, skills, and context — means the agent's memory is searchable, versioned, and inspectable in one place.
 
-| Tool | Description |
-|------|-------------|
-| `doc_upsert` | Create or update a document by rkey. For `skill:*` rkeys, auto-manages grants. |
-| `doc_get` | Read one or more documents by rkey (batch reads supported). |
-| `doc_list` | List all documents with short content previews. |
-| `doc_search` | Full-text search across all documents. |
+| Tool | Mode | Description |
+|------|------|-------------|
+| `doc_upsert` | sandbox | Create or update a document by rkey. For `skill:*` rkeys, auto-manages grants. |
+| `doc_get` | sandbox | Read one or more documents by rkey (batch reads supported). |
+| `doc_list` | sandbox | List all documents with short content previews. |
+| `doc_search` | sandbox | Full-text search across all documents. |
 
 #### Conventional rkeys
 
@@ -51,25 +57,56 @@ All agent memory is stored as documents, each identified by an `rkey` and contai
 
 ### Skills
 
-| Tool | Description |
-|------|-------------|
-| `run_skill` | Execute an approved `skill:*` document. Args passed as an array (spaces preserved). |
+| Tool | Mode | Description |
+|------|------|-------------|
+| `run_skill` | sandbox | Execute an approved `skill:*` document. Args passed as an array (spaces preserved). |
 
-Skills require human approval before they may run with secrets. When a skill is created or modified, it enters a "pending" state; the operator reviews the code, grants access, and assigns secrets through the `/review` interface in the TUI.
+Skills require human approval before they may run with secrets. When a skill is created or modified, it enters a "pending" state; the operator reviews the code, grants access, and assigns secrets through the **Tools** screen (`t`) in the TUI.
+
+### Custom Tools
+
+The agent can create its own tools at runtime. Custom tools are stored as `customtool:*` documents and use the same hash-based approval system as skills — if the code or parameters change, approval is automatically revoked.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `create_custom_tool` | sandbox | Define a new custom tool with name, description, parameters, and TypeScript code. |
+| `list_custom_tools` | sandbox | List all custom tools with approval status. |
+| `call_custom_tool` | sandbox | Execute an approved custom tool in a fresh Deno sandbox with declared secrets. |
+
+### Web
+
+Requires `EXA_API_KEY` for Exa-backed tools. `http_get` works without credentials.
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `web_search` | sandbox | Search via Exa AI. Returns title, URL, snippet, and score. |
+| `fetch_page` | sandbox | Extract page content via Exa AI. Returns title, URL, text, author, and date. |
+| `http_get` | sandbox | Plain HTTP GET with 30s timeout. Returns status, content type, and body. |
+
+### Media & Utilities
+
+| Tool | Mode | Description |
+|------|------|-------------|
+| `view_image` | native | Fetch an image URL and return it as a base64 image block for the model to see. |
+| `summarize` | both | Summarize text via the sub-agent LLM. Requires `[sub_model]` config. |
+| `notify_discord` | sandbox | Send a message to a Discord webhook. Requires `DISCORD_WEBHOOK_URL` secret. |
 
 ### Scheduling
 
-| Tool | Description |
-|------|-------------|
-| `schedule_task` | Schedule a self-contained prompt on a cron expression or interval |
-| `list_tasks` | Show all scheduled tasks with run count and last run status |
-| `cancel_task` | Stop a scheduled task by ID |
+| Tool | Mode | Description |
+|------|------|-------------|
+| `schedule_task` | sandbox | Schedule a self-contained prompt on a cron expression or interval. |
+| `list_tasks` | sandbox | Show all scheduled tasks with run count and last run status. |
+| `cancel_task` | sandbox | Stop a scheduled task by ID. |
 
 Tasks support optional trigger guards: TypeScript code that runs before the prompt without consuming LLM tokens. If the guard produces output, the prompt fires; if it produces nothing, the task is skipped.
 
 ## Creating Tools
 
-The agent constructs new tools as TypeScript code, which it saves as skill documents and executes in the Deno runtime. No skill may run until the operator has reviewed its code, approved it, and — where necessary — associated secrets with it via `/review` in the TUI.
+The agent constructs new tools in two ways:
+
+1. **Skills** — TypeScript code saved as `skill:*` documents and executed via `run_skill`. Reviewed and approved through the **Tools** screen (`t`) in the TUI.
+2. **Custom tools** — Runtime-defined tools created via `create_custom_tool`, stored as `customtool:*` documents. Same hash-based approval workflow: if code changes, approval is revoked until re-approved.
 
 ## Prerequisites
 
@@ -111,7 +148,7 @@ interface = "tui"
 
 ### Model Providers
 
-Johnson supports four LLM providers.
+Johnson supports five LLM providers.
 
 #### Lemonade (default — local inference)
 
@@ -154,6 +191,19 @@ max_tokens = 8192
 export ANTHROPIC_API_KEY="***"
 ```
 
+#### OpenRouter (cloud)
+
+```toml
+[model]
+provider = "openrouter"
+name = "google/gemma-4-31b-it"
+max_tokens = 8192
+```
+
+```bash
+export OPENROUTER_API_KEY="***"
+```
+
 #### OpenAI-compatible (any endpoint)
 
 ```toml
@@ -168,6 +218,18 @@ export OPENAI_COMPAT_API_KEY="***"
 export OPENAI_COMPAT_BASE_URL="https://api.openai.com/v1"
 ```
 
+#### Reasoning (extended thinking)
+
+Models that support extended thinking can be configured with a reasoning effort:
+
+```toml
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+max_tokens = 8192
+reasoning = "medium"  # none, low, medium, high
+```
+
 ### Agent Settings
 
 ```toml
@@ -176,7 +238,25 @@ max_tool_rounds = 50      # max consecutive tool calls per turn
 context_budget = 0.8      # fraction of context window to use before compacting
 context_limit = 131072    # must match model's actual context window
 model_timeout = 300000    # ms to wait for model response
+timezone = "America/New_York"  # IANA timezone for scheduling and display
 ```
+
+### Sub-Agent (utility LLM)
+
+A lightweight model used for background tasks: context compaction, session title generation, and the `summarize` tool. Falls back to wrapping the main model (capped at 8k tokens) if not configured.
+
+```toml
+[sub_model]
+provider = "anthropic"
+name = "claude-haiku-4-5-20251001"
+max_tokens = 8000
+```
+
+```bash
+export SUB_MODEL_PROVIDER="anthropic"  # override via env
+```
+
+Supports the same five providers as `[model]`.
 
 ### Runtime (Deno Sandbox)
 

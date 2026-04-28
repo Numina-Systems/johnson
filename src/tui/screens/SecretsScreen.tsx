@@ -12,7 +12,7 @@ type SecretsScreenProps = {
   readonly onBack: () => void;
 };
 
-type Mode = 'list' | 'add_name' | 'add_value';
+type Mode = 'list' | 'add_name' | 'add_value' | 'edit_skills';
 
 export default function SecretsScreen(props: SecretsScreenProps): React.ReactElement {
   const { secrets, store, onBack } = props;
@@ -23,10 +23,20 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   const [newSecretValue, setNewSecretValue] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
+  const [editSkillsSecret, setEditSkillsSecret] = useState('');
+  const [editSkillsChecked, setEditSkillsChecked] = useState<Set<string>>(new Set());
+  const [editSkillsIdx, setEditSkillsIdx] = useState(0);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
 
   const keys = useMemo(() => secrets.listKeys(), [secrets, refreshTick]);
+
+  const skillNames = useMemo(() => {
+    const result = store.docList(500);
+    return result.documents
+      .filter((d) => d.rkey.startsWith('skill:'))
+      .map((d) => d.rkey);
+  }, [store, refreshTick]);
 
   const secretUsers = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -42,6 +52,45 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   }, [store, refreshTick]);
 
   useInput((input, key) => {
+    if (mode === 'edit_skills') {
+      if (key.escape || input === 'q') {
+        const grantMap = new Map(store.listGrants().map((g) => [g.skillName, g]));
+        for (const name of skillNames) {
+          const grant = grantMap.get(name);
+          const currentSecrets = grant?.secrets ?? [];
+          const hasSecret = currentSecrets.includes(editSkillsSecret);
+          const shouldHave = editSkillsChecked.has(name);
+          if (hasSecret && !shouldHave) {
+            store.updateGrantSecrets(name, currentSecrets.filter((s) => s !== editSkillsSecret));
+          } else if (!hasSecret && shouldHave) {
+            store.updateGrantSecrets(name, [...currentSecrets, editSkillsSecret]);
+          }
+        }
+        setStatusMsg(`Updated skill assignments for ${editSkillsSecret}`);
+        refresh();
+        setMode('list');
+        return;
+      }
+      if (key.upArrow || input === 'k') {
+        setEditSkillsIdx((i) => Math.max(0, i - 1));
+      }
+      if (key.downArrow || input === 'j') {
+        setEditSkillsIdx((i) => Math.min(skillNames.length - 1, i + 1));
+      }
+      if (input === ' ' || key.return) {
+        const skill = skillNames[editSkillsIdx];
+        if (skill) {
+          setEditSkillsChecked((prev) => {
+            const next = new Set(prev);
+            if (next.has(skill)) next.delete(skill);
+            else next.add(skill);
+            return next;
+          });
+        }
+      }
+      return;
+    }
+
     if (mode !== 'list') return;
 
     if (key.escape) {
@@ -56,6 +105,21 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
       setNewSecretName('');
       setNewSecretValue('');
       setMode('add_name');
+    } else if (input === 's') {
+      const k = keys[selectedIdx];
+      if (k && skillNames.length > 0) {
+        const grants = store.listGrants();
+        const checked = new Set<string>();
+        for (const grant of grants) {
+          if (grant.secrets.includes(k)) checked.add(grant.skillName);
+        }
+        setEditSkillsSecret(k);
+        setEditSkillsChecked(checked);
+        setEditSkillsIdx(0);
+        setMode('edit_skills');
+      } else if (k && skillNames.length === 0) {
+        setStatusMsg('No skills to assign — create a skill first');
+      }
     } else if (input === 'd') {
       const k = keys[selectedIdx];
       if (k) {
@@ -136,6 +200,33 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
     );
   }
 
+  // ── Edit Skills Mode ──
+  if (mode === 'edit_skills') {
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Text bold color="cyan">
+          Assign skills for: {editSkillsSecret}
+        </Text>
+        <Text dimColor>Space/Enter to toggle, q/Esc to save & go back</Text>
+        <Box marginTop={1} flexDirection="column">
+          {skillNames.length === 0 ? (
+            <Text dimColor>(no skills — create one first)</Text>
+          ) : (
+            skillNames.map((name, i) => {
+              const checked = editSkillsChecked.has(name);
+              const cursor = i === editSkillsIdx ? '>' : ' ';
+              return (
+                <Text key={name}>
+                  {cursor} [{checked ? 'x' : ' '}] {name}
+                </Text>
+              );
+            })
+          )}
+        </Box>
+      </Box>
+    );
+  }
+
   // ── List Mode ──
   return (
     <Box flexDirection="column" padding={1}>
@@ -169,7 +260,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
         <Text dimColor>{'─'.repeat(60)}</Text>
       </Box>
       <Box>
-        <Text color="gray">a=add d=delete Esc=back</Text>
+        <Text color="gray">a=add d=delete s=assign skills Esc=back</Text>
       </Box>
     </Box>
   );
