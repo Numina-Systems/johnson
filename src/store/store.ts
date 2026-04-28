@@ -87,6 +87,11 @@ export interface Store {
   updateGrantSecrets(skillRkey: string, secrets: ReadonlyArray<string>): void;
   deleteGrant(skillRkey: string): boolean;
 
+  // Discord managed threads
+  addManagedThread(threadId: string, parentChannelId: string): void;
+  removeManagedThread(threadId: string): boolean;
+  getManagedThreadIds(): Set<string>;
+
   /** Close the underlying database connection */
   close(): void;
 }
@@ -208,6 +213,12 @@ CREATE TABLE IF NOT EXISTS grants (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS discord_threads (
+  thread_id TEXT PRIMARY KEY,
+  parent_channel_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 // ── Factory ────────────────────────────────────────────────────────────
@@ -327,6 +338,13 @@ export function createStore(dbPath: string): Store {
     `UPDATE grants SET secrets = ?, updated_at = ? WHERE skill_name = ?`,
   );
   const stmtDeleteGrant = db.prepare(`DELETE FROM grants WHERE skill_name = ?`);
+
+  // Discord threads
+  const stmtAddThread = db.prepare(
+    `INSERT OR IGNORE INTO discord_threads (thread_id, parent_channel_id, created_at) VALUES (?, ?, ?)`,
+  );
+  const stmtRemoveThread = db.prepare(`DELETE FROM discord_threads WHERE thread_id = ?`);
+  const stmtListThreads = db.prepare(`SELECT thread_id FROM discord_threads`);
 
   // ── Store implementation ─────────────────────────────────────────
 
@@ -497,6 +515,20 @@ export function createStore(dbPath: string): Store {
 
     deleteGrant(skillRkey: string): boolean {
       return stmtDeleteGrant.run(skillRkey).changes > 0;
+    },
+
+    // ── Discord Threads ──────────────────────────────────────────
+    addManagedThread(threadId: string, parentChannelId: string): void {
+      stmtAddThread.run(threadId, parentChannelId, iso());
+    },
+
+    removeManagedThread(threadId: string): boolean {
+      return stmtRemoveThread.run(threadId).changes > 0;
+    },
+
+    getManagedThreadIds(): Set<string> {
+      const rows = stmtListThreads.all() as Array<{ thread_id: string }>;
+      return new Set(rows.map((r) => r.thread_id));
     },
 
     // ── Lifecycle ─────────────────────────────────────────────────

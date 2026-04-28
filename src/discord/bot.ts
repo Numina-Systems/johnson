@@ -109,8 +109,8 @@ export function createDiscordBot(
     partials: [Partials.Channel, Partials.Message, Partials.User],
   });
 
-  // Track which threads we've created (thread ID → parent channel ID)
-  const managedThreads = new Set<string>();
+  // Load persisted managed threads from the store
+  const managedThreads = store.getManagedThreadIds();
 
   const prefix = config.prefix ?? '!';
   // Empty array = allow all (null means no filtering)
@@ -281,6 +281,7 @@ export function createDiscordBot(
         autoArchiveDuration: 1440, // 24 hours
       });
       managedThreads.add(thread.id);
+      store.addManagedThread(thread.id, msg.channelId);
       log(`Created thread "${thread.name}" (${thread.id})`);
     } catch (err) {
       // Fall back to replying in-channel if thread creation fails
