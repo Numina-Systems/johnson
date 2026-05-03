@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import TOML from 'toml';
-import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig } from './types.ts';
+import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig, RecallConfig } from './types.ts';
 
 type RawConfig = {
   model?: Partial<ModelConfig> & Record<string, unknown>;
@@ -12,6 +12,7 @@ type RawConfig = {
   embedding?: Partial<EmbeddingConfig> & Record<string, unknown>;
   discord?: Partial<DiscordConfig> & Record<string, unknown>;
   sub_model?: Partial<SubModelConfig> & Record<string, unknown>;
+  recall?: Partial<RecallConfig> & Record<string, unknown>;
   interface?: string;
 };
 
@@ -139,5 +140,13 @@ export function loadConfig(configPath: string): AppConfig {
   const interfaceMode: InterfaceMode =
     rawInterface === 'discord' || rawInterface === 'both' ? rawInterface : 'tui';
 
-  return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel };
+  const recall: RecallConfig | undefined = pick(raw.recall, 'enabled', false)
+    ? {
+        endpoint: pick(raw.recall, 'endpoint', 'http://localhost:8420'),
+        enabled: true,
+        timeoutMs: pick(raw.recall, 'timeoutMs', 5000),
+      }
+    : undefined;
+
+  return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel, recall };
 }

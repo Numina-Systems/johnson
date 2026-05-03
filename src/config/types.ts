@@ -52,6 +52,12 @@ export type DiscordConfig = {
   readonly prefix?: string;
 };
 
+export type RecallConfig = {
+  readonly endpoint: string;
+  readonly enabled: boolean;
+  readonly timeoutMs: number;
+};
+
 export type InterfaceMode = 'tui' | 'discord' | 'both';
 
 export type AppConfig = {
@@ -62,4 +68,5 @@ export type AppConfig = {
   readonly discord?: DiscordConfig;
   readonly interface: InterfaceMode;
   readonly subModel?: SubModelConfig;
+  readonly recall?: RecallConfig;
 };
