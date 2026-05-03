@@ -98,11 +98,11 @@ function makeMockSubAgent(response: string): { subAgent: SubAgentLLM; calls: Sub
 describe('compactContext', () => {
   test('uses sub-agent for summarization when older context docs exist', async () => {
     const documents = [
-      { rkey: 'context/2025-01-01T00-00-00', content: 'conversation 1' },
-      { rkey: 'context/2025-01-02T00-00-00', content: 'conversation 2' },
-      { rkey: 'context/2025-01-03T00-00-00', content: 'conversation 3' },
-      { rkey: 'context/2025-01-04T00-00-00', content: 'conversation 4' },
-      { rkey: 'context/2025-01-05T00-00-00', content: 'conversation 5' },
+      { rkey: 'archive:2025-01-01T00-00-00', content: 'conversation 1' },
+      { rkey: 'archive:2025-01-02T00-00-00', content: 'conversation 2' },
+      { rkey: 'archive:2025-01-03T00-00-00', content: 'conversation 3' },
+      { rkey: 'archive:2025-01-04T00-00-00', content: 'conversation 4' },
+      { rkey: 'archive:2025-01-05T00-00-00', content: 'conversation 5' },
     ];
     const { store } = makeMockStore(documents);
     const { subAgent, calls } = makeMockSubAgent('Earlier topics: weather, coding');
@@ -119,8 +119,8 @@ describe('compactContext', () => {
 
   test('skips sub-agent call when there are no older context docs to summarize', async () => {
     const documents = [
-      { rkey: 'context/2025-01-01T00-00-00', content: 'conversation 1' },
-      { rkey: 'context/2025-01-02T00-00-00', content: 'conversation 2' },
+      { rkey: 'archive:2025-01-01T00-00-00', content: 'conversation 1' },
+      { rkey: 'archive:2025-01-02T00-00-00', content: 'conversation 2' },
     ];
     const { store } = makeMockStore(documents);
     const { subAgent, calls } = makeMockSubAgent('unused summary');

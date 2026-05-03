@@ -72,11 +72,11 @@ The agent's memory is a flat document store: `rkey → content`. Conventional rk
 - `operator` — user preferences/context (fetched on demand)
 - `skill:<name>` — reusable TypeScript skills
 - `task:<name>` — task state
-- `context/<timestamp>` — context compaction snapshots
+- `archive:<timestamp>` — context compaction snapshots
 
 The `self` document is auto-loaded via `loadCoreMemoryFromStore()` in `context.ts`. The `operator` document is intentionally NOT auto-loaded to save tokens.
 
-Context compaction (`src/agent/compaction.ts`) triggers when token estimates exceed `contextBudget × contextLimit`. It saves the current conversation as a `context/<timestamp>` document, then rebuilds context from a summary of older context docs + the 3 most recent in full.
+Context compaction (`src/agent/compaction.ts`) triggers when token estimates exceed `contextBudget × contextLimit`. It saves the current conversation as an `archive:<timestamp>` document, then rebuilds context from a summary of older context docs + the 3 most recent in full.
 
 ### Secrets Management (`src/secrets/manager.ts`)
 

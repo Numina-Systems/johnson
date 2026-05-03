@@ -1,7 +1,7 @@
 // pattern: Imperative Shell — context compaction via SQLite store
 //
 // When conversation token count exceeds contextBudget × contextLimit:
-// 1. Save full conversation to store as context/<timestamp> document
+// 1. Save full conversation to store as archive:<timestamp> document
 // 2. Load the 2-3 most recent context documents (full text)
 // 3. Summarize all older context documents into one paragraph
 // 4. Return rebuilt context for the agent to continue with
@@ -12,7 +12,7 @@ import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from './context.ts';
 
-const CONTEXT_PREFIX = 'context/';
+const CONTEXT_PREFIX = 'archive:';
 const RECENT_NOTES_COUNT = 3;
 
 /**
