@@ -10,6 +10,7 @@ import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
 import { registerNotifyTools } from '../tools/notify.ts';
 import { registerSummarizeTools } from '../tools/summarize.ts';
+import type { AppConfig } from '../config/types.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -92,6 +93,13 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
           const emb = await deps.embedding.embed(content);
           deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
         } catch { /* non-fatal */ }
+      }
+
+      // Recall encoding hook — fire and forget, don't block doc_upsert
+      if (deps.recallClient) {
+        deps.recallClient.encode(rkey, content).catch(() => {
+          // Silently ignore — Recall encoding is best-effort
+        });
       }
 
       return `Document saved: ${rkey}.${statusMsg}`;
@@ -328,6 +336,37 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       return `✅ Task ${id} cancelled.`;
     },
   );
+
+  // ── recall_query ────────────────────────────────────────────────────────────
+  if (deps.recallClient) {
+    registry.register(
+      'recall_query',
+      {
+        name: 'recall_query',
+        description:
+          'Query the memory bank for verbatim recall of stored facts. Returns exact names, numbers, dates, and phrases from previously stored documents.',
+        mode: 'sandbox',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'Natural language question about stored facts' },
+            max_results: { type: 'number', description: 'Maximum number of tokens in response' },
+          },
+          required: ['query'],
+        },
+      },
+      async (params) => {
+        const query = str(params, 'query');
+        const maxResults = typeof params['max_results'] === 'number' ? params['max_results'] : undefined;
+
+        const result = await deps.recallClient!.query(query, maxResults);
+        if (!result) {
+          return 'Recall server unavailable';
+        }
+        return result;
+      },
+    );
+  }
 
   // Web tools (search, fetch, http)
   registerWebTools(registry, deps);

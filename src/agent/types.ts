@@ -9,6 +9,7 @@ import type { Store } from '../store/store.ts';
 import type { SecretManager } from '../secrets/manager.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
+import type { RecallClient } from '../recall/client.ts';
 
 export type AgentConfig = {
   readonly model: string;
@@ -48,6 +49,7 @@ export type AgentDependencies = {
   readonly subAgent?: SubAgentLLM;
   readonly customTools?: CustomToolManager;
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
+  readonly recallClient?: RecallClient;
 };
 
 export type ConversationTurn = {

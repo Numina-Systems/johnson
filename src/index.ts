@@ -26,6 +26,7 @@ import { createDiscordBot } from './discord/index.ts';
 import type { Agent, AgentDependencies } from './agent/types.ts';
 import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
+import { RecallClient } from './recall/client.ts';
 import { log } from './util/log.ts';
 
 const CONFIG_PATH = resolve(import.meta.dir, '..', 'config.toml');
@@ -75,6 +76,22 @@ async function main(): Promise<void> {
     reindexEmbeddings({ store, embedding }, config.embedding!.model).catch(err => log(`Embedding reindex failed: ${err}`));
   }
 
+  // Recall client (optional — gracefully degrades if server is unavailable)
+  let recallClient: RecallClient | undefined;
+  if (config.recall?.enabled) {
+    try {
+      recallClient = new RecallClient(config.recall.endpoint, config.recall.timeoutMs);
+      const health = await recallClient.health();
+      if (health) {
+        log('✓ Recall server available');
+      } else {
+        log('⚠ Recall server unreachable, continuing with degraded mode');
+      }
+    } catch (err) {
+      log(`⚠ Recall client init failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
   // Ensure directories exist
   const { mkdir } = await import('fs/promises');
   await mkdir(DATA_DIR, { recursive: true });
@@ -118,6 +135,7 @@ async function main(): Promise<void> {
     subAgent,
     customTools,
     systemPromptProvider,
+    recallClient,
   };
   const sharedAgent = createAgent(agentDeps);
 
