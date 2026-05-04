@@ -5,11 +5,52 @@ import type { ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies } from '../agent/types.ts';
 import { estimateTokens } from '../agent/context.ts';
 import { chunkText, type Chunk, LARGE_FILE_THRESHOLD } from './chunking.ts';
+import type { SubAgentLLM } from '../model/sub-agent.ts';
 
 function str(input: Record<string, unknown>, key: string): string {
   const val = input[key];
   if (typeof val !== 'string') throw new Error(`missing required param: ${key}`);
   return val;
+}
+
+// ── Task 1: Summarisation orchestrator ────────────────────────────────
+
+type SummarizationResult = {
+  readonly perChunk: ReadonlyArray<string>;
+  readonly rollUp: string;
+};
+
+async function summarizeChunks(
+  chunks: ReadonlyArray<Chunk>,
+  intent: 'memory' | 'knowledge' | 'context',
+  subAgent: SubAgentLLM,
+): Promise<SummarizationResult> {
+  const systemPrompts: Record<string, string> = {
+    memory:
+      'You are extracting identity facts about a person or agent from a document chunk. Output only factual statements about who they are, what they do, their preferences, and their relationships. Be concise — bullet points.',
+    knowledge:
+      'You are summarizing a document chunk for future reference. Capture the key information, decisions, and details that would be useful when searching for this content later. Be concise but complete.',
+    context:
+      'You are summarizing a document chunk to give the reader a quick understanding of its content. Focus on the main points and any actionable information.',
+  };
+
+  const chunkSystemPrompt = systemPrompts[intent] ?? systemPrompts.context;
+
+  const perChunkSummaries: string[] = [];
+
+  for (const chunk of chunks) {
+    const summary = await subAgent.complete(chunk.content, chunkSystemPrompt);
+    perChunkSummaries.push(summary);
+  }
+
+  const combinedSummaries = perChunkSummaries.join('\n\n');
+
+  const rollUpSystemPrompt =
+    'You are creating a single concise summary from multiple chunk summaries of the same document. Synthesize the key points into 2-5 sentences that capture the document\'s essential content. Do not use bullet points or headers.';
+
+  const rollUp = await subAgent.complete(combinedSummaries, rollUpSystemPrompt);
+
+  return { perChunk: perChunkSummaries, rollUp };
 }
 
 function deriveRkeyFromFilename(filepath: string): string {
@@ -86,11 +127,94 @@ Intents:
       // Handle large files via chunking path
       if (tokenEstimate > LARGE_FILE_THRESHOLD) {
         const chunks = chunkText(content);
-        return JSON.stringify({
-          content: `File has ${chunks.length} chunks (${tokenEstimate} tokens). Summarisation not yet implemented.`,
-          tokenEstimate,
-          chunks: chunks.length,
-        });
+
+        if (!deps.subAgent) {
+          // No sub-agent configured — fall back to truncation
+          const truncated = content.slice(0, LARGE_FILE_THRESHOLD * 4);
+          return JSON.stringify({
+            content: `[truncated — sub-agent not configured] ${truncated}`,
+            tokenEstimate,
+            chunks: chunks.length,
+          });
+        }
+
+        let rollUp: string;
+        try {
+          const { rollUp: summary } = await summarizeChunks(chunks, intent, deps.subAgent);
+          rollUp = summary;
+        } catch {
+          // Fallback: truncate to first ~4k tokens with warning
+          const truncated = content.slice(0, LARGE_FILE_THRESHOLD * 4);
+          rollUp = `[summarisation failed — showing first ~${LARGE_FILE_THRESHOLD} tokens]\n\n${truncated}`;
+        }
+
+        // Dispatch by intent for large files
+        if (intent === 'context') {
+          return JSON.stringify({
+            content: rollUp,
+            tokenEstimate,
+            chunks: chunks.length,
+          });
+        }
+
+        if (intent === 'memory') {
+          const filename = rawPath.split('/').pop() ?? 'unknown';
+          const currentSelf = deps.store.docGet('self')?.content ?? '';
+          const separator = `\n\n<!-- from: ${filename} -->\n`;
+          const updated = currentSelf + separator + rollUp;
+
+          deps.store.docUpsert('self', updated);
+
+          // Fire embedding hook
+          if (deps.embedding) {
+            try {
+              const emb = await deps.embedding.embed(updated);
+              deps.store.saveEmbedding('self', emb, 'nomic-embed-text');
+            } catch { /* non-fatal */ }
+          }
+
+          // Fire recall encoding hook
+          if (deps.recallClient) {
+            deps.recallClient.encode('self', updated).catch(() => {
+              // Silently ignore — Recall encoding is best-effort
+            });
+          }
+
+          return JSON.stringify({
+            content: `Appended to self document`,
+            tokenEstimate,
+            chunks: chunks.length,
+          });
+        }
+
+        if (intent === 'knowledge') {
+          const rkey = deriveRkeyFromFilename(rawPath);
+
+          // Store just the roll-up summary (Phase 4 will add chunk documents)
+          deps.store.docUpsert(rkey, rollUp);
+
+          // Fire embedding hook
+          if (deps.embedding) {
+            try {
+              const emb = await deps.embedding.embed(rollUp);
+              deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
+            } catch { /* non-fatal */ }
+          }
+
+          // Fire recall encoding hook
+          if (deps.recallClient) {
+            deps.recallClient.encode(rkey, rollUp).catch(() => {
+              // Silently ignore — Recall encoding is best-effort
+            });
+          }
+
+          return JSON.stringify({
+            content: `Stored as ${rkey}`,
+            rkey,
+            tokenEstimate,
+            chunks: chunks.length,
+          });
+        }
       }
 
       // Dispatch by intent (small-file path unchanged)
