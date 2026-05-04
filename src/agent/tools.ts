@@ -10,6 +10,7 @@ import type { AgentDependencies, ChatContext } from './types.ts';
 import type { GrantStatus } from '../store/store.ts';
 import { registerNotifyTools } from '../tools/notify.ts';
 import { registerSummarizeTools } from '../tools/summarize.ts';
+import { registerIngestTools } from '../tools/ingest.ts';
 import type { AppConfig } from '../config/types.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -386,6 +387,10 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       runtime: deps.runtime,
       secrets: deps.secrets,
     });
+  }
+
+  if (deps.workingDir) {
+    registerIngestTools(registry, deps);
   }
 
   return registry;

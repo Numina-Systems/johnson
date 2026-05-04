@@ -50,6 +50,7 @@ export type AgentDependencies = {
   readonly customTools?: CustomToolManager;
   readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
   readonly recallClient?: RecallClient;
+  readonly workingDir?: string;
 };
 
 export type ConversationTurn = {

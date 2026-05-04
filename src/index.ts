@@ -136,6 +136,7 @@ async function main(): Promise<void> {
     customTools,
     systemPromptProvider,
     recallClient,
+    workingDir: config.runtime.workingDir,
   };
   const sharedAgent = createAgent(agentDeps);
 
