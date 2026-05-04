@@ -38,6 +38,8 @@ async function summarizeChunks(
 
   const perChunkSummaries: string[] = [];
 
+  // Process chunks sequentially to avoid overwhelming the sub-agent with concurrent requests
+  // and to allow early detection of service failures
   for (const chunk of chunks) {
     const summary = await subAgent.complete(chunk.content, chunkSystemPrompt);
     perChunkSummaries.push(summary);

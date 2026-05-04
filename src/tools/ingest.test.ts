@@ -32,8 +32,11 @@ afterAll(async () => {
   await rm(tempDir, { recursive: true, force: true });
 });
 
-function makeDeps(workingDir: string): AgentDependencies {
-  return {
+function makeDeps(
+  workingDir: string,
+  overrides?: Partial<AgentDependencies>,
+): AgentDependencies {
+  const baseDeps: AgentDependencies = {
     model: { complete: async () => { throw new Error('model not used in ingest tests'); } },
     runtime: {
       execute: async () => { throw new Error('runtime not used'); },
@@ -51,6 +54,7 @@ function makeDeps(workingDir: string): AgentDependencies {
     store: createStore(':memory:'),
     workingDir,
   };
+  return { ...baseDeps, ...overrides };
 }
 
 describe('ingest_file tool', () => {
@@ -256,16 +260,16 @@ describe('ingest_file tool', () => {
 
   describe('AC6.2: Embedding hooks fire for persisted documents', () => {
     test('calls embedding.embed() for memory intent', async () => {
-      const deps = makeDeps(testFilesDir);
       let embeddingCalled = false;
 
-      // Mock embedding provider
-      deps.embedding = {
+      const mockEmbedding = {
         embed: async (text: string) => {
           embeddingCalled = true;
           return new Float32Array([0.1, 0.2, 0.3]);
         },
       };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -279,16 +283,16 @@ describe('ingest_file tool', () => {
     });
 
     test('calls embedding.embed() for knowledge intent', async () => {
-      const deps = makeDeps(testFilesDir);
       let embeddingCalled = false;
 
-      // Mock embedding provider
-      deps.embedding = {
+      const mockEmbedding = {
         embed: async (text: string) => {
           embeddingCalled = true;
           return new Float32Array([0.1, 0.2, 0.3]);
         },
       };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -302,16 +306,16 @@ describe('ingest_file tool', () => {
     });
 
     test('does not call embedding.embed() for context intent', async () => {
-      const deps = makeDeps(testFilesDir);
       let embeddingCalled = false;
 
-      // Mock embedding provider
-      deps.embedding = {
+      const mockEmbedding = {
         embed: async (text: string) => {
           embeddingCalled = true;
           return new Float32Array([0.1, 0.2, 0.3]);
         },
       };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -726,8 +730,7 @@ Para 3 with further content and information. `.repeat(250);
         },
       };
 
-      const deps = makeDeps(testFilesDir);
-      deps.subAgent = mockSubAgent;
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -760,8 +763,7 @@ Para 3 with further content and information. `.repeat(250);
         },
       };
 
-      const deps = makeDeps(testFilesDir);
-      deps.subAgent = mockSubAgent;
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -795,8 +797,7 @@ Para 3 with further content and information. `.repeat(250);
         },
       };
 
-      const deps = makeDeps(testFilesDir);
-      deps.subAgent = mockSubAgent;
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -825,8 +826,7 @@ Para 3 with further content and information. `.repeat(250);
         },
       };
 
-      const deps = makeDeps(testFilesDir);
-      deps.subAgent = mockSubAgent;
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
@@ -856,8 +856,7 @@ Para 3 with further content and information. `.repeat(250);
         },
       };
 
-      const deps = makeDeps(testFilesDir);
-      deps.subAgent = mockSubAgent;
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
 
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
