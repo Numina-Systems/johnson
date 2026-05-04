@@ -623,4 +623,84 @@ Para 3 with further content and information. `.repeat(250);
       }
     });
   });
+
+  // ── Task 4: Integration of chunking into ingest_file handler ──────────
+
+  describe('AC5.1: Large file integration — handler calls chunkText', () => {
+    test('large file returns chunked result with chunk count', async () => {
+      // Create a large file (>4096 tokens)
+      const largeContent = 'Paragraph content here. '.repeat(700); // ~4400 tokens
+      const testFile = join(testFilesDir, 'large-file.md');
+      await writeFile(testFile, largeContent);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'large-file.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.chunks).toBeGreaterThan(1);
+      expect(parsed.tokenEstimate).toBeGreaterThan(4096);
+      expect(typeof parsed.tokenEstimate).toBe('number');
+      expect(parsed.content).toContain('chunks');
+    });
+
+    test('large file with knowledge intent returns chunk count without storing full content', async () => {
+      const largeContent = 'Paragraph content here. '.repeat(700);
+      const testFile = join(testFilesDir, 'large-knowledge.md');
+      await writeFile(testFile, largeContent);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'large-knowledge.md',
+        intent: 'knowledge',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.chunks).toBeGreaterThan(1);
+      expect(parsed.tokenEstimate).toBeGreaterThan(4096);
+    });
+
+    test('large file with memory intent returns chunk count', async () => {
+      const largeContent = 'Paragraph content here. '.repeat(700);
+      const testFile = join(testFilesDir, 'large-memory.md');
+      await writeFile(testFile, largeContent);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'large-memory.md',
+        intent: 'memory',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.chunks).toBeGreaterThan(1);
+      expect(parsed.tokenEstimate).toBeGreaterThan(4096);
+    });
+
+    test('small file still uses non-chunked path', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.content).toContain('# My Notes');
+      // Small files return chunks: 0 (not using chunking path)
+      expect(parsed.chunks).toBe(0);
+    });
+  });
 });

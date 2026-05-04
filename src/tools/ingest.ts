@@ -338,16 +338,17 @@ Intents:
       // Estimate tokens
       const tokenEstimate = estimateTokens(content);
 
-      // For now (Phase 1), reject large files
-      if (tokenEstimate > 4096) {
+      // Handle large files via chunking path
+      if (tokenEstimate > LARGE_FILE_THRESHOLD) {
+        const chunks = chunkText(content);
         return JSON.stringify({
-          error: 'file too large for Phase 1 (max 4096 tokens)',
+          content: `File has ${chunks.length} chunks (${tokenEstimate} tokens). Summarisation not yet implemented.`,
           tokenEstimate,
-          chunks: 0,
+          chunks: chunks.length,
         });
       }
 
-      // Dispatch by intent
+      // Dispatch by intent (small-file path unchanged)
       if (intent === 'context') {
         return JSON.stringify({
           content,
