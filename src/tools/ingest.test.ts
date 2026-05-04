@@ -354,10 +354,9 @@ describe('ingest_file tool', () => {
   });
 
   describe('AC1.7: File size limit check', () => {
-    test('rejects file exceeding 400KB limit', async () => {
+    test('rejects file exceeding 1MB limit', async () => {
       const largeFile = join(testFilesDir, 'oversized.txt');
-      // Create a 500KB file
-      const content = 'x'.repeat(500_000);
+      const content = 'x'.repeat(1_100_000);
       await writeFile(largeFile, content);
 
       const deps = makeDeps(testFilesDir);
@@ -377,7 +376,7 @@ describe('ingest_file tool', () => {
 
     test('includes file size in error message', async () => {
       const largeFile = join(testFilesDir, 'big-file.txt');
-      const content = 'y'.repeat(450_000); // 450KB
+      const content = 'y'.repeat(1_100_000);
       await writeFile(largeFile, content);
 
       const deps = makeDeps(testFilesDir);
@@ -398,7 +397,7 @@ describe('ingest_file tool', () => {
     test('does not read file content when size check fails', async () => {
       const largeFile = join(testFilesDir, 'dont-read.txt');
       // Create file larger than limit
-      const content = 'z'.repeat(500_000);
+      const content = 'z'.repeat(1_100_000);
       await writeFile(largeFile, content);
 
       const deps = makeDeps(testFilesDir);

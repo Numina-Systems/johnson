@@ -9,7 +9,7 @@ import { estimateTokens } from '../agent/context.ts';
 import { chunkText, type Chunk, LARGE_FILE_THRESHOLD } from './chunking.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
 
-const MAX_FILE_SIZE_BYTES = 400_000; // ~400KB
+const MAX_FILE_SIZE_BYTES = 1_000_000; // ~1MB
 
 function str(input: Record<string, unknown>, key: string): string {
   const val = input[key];
@@ -199,7 +199,7 @@ Intents:
       if (fileStat.size > MAX_FILE_SIZE_BYTES) {
         const sizeKb = Math.round(fileStat.size / 1024);
         return JSON.stringify({
-          error: `File too large: ${userPath} (${sizeKb}KB). Maximum is ~400KB.`,
+          error: `File too large: ${userPath} (${sizeKb}KB). Maximum is ~1MB.`,
           tokenEstimate: Math.ceil(fileStat.size / 4),
         });
       }
