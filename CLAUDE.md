@@ -18,7 +18,7 @@ constellation-lite is a code-first AI agent. The model's primary tool is `execut
 
 ### Dependency Wiring (`src/index.ts`)
 
-`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), then calls `makeAgent()` per-interface. Discord gets one agent per channel; TUI gets one agent for the session.
+`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), then calls `makeAgent()` per-interface. Discord gets one agent per channel; TUI gets one agent for the session. `workingDir` (from `process.cwd()`) is passed via `AgentDependencies` so tools can resolve workspace-relative paths safely.
 
 ### Agent Loop (`src/agent/agent.ts`)
 
@@ -59,6 +59,7 @@ Tools are organized into domain-specific modules under `src/tools/`, each export
 - **Notify** (`notify.ts`) — `notify_discord` (sandbox mode, Discord webhook). Requires `DISCORD_WEBHOOK_URL` secret.
 - **Image** (`image.ts`) — `view_image` (native mode). Fetches a URL and returns a base64 `ImageSourceBlock` so the model can see the image.
 - **Summarize** (`summarize.ts`) — `summarize` (both mode). Delegates to the sub-agent LLM. Requires `[sub_model]` config.
+- **Ingest** (`ingest.ts` + `chunking.ts`) — `ingest_file` (native mode). Reads workspace files and routes by intent: `memory` (appends to `self`), `knowledge` (stores as documents with semantic chunking), `context` (returns content inline). Large files are chunked via `chunking.ts` (Functional Core) and summarised via `SubAgentLLM`. Security: resolves paths relative to `workingDir`, blocks traversal above workspace root, rejects binary files and files >400KB. Only registered when `deps.workingDir` is set.
 - **Custom Tools** (`custom-tool-manager.ts` + `custom-tools.ts`) — `create_custom_tool`, `list_custom_tools`, `call_custom_tool` (sandbox mode). User-created tools stored as `customtool:*` documents with hash-based approval, similar to the skill grant system.
 
 ### Persistent Store (`src/store/store.ts`)
