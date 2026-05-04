@@ -161,4 +161,211 @@ describe('ingest_file tool', () => {
       expect(ingestTool?.definition.input_schema.properties.intent).toBeDefined();
     });
   });
+
+  // ── Task 4: Intent Dispatch Tests ──────────────────────────────────────
+
+  describe('AC2.1: Memory intent appends to self document', () => {
+    test('appends file content to self document with memory intent', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'memory',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.content).toBe('Appended to self document');
+      expect(parsed.tokenEstimate).toBeGreaterThan(0);
+
+      // Verify the content was actually stored
+      const selfDoc = deps.store.docGet('self');
+      expect(selfDoc).toBeDefined();
+      expect(selfDoc?.content).toContain('# My Notes');
+      expect(selfDoc?.content).toContain('Fact: Example content');
+    });
+  });
+
+  describe('AC2.3: Memory additions have separator for traceability', () => {
+    test('includes <!-- from: filename --> separator in self document', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'memory',
+      });
+
+      const selfDoc = deps.store.docGet('self');
+      expect(selfDoc?.content).toMatch(/<!-- from: notes\.md -->/);
+    });
+  });
+
+  describe('AC3.1: Knowledge intent stores as knowledge:* document', () => {
+    test('stores file as knowledge:<name> document', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'knowledge',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.rkey).toBe('knowledge:notes');
+      expect(parsed.content).toBe('Stored as knowledge:notes');
+      expect(parsed.tokenEstimate).toBeGreaterThan(0);
+
+      // Verify the content was actually stored with the correct rkey
+      const knowledgeDoc = deps.store.docGet('knowledge:notes');
+      expect(knowledgeDoc).toBeDefined();
+      expect(knowledgeDoc?.content).toContain('# My Notes');
+      expect(knowledgeDoc?.content).toContain('Fact: Example content');
+    });
+  });
+
+  describe('AC4.1: Context intent returns content without persistence', () => {
+    test('returns file content for context intent, nothing persisted', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.content).toContain('# My Notes');
+      expect(parsed.content).toContain('Fact: Example content');
+      expect(parsed.rkey).toBeUndefined();
+
+      // Verify nothing was persisted
+      const knowledgeDoc = deps.store.docGet('knowledge:notes');
+      expect(knowledgeDoc).toBeNull();
+
+      const selfDoc = deps.store.docGet('self');
+      expect(selfDoc).toBeNull();
+    });
+  });
+
+  describe('AC6.2: Embedding hooks fire for persisted documents', () => {
+    test('calls embedding.embed() for memory intent', async () => {
+      const deps = makeDeps(testFilesDir);
+      let embeddingCalled = false;
+
+      // Mock embedding provider
+      deps.embedding = {
+        embed: async (text: string) => {
+          embeddingCalled = true;
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'memory',
+      });
+
+      expect(embeddingCalled).toBe(true);
+    });
+
+    test('calls embedding.embed() for knowledge intent', async () => {
+      const deps = makeDeps(testFilesDir);
+      let embeddingCalled = false;
+
+      // Mock embedding provider
+      deps.embedding = {
+        embed: async (text: string) => {
+          embeddingCalled = true;
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'knowledge',
+      });
+
+      expect(embeddingCalled).toBe(true);
+    });
+
+    test('does not call embedding.embed() for context intent', async () => {
+      const deps = makeDeps(testFilesDir);
+      let embeddingCalled = false;
+
+      // Mock embedding provider
+      deps.embedding = {
+        embed: async (text: string) => {
+          embeddingCalled = true;
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'context',
+      });
+
+      expect(embeddingCalled).toBe(false);
+    });
+  });
+
+  describe('AC6.3: Result includes tokenEstimate field', () => {
+    test('includes tokenEstimate in result for all intents', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const contextResult = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'context',
+      });
+      const contextParsed = JSON.parse(contextResult as string);
+      expect(contextParsed.tokenEstimate).toBeGreaterThan(0);
+      expect(typeof contextParsed.tokenEstimate).toBe('number');
+
+      const memoryResult = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'memory',
+      });
+      const memoryParsed = JSON.parse(memoryResult as string);
+      expect(memoryParsed.tokenEstimate).toBeGreaterThan(0);
+      expect(typeof memoryParsed.tokenEstimate).toBe('number');
+
+      const knowledgeResult = await registry.execute('ingest_file', {
+        path: 'sub/dir/file.md',
+        intent: 'knowledge',
+      });
+      const knowledgeParsed = JSON.parse(knowledgeResult as string);
+      expect(knowledgeParsed.tokenEstimate).toBeGreaterThan(0);
+      expect(typeof knowledgeParsed.tokenEstimate).toBe('number');
+    });
+
+    test('includes chunks field set to 0', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.chunks).toBe(0);
+    });
+  });
 });
