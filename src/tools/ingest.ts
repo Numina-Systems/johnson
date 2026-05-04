@@ -1,12 +1,15 @@
 // pattern: Imperative Shell — ingest_file tool handler with file I/O and path resolution
 
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { stat, readdir } from 'node:fs/promises';
 import type { ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies } from '../agent/types.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from '../agent/context.ts';
 import { chunkText, type Chunk, LARGE_FILE_THRESHOLD } from './chunking.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
+
+const MAX_FILE_SIZE_BYTES = 400_000; // ~400KB
 
 function str(input: Record<string, unknown>, key: string): string {
   const val = input[key];
@@ -135,9 +138,58 @@ Intents:
         );
       }
 
+      // File existence check with directory listing hint
+      let fileStat: ReturnType<typeof stat>;
+      try {
+        fileStat = await stat(resolvedPath);
+        if (!fileStat.isFile()) {
+          return JSON.stringify({
+            error: `Path is a directory, not a file: ${userPath}`,
+            tokenEstimate: 0,
+          });
+        }
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          // List files in parent directory as hint
+          const dir = dirname(resolvedPath);
+          let hint = '';
+          try {
+            const entries = await readdir(dir);
+            const textFiles = entries.filter(e => !e.startsWith('.')).slice(0, 10);
+            if (textFiles.length > 0) {
+              hint = `\nFiles in ${dirname(userPath) || '.'}:\n${textFiles.map(f => `  ${f}`).join('\n')}`;
+            }
+          } catch { /* directory might not exist either */ }
+
+          return JSON.stringify({
+            error: `File not found: ${userPath}${hint}`,
+            tokenEstimate: 0,
+          });
+        }
+        throw err;
+      }
+
+      // Size limit check (before reading content)
+      if (fileStat.size > MAX_FILE_SIZE_BYTES) {
+        const sizeKb = Math.round(fileStat.size / 1024);
+        return JSON.stringify({
+          error: `File too large: ${userPath} (${sizeKb}KB). Maximum is ~400KB.`,
+          tokenEstimate: Math.ceil(fileStat.size / 4),
+        });
+      }
+
       // Read file content
       const file = Bun.file(resolvedPath);
       const content = await file.text();
+
+      // Binary detection (check for null bytes in first 8KB)
+      const sample = content.slice(0, 8192);
+      if (sample.includes('\0')) {
+        return JSON.stringify({
+          error: `Binary file detected: ${userPath}. Only text files are supported.`,
+          tokenEstimate: 0,
+        });
+      }
 
       // Estimate tokens
       const tokenEstimate = estimateTokens(content);

@@ -258,6 +258,165 @@ describe('ingest_file tool', () => {
     });
   });
 
+  // ── Task 1-3: Validation Guards (Error Handling) ──────────────────────
+
+  describe('AC1.5: File not found error with directory listing hint', () => {
+    test('returns error JSON when file does not exist', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'does-not-exist.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      expect(parsed.error).toMatch(/not found/i);
+      expect(parsed.tokenEstimate).toBe(0);
+    });
+
+    test('includes directory listing hint in error message', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'does-not-exist.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      // Should hint about available files
+      expect(parsed.error).toMatch(/files in|notes\.md/i);
+    });
+
+    test('does not throw when file missing', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      let error: unknown;
+      try {
+        await registry.execute('ingest_file', {
+          path: 'does-not-exist.md',
+          intent: 'context',
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).toBeUndefined();
+    });
+  });
+
+  describe('AC1.6: Binary file detection', () => {
+    test('detects binary file with null bytes and returns error', async () => {
+      const binaryFile = join(testFilesDir, 'binary-test.bin');
+      const binaryContent = Buffer.from([0x48, 0x65, 0x6c, 0x00, 0x6f]); // "Hel\0o"
+      await writeFile(binaryFile, binaryContent);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'binary-test.bin',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      expect(parsed.error).toMatch(/binary/i);
+      expect(parsed.tokenEstimate).toBe(0);
+    });
+
+    test('does not persist store when binary file detected', async () => {
+      const binaryFile = join(testFilesDir, 'binary-reject.bin');
+      const binaryContent = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]); // PNG header with null
+      await writeFile(binaryFile, binaryContent);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'binary-reject.bin',
+        intent: 'knowledge',
+      });
+
+      // Verify nothing was stored
+      const doc = deps.store.docGet('knowledge:binary-reject');
+      expect(doc).toBeNull();
+    });
+  });
+
+  describe('AC1.7: File size limit check', () => {
+    test('rejects file exceeding 400KB limit', async () => {
+      const largeFile = join(testFilesDir, 'oversized.txt');
+      // Create a 500KB file
+      const content = 'x'.repeat(500_000);
+      await writeFile(largeFile, content);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'oversized.txt',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      expect(parsed.error).toMatch(/too large/i);
+      expect(parsed.tokenEstimate).toBeGreaterThan(0);
+    });
+
+    test('includes file size in error message', async () => {
+      const largeFile = join(testFilesDir, 'big-file.txt');
+      const content = 'y'.repeat(450_000); // 450KB
+      await writeFile(largeFile, content);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'big-file.txt',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      // Should include KB size in error
+      expect(parsed.error).toMatch(/\d+KB/);
+    });
+
+    test('does not read file content when size check fails', async () => {
+      const largeFile = join(testFilesDir, 'dont-read.txt');
+      // Create file larger than limit
+      const content = 'z'.repeat(500_000);
+      await writeFile(largeFile, content);
+
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'dont-read.txt',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.error).toBeDefined();
+      // Should return early without processing content
+      expect(parsed.content).toBeUndefined();
+    });
+  });
+
   describe('AC6.2: Embedding hooks fire for persisted documents', () => {
     test('calls embedding.embed() for memory intent', async () => {
       let embeddingCalled = false;
