@@ -139,7 +139,7 @@ Intents:
       }
 
       // File existence check with directory listing hint
-      let fileStat: ReturnType<typeof stat>;
+      let fileStat: Awaited<ReturnType<typeof stat>>;
       try {
         fileStat = await stat(resolvedPath);
         if (!fileStat.isFile()) {
