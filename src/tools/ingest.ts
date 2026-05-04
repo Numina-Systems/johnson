@@ -1,6 +1,6 @@
 // pattern: Imperative Shell — ingest_file tool handler with file I/O and path resolution
 
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies } from '../agent/types.ts';
 
@@ -69,7 +69,10 @@ Intents:
 
       // Security check: ensure resolved path is within workingDir
       // This catches both traversal (../../etc/passwd) and absolute paths (/etc/passwd)
-      if (!resolvedPath.startsWith(canonicalWorkingDir)) {
+      const canonicalPrefix = canonicalWorkingDir.endsWith('/')
+        ? canonicalWorkingDir
+        : canonicalWorkingDir + '/';
+      if (resolvedPath !== canonicalWorkingDir && !resolvedPath.startsWith(canonicalPrefix)) {
         throw new Error(
           `path traversal detected: ${resolvedPath} is outside workingDir ${canonicalWorkingDir}`,
         );
@@ -160,5 +163,6 @@ Intents:
 
       throw new Error(`unknown intent: ${intent}`);
     },
+    'native',
   );
 }
