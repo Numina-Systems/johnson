@@ -635,6 +635,7 @@ Para 3 with further content and information. `.repeat(250);
       await writeFile(testFile, largeContent);
 
       const deps = makeDeps(testFilesDir);
+      // No subAgent provided — should fall back to truncation
       const registry = createToolRegistry();
       registerIngestTools(registry, deps);
 
@@ -647,7 +648,8 @@ Para 3 with further content and information. `.repeat(250);
       expect(parsed.chunks).toBeGreaterThan(1);
       expect(parsed.tokenEstimate).toBeGreaterThan(4096);
       expect(typeof parsed.tokenEstimate).toBe('number');
-      expect(parsed.content).toContain('chunks');
+      // Without subAgent, should contain truncation notice
+      expect(parsed.content).toMatch(/truncated|sub-agent not configured/i);
     });
 
     test('large file with knowledge intent returns chunk count without storing full content', async () => {
@@ -702,6 +704,196 @@ Para 3 with further content and information. `.repeat(250);
       expect(parsed.content).toContain('# My Notes');
       // Small files return chunks: 0 (not using chunking path)
       expect(parsed.chunks).toBe(0);
+    });
+  });
+
+  // ── Task 3: Summarisation and fallback tests ──────────────────────────
+
+  describe('AC5.4: Sub-agent summarisation — per-chunk and roll-up', () => {
+    test('large file with context intent calls subAgent and returns roll-up summary', async () => {
+      const largeContent = 'This is chunk one. Content describing topics. '.repeat(250)
+        + '\n\n# Section Two\n\n'
+        + 'This is chunk two. More content and details. '.repeat(250);
+
+      const testFile = join(testFilesDir, 'summarise-context.md');
+      await writeFile(testFile, largeContent);
+
+      let callCount = 0;
+      const mockSubAgent = {
+        complete: async (prompt: string, system?: string) => {
+          callCount++;
+          return `Summary of chunk ${callCount}: ${prompt.slice(0, 30)}...`;
+        },
+      };
+
+      const deps = makeDeps(testFilesDir);
+      deps.subAgent = mockSubAgent;
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'summarise-context.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+
+      // Should have called subAgent multiple times (once per chunk + once for roll-up)
+      expect(callCount).toBeGreaterThan(1);
+
+      // Result should contain roll-up summary
+      expect(parsed.content).toBeDefined();
+      expect(parsed.chunks).toBeGreaterThan(1);
+    });
+
+    test('large file with memory intent appends summarised content to self', async () => {
+      // Create large file (>4096 tokens)
+      const largeContent = 'Important fact about me: I like learning. '.repeat(700); // ~4400 tokens
+
+      const testFile = join(testFilesDir, 'summarise-memory.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async (prompt: string) => {
+          return `Summary: The document contains important identity facts about the subject.`;
+        },
+      };
+
+      const deps = makeDeps(testFilesDir);
+      deps.subAgent = mockSubAgent;
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'summarise-memory.md',
+        intent: 'memory',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.content).toBe('Appended to self document');
+
+      // Verify content was appended to self with separator
+      const selfDoc = deps.store.docGet('self');
+      expect(selfDoc).toBeDefined();
+      expect(selfDoc?.content).toMatch(/<!-- from: summarise-memory\.md -->/);
+      expect(selfDoc?.content).toContain('Summary:');
+    });
+
+    test('subAgent is called once per chunk plus once for roll-up', async () => {
+      // Create large content that will produce multiple chunks
+      const largeContent = 'Content with details and information. '.repeat(600); // ~4800 tokens
+      const testFile = join(testFilesDir, 'multi-chunk.md');
+      await writeFile(testFile, largeContent);
+
+      let callCount = 0;
+      const mockSubAgent = {
+        complete: async () => {
+          callCount++;
+          return `Summary ${callCount}`;
+        },
+      };
+
+      const deps = makeDeps(testFilesDir);
+      deps.subAgent = mockSubAgent;
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'multi-chunk.md',
+        intent: 'context',
+      });
+
+      // Should be called (N chunks + 1 roll-up)
+      // We expect at least 2 chunks, so at least 3 calls (2 chunk summaries + 1 roll-up)
+      expect(callCount).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe('AC5.5: Sub-agent failure fallback', () => {
+    test('subAgent failure falls back to truncation with warning', async () => {
+      // Create large file (>4096 tokens)
+      const largeContent = 'Paragraph content here. '.repeat(700); // ~4400 tokens
+      const testFile = join(testFilesDir, 'summarise-fail.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          throw new Error('Sub-agent service unavailable');
+        },
+      };
+
+      const deps = makeDeps(testFilesDir);
+      deps.subAgent = mockSubAgent;
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      // Should not throw
+      const result = await registry.execute('ingest_file', {
+        path: 'summarise-fail.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+
+      // Should contain fallback message indicating failure
+      expect(parsed.content).toMatch(/summarisation failed|truncated|showing first/i);
+      expect(parsed.content).toContain('Paragraph content');
+    });
+
+    test('large file with context intent returns fallback on subAgent error', async () => {
+      // Create large file (>4096 tokens)
+      const largeContent = 'Paragraph content here. '.repeat(700); // ~4400 tokens
+      const testFile = join(testFilesDir, 'fallback-context.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          throw new Error('Network error');
+        },
+      };
+
+      const deps = makeDeps(testFilesDir);
+      deps.subAgent = mockSubAgent;
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'fallback-context.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.tokenEstimate).toBeGreaterThan(4096);
+      expect(typeof parsed.content).toBe('string');
+    });
+
+    test('no subAgent configured falls back to truncation', async () => {
+      // Create large file (>4096 tokens)
+      const largeContent = 'Paragraph content here. '.repeat(700); // ~4400 tokens
+      const testFile = join(testFilesDir, 'no-subagent.md');
+      await writeFile(testFile, largeContent);
+
+      const deps = makeDeps(testFilesDir);
+      // No subAgent provided
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'no-subagent.md',
+        intent: 'context',
+      });
+
+      const parsed = JSON.parse(result as string);
+
+      // Should contain fallback message about sub-agent not configured
+      expect(parsed.content).toMatch(/truncated|sub-agent not configured/i);
+      expect(parsed.chunks).toBeGreaterThan(1);
     });
   });
 });
