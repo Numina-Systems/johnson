@@ -895,4 +895,329 @@ Para 3 with further content and information. `.repeat(250);
       expect(parsed.chunks).toBeGreaterThan(1);
     });
   });
+
+  // ── Task 3: Knowledge storage and re-ingestion tests ──────────────────
+
+  describe('AC3.2, AC3.3, AC3.6: Knowledge storage with summary + chunks', () => {
+    test('large file with knowledge intent stores summary document with metadata header', async () => {
+      // Create large file that will be chunked
+      const largeContent = 'Important knowledge content with details. '.repeat(600); // ~4800 tokens
+
+      const testFile = join(testFilesDir, 'knowledge-test.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'This is a summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'knowledge-test.md',
+        intent: 'knowledge',
+      });
+
+      // Verify summary document exists with metadata header
+      const summaryDoc = deps.store.docGet('knowledge:knowledge-test');
+      expect(summaryDoc).toBeDefined();
+      expect(summaryDoc?.content).toContain('<!-- source:');
+      expect(summaryDoc?.content).toContain('knowledge-test.md');
+      expect(summaryDoc?.content).toContain('<!-- chunks:');
+      expect(summaryDoc?.content).toContain('<!-- ingested:');
+      expect(summaryDoc?.content).toMatch(/\d{4}-\d{2}-\d{2}T/); // ISO date format
+      expect(summaryDoc?.content).toContain('This is a summary.');
+    });
+
+    test('large file stores individual chunk documents', async () => {
+      const largeContent = 'Content chunk one details. '.repeat(500)
+        + '\n\n# Section Two\n\n'
+        + 'Content chunk two details. '.repeat(500);
+
+      const testFile = join(testFilesDir, 'multi-chunk-test.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async (text: string) => {
+          return `Summary of: ${text.slice(0, 30)}...`;
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'multi-chunk-test.md',
+        intent: 'knowledge',
+      });
+
+      // Verify chunk documents exist
+      const chunk0 = deps.store.docGet('knowledge:multi-chunk-test:chunk:0');
+      const chunk1 = deps.store.docGet('knowledge:multi-chunk-test:chunk:1');
+
+      expect(chunk0).toBeDefined();
+      expect(chunk1).toBeDefined();
+      expect(chunk0?.content).toContain('Content chunk');
+      expect(chunk1?.content).toContain('Content chunk');
+    });
+
+    test('knowledge document is retrievable via docSearch', async () => {
+      const largeContent = 'Unique searchable keyword research content here. '.repeat(500)
+        + '\n\n'
+        + 'More research content and details. '.repeat(200);
+
+      const testFile = join(testFilesDir, 'searchable-knowledge.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary with unique searchable keyword inside it.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'searchable-knowledge.md',
+        intent: 'knowledge',
+      });
+
+      // Search for keyword
+      const results = deps.store.docSearch('searchable keyword');
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.some((doc) => doc.rkey === 'knowledge:searchable-knowledge')).toBe(true);
+    });
+  });
+
+  describe('AC3.4, AC3.5: Re-ingestion and stale chunk cleanup', () => {
+    test('re-ingesting file overwrites summary document with new content', async () => {
+      const testFile = join(testFilesDir, 're-ingest-test.md');
+
+      const mockSubAgent = {
+        complete: async (text: string) => {
+          if (text.includes('OLD')) return 'Summary of OLD content';
+          return 'Summary of NEW content';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      // First ingest
+      await writeFile(testFile, 'OLD content here. '.repeat(500) + '\n\n' + 'OLD content again. '.repeat(300));
+      await registry.execute('ingest_file', {
+        path: 're-ingest-test.md',
+        intent: 'knowledge',
+      });
+
+      let summaryDoc = deps.store.docGet('knowledge:re-ingest-test');
+      expect(summaryDoc?.content).toContain('OLD');
+
+      // Re-ingest with new content
+      await writeFile(testFile, 'NEW content here. '.repeat(500) + '\n\n' + 'NEW content again. '.repeat(300));
+      await registry.execute('ingest_file', {
+        path: 're-ingest-test.md',
+        intent: 'knowledge',
+      });
+
+      summaryDoc = deps.store.docGet('knowledge:re-ingest-test');
+      expect(summaryDoc?.content).toContain('NEW');
+      expect(summaryDoc?.content).not.toContain('Summary of OLD');
+    });
+
+    test('re-ingesting with fewer chunks deletes stale chunks', async () => {
+      const testFile = join(testFilesDir, 'shrink-test.md');
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      // First ingest: large file producing 5 chunks
+      const largeContent = 'Content section one with details. '.repeat(400)
+        + '\n\n# Section Two\n\n'
+        + 'Content section two with details. '.repeat(400)
+        + '\n\n# Section Three\n\n'
+        + 'Content section three with details. '.repeat(400)
+        + '\n\n# Section Four\n\n'
+        + 'Content section four with details. '.repeat(400)
+        + '\n\n# Section Five\n\n'
+        + 'Content section five with details. '.repeat(400);
+
+      await writeFile(testFile, largeContent);
+      const result1 = await registry.execute('ingest_file', {
+        path: 'shrink-test.md',
+        intent: 'knowledge',
+      });
+      const parsed1 = JSON.parse(result1 as string);
+      const originalChunkCount = parsed1.chunks;
+      expect(originalChunkCount).toBeGreaterThanOrEqual(4);
+
+      // Verify chunks exist
+      for (let i = 0; i < originalChunkCount; i++) {
+        const chunk = deps.store.docGet(`knowledge:shrink-test:chunk:${i}`);
+        expect(chunk).toBeDefined();
+      }
+
+      // Re-ingest: smaller file producing 2 chunks
+      const smallContent = 'Content one with minimal details. '.repeat(300)
+        + '\n\n# Section Two\n\n'
+        + 'Content two with minimal details. '.repeat(200);
+
+      await writeFile(testFile, smallContent);
+      const result2 = await registry.execute('ingest_file', {
+        path: 'shrink-test.md',
+        intent: 'knowledge',
+      });
+      const parsed2 = JSON.parse(result2 as string);
+      const newChunkCount = parsed2.chunks;
+      expect(newChunkCount).toBeLessThan(originalChunkCount);
+
+      // Verify new chunks exist
+      for (let i = 0; i < newChunkCount; i++) {
+        const chunk = deps.store.docGet(`knowledge:shrink-test:chunk:${i}`);
+        expect(chunk).toBeDefined();
+      }
+
+      // Verify old chunks are deleted
+      for (let i = newChunkCount; i < originalChunkCount; i++) {
+        const chunk = deps.store.docGet(`knowledge:shrink-test:chunk:${i}`);
+        expect(chunk).toBeNull();
+      }
+    });
+
+    test('small file knowledge intent cleans up chunks from previous large ingest', async () => {
+      const testFile = join(testFilesDir, 'downsize-test.md');
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      // First ingest: large file
+      const largeContent = 'Large content section. '.repeat(800);
+      await writeFile(testFile, largeContent);
+      const result1 = await registry.execute('ingest_file', {
+        path: 'downsize-test.md',
+        intent: 'knowledge',
+      });
+      const parsed1 = JSON.parse(result1 as string);
+      expect(parsed1.chunks).toBeGreaterThan(0);
+
+      // Verify chunks were created
+      const chunk0Before = deps.store.docGet('knowledge:downsize-test:chunk:0');
+      expect(chunk0Before).toBeDefined();
+
+      // Re-ingest: small file (no chunking)
+      const smallContent = 'Small content only.';
+      await writeFile(testFile, smallContent);
+      const result2 = await registry.execute('ingest_file', {
+        path: 'downsize-test.md',
+        intent: 'knowledge',
+      });
+      const parsed2 = JSON.parse(result2 as string);
+      expect(parsed2.chunks).toBe(0); // Small file
+
+      // Verify chunk from previous large ingest is deleted
+      const chunk0After = deps.store.docGet('knowledge:downsize-test:chunk:0');
+      expect(chunk0After).toBeNull();
+    });
+  });
+
+  describe('AC6.2: Embedding hooks for knowledge chunks', () => {
+    test('calls embedding.embed() for knowledge summary and chunks', async () => {
+      const largeContent = 'Knowledge content for embedding test. '.repeat(500)
+        + '\n\n# Section\n\n'
+        + 'More knowledge content. '.repeat(300);
+
+      const testFile = join(testFilesDir, 'embedding-knowledge.md');
+      await writeFile(testFile, largeContent);
+
+      const embedCalls: string[] = [];
+      const mockEmbedding = {
+        embed: async (text: string) => {
+          embedCalls.push(text.slice(0, 50)); // Record first 50 chars
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary text.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding, subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'embedding-knowledge.md',
+        intent: 'knowledge',
+      });
+
+      // Should have called embed for summary + all chunks
+      expect(embedCalls.length).toBeGreaterThanOrEqual(2); // Summary + at least 1 chunk
+    });
+  });
+
+  describe('AC6.2: Recall encoding hooks for knowledge chunks', () => {
+    test('calls recallClient.encode() for knowledge summary and chunks', async () => {
+      const largeContent = 'Recall-indexed content here. '.repeat(500)
+        + '\n\n# Section\n\n'
+        + 'More recall-indexed content. '.repeat(300);
+
+      const testFile = join(testFilesDir, 'recall-knowledge.md');
+      await writeFile(testFile, largeContent);
+
+      const encodeCalls: string[] = [];
+      const mockRecallClient = {
+        encode: async (rkey: string, content: string) => {
+          encodeCalls.push(rkey);
+        },
+      };
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, {
+        recallClient: mockRecallClient,
+        subAgent: mockSubAgent,
+      });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'recall-knowledge.md',
+        intent: 'knowledge',
+      });
+
+      // Should have called encode for summary document
+      expect(encodeCalls.some((rkey) => rkey === 'knowledge:recall-knowledge')).toBe(true);
+
+      // Should have called encode for chunk documents
+      const hasChunkEncodes = encodeCalls.some((rkey) => rkey.includes(':chunk:'));
+      expect(hasChunkEncodes).toBe(true);
+    });
+  });
 });

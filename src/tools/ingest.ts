@@ -3,6 +3,7 @@
 import { resolve } from 'node:path';
 import type { ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies } from '../agent/types.ts';
+import type { Store } from '../store/store.ts';
 import { estimateTokens } from '../agent/context.ts';
 import { chunkText, type Chunk, LARGE_FILE_THRESHOLD } from './chunking.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
@@ -60,6 +61,21 @@ function deriveRkeyFromFilename(filepath: string): string {
   const basename = filepath.split('/').pop() ?? 'unknown';
   const nameWithoutExt = basename.replace(/\.[^.]+$/, '');
   return `knowledge:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
+}
+
+function cleanupStaleChunks(
+  store: Store,
+  baseRkey: string,
+  newChunkCount: number,
+): void {
+  let i = newChunkCount;
+  while (true) {
+    const chunkRkey = `${baseRkey}:chunk:${i}`;
+    const exists = store.docGet(chunkRkey);
+    if (!exists) break;
+    store.docDelete(chunkRkey);
+    i++;
+  }
 }
 
 export function registerIngestTools(
@@ -192,22 +208,59 @@ Intents:
         if (intent === 'knowledge') {
           const rkey = deriveRkeyFromFilename(rawPath);
 
-          // Store just the roll-up summary (Phase 4 will add chunk documents)
-          deps.store.docUpsert(rkey, rollUp);
+          // Clean up any stale chunks from previous ingest
+          cleanupStaleChunks(deps.store, rkey, chunks.length);
 
-          // Fire embedding hook
+          // Build summary document with metadata header
+          const summaryContent = `<!-- source: ${rawPath} -->
+<!-- chunks: ${chunks.length} -->
+<!-- ingested: ${new Date().toISOString()} -->
+
+${rollUp}`;
+
+          // Store summary document
+          deps.store.docUpsert(rkey, summaryContent);
+
+          // Store each chunk document
+          for (let i = 0; i < chunks.length; i++) {
+            const chunkRkey = `${rkey}:chunk:${i}`;
+            deps.store.docUpsert(chunkRkey, chunks[i]!.content);
+          }
+
+          // Fire embedding hook for summary
           if (deps.embedding) {
             try {
-              const emb = await deps.embedding.embed(rollUp);
+              const emb = await deps.embedding.embed(summaryContent);
               deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
             } catch { /* non-fatal */ }
           }
 
-          // Fire recall encoding hook
+          // Fire embedding hooks for chunks
+          if (deps.embedding) {
+            for (let i = 0; i < chunks.length; i++) {
+              try {
+                const emb = await deps.embedding.embed(chunks[i]!.content);
+                deps.store.saveEmbedding(`${rkey}:chunk:${i}`, emb, 'nomic-embed-text');
+              } catch { /* non-fatal */ }
+            }
+          }
+
+          // Fire recall encoding hook for summary
           if (deps.recallClient) {
-            deps.recallClient.encode(rkey, rollUp).catch(() => {
+            deps.recallClient.encode(rkey, summaryContent).catch(() => {
               // Silently ignore — Recall encoding is best-effort
             });
+          }
+
+          // Fire recall encoding hooks for chunks
+          if (deps.recallClient) {
+            for (let i = 0; i < chunks.length; i++) {
+              deps.recallClient
+                .encode(`${rkey}:chunk:${i}`, chunks[i]!.content)
+                .catch(() => {
+                  // Silently ignore — Recall encoding is best-effort
+                });
+            }
           }
 
           return JSON.stringify({
@@ -260,6 +313,9 @@ Intents:
 
       if (intent === 'knowledge') {
         const rkey = deriveRkeyFromFilename(rawPath);
+
+        // Clean up any chunks from a previously-large file
+        cleanupStaleChunks(deps.store, rkey, 0);
 
         deps.store.docUpsert(rkey, content);
 
