@@ -3,6 +3,7 @@
 import { resolve } from 'node:path';
 import type { ToolRegistry } from '../runtime/tool-registry.ts';
 import type { AgentDependencies } from '../agent/types.ts';
+import { estimateTokens } from '../agent/context.ts';
 
 function str(input: Record<string, unknown>, key: string): string {
   const val = input[key];
@@ -10,9 +11,17 @@ function str(input: Record<string, unknown>, key: string): string {
   return val;
 }
 
-function estimateTokens(content: string): number {
-  return Math.ceil(content.length / 4);
-}
+// ── Chunking Types and Constants ────────────────────────────────────────
+
+type Chunk = {
+  readonly index: number;
+  readonly content: string;
+  readonly heading: string;
+  readonly tokenEstimate: number;
+};
+
+const LARGE_FILE_THRESHOLD = 4096;  // tokens
+const TARGET_CHUNK_SIZE = 2048;     // tokens
 
 function deriveRkeyFromFilename(filepath: string): string {
   // Extract basename, strip extension, replace spaces with hyphens, lowercase
