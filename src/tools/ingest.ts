@@ -40,13 +40,39 @@ async function summarizeChunks(
 
   const chunkSystemPrompt = systemPrompts[intent] ?? systemPrompts.context;
 
-  const perChunkSummaries: string[] = [];
+  const CONCURRENCY = 4;
+  const MAX_RETRIES = 2;
+  const perChunkSummaries: string[] = new Array(chunks.length);
 
-  // Process chunks sequentially to avoid overwhelming the sub-agent with concurrent requests
-  // and to allow early detection of service failures
-  for (const chunk of chunks) {
-    const summary = await subAgent.complete(chunk.content, chunkSystemPrompt);
-    perChunkSummaries.push(summary);
+  for (let start = 0; start < chunks.length; start += CONCURRENCY) {
+    const batch = chunks.slice(start, start + CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((chunk) => subAgent.complete(chunk.content, chunkSystemPrompt)),
+    );
+
+    const retryIndices: number[] = [];
+    for (let j = 0; j < results.length; j++) {
+      const r = results[j];
+      if (r.status === 'fulfilled') {
+        perChunkSummaries[start + j] = r.value;
+      } else {
+        retryIndices.push(j);
+      }
+    }
+
+    for (const j of retryIndices) {
+      let succeeded = false;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          perChunkSummaries[start + j] = await subAgent.complete(batch[j].content, chunkSystemPrompt);
+          succeeded = true;
+          break;
+        } catch { /* retry */ }
+      }
+      if (!succeeded) {
+        perChunkSummaries[start + j] = `[summarisation failed for chunk ${start + j}]`;
+      }
+    }
   }
 
   const combinedSummaries = perChunkSummaries.join('\n\n');
