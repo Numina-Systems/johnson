@@ -26,7 +26,12 @@ const TARGET_CHUNK_SIZE = 2048;     // tokens
 // ── Semantic Chunking ──────────────────────────────────────────────────
 // pattern: Functional Core — pure string chunking with heading context
 
-function chunkText(text: string): Array<Chunk> {
+export function chunkText(text: string): Array<Chunk> {
+  // Handle empty/whitespace input
+  if (!text.trim()) {
+    return [];
+  }
+
   const totalTokens = estimateTokens(text);
 
   // If file is small, return as single chunk
@@ -40,167 +45,211 @@ function chunkText(text: string): Array<Chunk> {
   }
 
   // Phase 1: Split on markdown headers (h1-h6)
-  // Track heading stack by level to maintain context
-  const headerRegex = /^(#{1,6}) (.+)$/m;
-  const headingStack: Array<string> = [];
-  let currentHeading = '';
-
   const lines = text.split('\n');
-  const sections: Array<{ heading: string; lines: Array<string> }> = [];
-  let currentSection: Array<string> = [];
+  const sections: Array<{ heading: string; content: string }> = [];
+  let currentHeading = '';
+  let currentLines: Array<string> = [];
 
   for (const line of lines) {
     const headerMatch = line.match(/^(#{1,6}) /);
     if (headerMatch) {
-      // New header found
-      const level = headerMatch[1].length;
-
-      // Save current section if it has content
-      if (currentSection.length > 0) {
-        sections.push({ heading: currentHeading, lines: currentSection });
-        currentSection = [];
-      }
-
-      // Update heading stack: clear deeper levels, update current level
-      headingStack.length = level - 1;
-      headingStack.push(line);
-      currentHeading = line;
-    } else {
-      currentSection.push(line);
-    }
-  }
-
-  // Push final section
-  if (currentSection.length > 0) {
-    sections.push({ heading: currentHeading, lines: currentSection });
-  }
-
-  // Phase 2-4: For each section, split if needed on paragraphs, then sentences
-  const chunks: Array<Chunk> = [];
-  let chunkIndex = 0;
-
-  for (const section of sections) {
-    const sectionContent = section.heading
-      ? section.heading + '\n' + section.lines.join('\n')
-      : section.lines.join('\n');
-
-    const sectionTokens = estimateTokens(sectionContent);
-
-    // If section is small enough, add as single chunk
-    if (sectionTokens <= TARGET_CHUNK_SIZE) {
-      if (sectionContent.trim()) {
-        chunks.push({
-          index: chunkIndex++,
-          content: sectionContent,
-          heading: section.heading,
-          tokenEstimate: sectionTokens,
+      // Save previous section if it has content
+      const content = currentLines.join('\n');
+      if (content.trim()) {
+        sections.push({
+          heading: currentHeading,
+          content: currentHeading ? currentHeading + '\n' + content : content,
         });
       }
-      continue;
+      currentHeading = line;
+      currentLines = [];
+    } else {
+      currentLines.push(line);
     }
+  }
 
-    // Section is too large, split on paragraphs (double newlines)
-    const paragraphs = sectionContent.split(/\n\n+/);
+  // Save final section
+  const content = currentLines.join('\n');
+  if (content.trim()) {
+    sections.push({
+      heading: currentHeading,
+      content: currentHeading ? currentHeading + '\n' + content : content,
+    });
+  }
+
+  // Phase 2-4: For each section, split recursively on paragraphs, then sentences
+  const chunks: Array<Chunk> = [];
+
+  for (const section of sections) {
+    splitSection(section.content, section.heading, chunks);
+  }
+
+  // Filter empty chunks and renumber
+  const finalChunks = chunks.filter((c) => c.content.trim());
+  return finalChunks.map((c, idx) => ({ ...c, index: idx }));
+}
+
+function splitSection(content: string, heading: string, chunks: Array<Chunk>): void {
+  const contentTokens = estimateTokens(content);
+
+  // Base case: content fits in target
+  if (contentTokens <= TARGET_CHUNK_SIZE) {
+    if (content.trim()) {
+      chunks.push({
+        index: chunks.length,
+        content,
+        heading,
+        tokenEstimate: contentTokens,
+      });
+    }
+    return;
+  }
+
+  // Try splitting on paragraphs (double newlines)
+  const paragraphs = content.split(/\n\n+/).filter((p) => p.trim());
+
+  if (paragraphs.length > 1) {
     let accumulator = '';
     let accumulatorTokens = 0;
 
     for (const para of paragraphs) {
       const paraTokens = estimateTokens(para);
 
-      // Check if adding this paragraph exceeds target
       if (accumulatorTokens + paraTokens > TARGET_CHUNK_SIZE && accumulator.trim()) {
         // Flush accumulator
         chunks.push({
-          index: chunkIndex++,
+          index: chunks.length,
           content: accumulator.trim(),
-          heading: section.heading,
+          heading,
           tokenEstimate: estimateTokens(accumulator),
         });
         accumulator = para;
         accumulatorTokens = paraTokens;
       } else if (paraTokens > TARGET_CHUNK_SIZE) {
-        // Single paragraph exceeds target, split on sentences
+        // Paragraph exceeds target, split recursively on sentences
         if (accumulator.trim()) {
           chunks.push({
-            index: chunkIndex++,
+            index: chunks.length,
             content: accumulator.trim(),
-            heading: section.heading,
+            heading,
             tokenEstimate: estimateTokens(accumulator),
           });
           accumulator = '';
           accumulatorTokens = 0;
         }
-
-        // Split paragraph into sentences
-        const sentences = splitBySentences(para);
-        let sentenceAccum = '';
-        let sentenceAccumTokens = 0;
-
-        for (const sent of sentences) {
-          const sentTokens = estimateTokens(sent);
-
-          if (sentenceAccumTokens + sentTokens > TARGET_CHUNK_SIZE && sentenceAccum.trim()) {
-            // Flush sentence accumulator
-            chunks.push({
-              index: chunkIndex++,
-              content: sentenceAccum.trim(),
-              heading: section.heading,
-              tokenEstimate: estimateTokens(sentenceAccum),
-            });
-            sentenceAccum = sent;
-            sentenceAccumTokens = sentTokens;
-          } else if (sentTokens > TARGET_CHUNK_SIZE * 1.5) {
-            // Sentence itself exceeds hard limit, hard-cut it
-            if (sentenceAccum.trim()) {
-              chunks.push({
-                index: chunkIndex++,
-                content: sentenceAccum.trim(),
-                heading: section.heading,
-                tokenEstimate: estimateTokens(sentenceAccum),
-              });
-            }
-            chunks.push({
-              index: chunkIndex++,
-              content: sent,
-              heading: section.heading,
-              tokenEstimate: sentTokens,
-            });
-            sentenceAccum = '';
-            sentenceAccumTokens = 0;
-          } else {
-            sentenceAccum += (sentenceAccum ? ' ' : '') + sent;
-            sentenceAccumTokens += sentTokens + (sentenceAccum ? 1 : 0);
-          }
-        }
-
-        if (sentenceAccum.trim()) {
-          chunks.push({
-            index: chunkIndex++,
-            content: sentenceAccum.trim(),
-            heading: section.heading,
-            tokenEstimate: estimateTokens(sentenceAccum),
-          });
-        }
+        splitOnSentences(para, heading, chunks);
       } else {
-        // Paragraph fits, accumulate it
+        // Paragraph fits, accumulate
         accumulator += (accumulator ? '\n\n' : '') + para;
-        accumulatorTokens += paraTokens + (accumulator ? 2 : 0); // +2 for \n\n
+        accumulatorTokens = estimateTokens(accumulator);
       }
     }
 
     if (accumulator.trim()) {
       chunks.push({
-        index: chunkIndex++,
+        index: chunks.length,
         content: accumulator.trim(),
-        heading: section.heading,
+        heading,
         tokenEstimate: estimateTokens(accumulator),
       });
     }
+  } else {
+    // No paragraph breaks, split on sentences
+    splitOnSentences(content, heading, chunks);
+  }
+}
+
+function splitOnSentences(content: string, heading: string, chunks: Array<Chunk>): void {
+  const contentTokens = estimateTokens(content);
+
+  if (contentTokens <= TARGET_CHUNK_SIZE) {
+    if (content.trim()) {
+      chunks.push({
+        index: chunks.length,
+        content,
+        heading,
+        tokenEstimate: contentTokens,
+      });
+    }
+    return;
   }
 
-  // Filter out empty chunks and renumber
-  const finalChunks = chunks.filter((c) => c.content.trim());
-  return finalChunks.map((c, idx) => ({ ...c, index: idx }));
+  // Split on sentence boundaries
+  const sentences = splitBySentences(content);
+
+  if (sentences.length > 1) {
+    let accumulator = '';
+    let accumulatorTokens = 0;
+
+    for (const sent of sentences) {
+      const sentTokens = estimateTokens(sent);
+
+      if (accumulatorTokens + sentTokens > TARGET_CHUNK_SIZE && accumulator.trim()) {
+        // Flush accumulator
+        chunks.push({
+          index: chunks.length,
+          content: accumulator.trim(),
+          heading,
+          tokenEstimate: estimateTokens(accumulator),
+        });
+        accumulator = sent;
+        accumulatorTokens = sentTokens;
+      } else if (sentTokens > TARGET_CHUNK_SIZE * 1.5) {
+        // Sentence exceeds hard limit, hard-cut it
+        if (accumulator.trim()) {
+          chunks.push({
+            index: chunks.length,
+            content: accumulator.trim(),
+            heading,
+            tokenEstimate: estimateTokens(accumulator),
+          });
+        }
+
+        // Hard-cut the overly long sentence into manageable pieces
+        hardCutContent(sent, heading, chunks);
+        accumulator = '';
+        accumulatorTokens = 0;
+      } else {
+        // Sentence fits, accumulate
+        accumulator += (accumulator ? ' ' : '') + sent;
+        accumulatorTokens = estimateTokens(accumulator);
+      }
+    }
+
+    if (accumulator.trim()) {
+      chunks.push({
+        index: chunks.length,
+        content: accumulator.trim(),
+        heading,
+        tokenEstimate: estimateTokens(accumulator),
+      });
+    }
+  } else {
+    // No sentence breaks possible, hard-cut
+    hardCutContent(content, heading, chunks);
+  }
+}
+
+function hardCutContent(content: string, heading: string, chunks: Array<Chunk>): void {
+  // Hard-cut strategy: split by character count targeting ~2048 tokens worth of characters
+  const targetChars = TARGET_CHUNK_SIZE * 4; // 4 chars per token estimate
+  let start = 0;
+
+  while (start < content.length) {
+    const end = Math.min(start + targetChars, content.length);
+    const piece = content.slice(start, end);
+
+    if (piece.trim()) {
+      chunks.push({
+        index: chunks.length,
+        content: piece.trim(),
+        heading,
+        tokenEstimate: estimateTokens(piece),
+      });
+    }
+
+    start = end;
+  }
 }
 
 function splitBySentences(text: string): Array<string> {

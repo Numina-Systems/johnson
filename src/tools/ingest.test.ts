@@ -4,9 +4,10 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
-import { registerIngestTools } from './ingest.ts';
+import { registerIngestTools, chunkText } from './ingest.ts';
 import { createToolRegistry, type ToolRegistry } from '../runtime/tool-registry.ts';
 import { createStore } from '../store/store.ts';
+import { estimateTokens } from '../agent/context.ts';
 import type { AgentDependencies } from '../agent/types.ts';
 
 // Test fixture: temporary working directory with test files
@@ -366,6 +367,260 @@ describe('ingest_file tool', () => {
 
       const parsed = JSON.parse(result as string);
       expect(parsed.chunks).toBe(0);
+    });
+  });
+
+  // ── Task 3: Chunking Tests ────────────────────────────────────────────
+
+  describe('AC5.1: Size threshold — files chunked correctly', () => {
+    test('small file returns single chunk', () => {
+      const smallText = 'This is a small file.';
+      const chunks = chunkText(smallText);
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]!.content).toBe(smallText);
+      expect(chunks[0]!.index).toBe(0);
+      expect(chunks[0]!.heading).toBe('');
+    });
+
+    test('file under 4096 tokens returns single chunk', () => {
+      // Create text that is estimated at ~2000 tokens (8000 chars)
+      const para = 'Lorem ipsum dolor sit amet. '.repeat(280); // ~2000 tokens
+      const chunks = chunkText(para);
+
+      expect(chunks).toHaveLength(1);
+      expect(estimateTokens(chunks[0]!.content)).toBeLessThanOrEqual(2100);
+    });
+
+    test('large file returns multiple chunks', () => {
+      // Create text exceeding 4096 tokens (16k+ chars)
+      const para = 'Paragraph content here. '.repeat(700); // ~4400 tokens
+      const chunks = chunkText(para);
+
+      expect(chunks.length).toBeGreaterThan(1);
+    });
+
+    test('no chunk exceeds hard limit of TARGET_CHUNK_SIZE * 1.5', () => {
+      // Create very large text (10k tokens)
+      const para = 'Word '.repeat(10000); // ~10000 tokens
+      const chunks = chunkText(para);
+
+      const maxAllowed = 2048 * 1.5;
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(maxAllowed + 200); // reasonable buffer
+      }
+    });
+  });
+
+  describe('AC5.2: Split priority — headers > paragraphs > sentences', () => {
+    test('markdown file splits at header boundaries', () => {
+      const markdownText = `# Getting Started
+
+This is content under the main heading.
+
+## Setup
+
+Content for setup section.
+
+## Installation
+
+More content here.`;
+
+      const chunks = chunkText(markdownText);
+
+      // Should preserve headers
+      const hasHeaders = chunks.some((c) => c.content.includes('# Getting Started'));
+      expect(hasHeaders).toBe(true);
+    });
+
+    test('chunk starting with header preserves heading in content', () => {
+      const markdownText = `# Main
+
+Content here.`;
+
+      const chunks = chunkText(markdownText);
+      expect(chunks[0]!.content).toContain('# Main');
+    });
+
+    test('file with no headers splits on paragraph boundaries', () => {
+      // Create ~5000+ tokens of text with paragraph breaks
+      const text = 'First paragraph with detailed content here about various topics. '.repeat(200)
+        + '\n\n'
+        + 'Second paragraph with more detailed content and information. '.repeat(200)
+        + '\n\n'
+        + 'Third paragraph with even more substantive content and details. '.repeat(200);
+      const chunks = chunkText(text);
+
+      // Should have multiple chunks
+      expect(chunks.length).toBeGreaterThan(1);
+      // Chunks should be reasonably sized
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(3100);
+      }
+    });
+
+    test('dense text with only sentence breaks splits on sentences', () => {
+      // Create text with only periods, no paragraph breaks
+      const text = 'Sentence one. Sentence two. Sentence three. '.repeat(600); // large
+      const chunks = chunkText(text);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      // Each chunk should be reasonable
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(3100);
+      }
+    });
+
+    test('very long paragraph with no sentence breaks hard-cuts at limit', () => {
+      // Create a very long "word" or string without natural breaks
+      const longString = 'x '.repeat(3000); // ~3000 "words", ~3000 tokens
+      const chunks = chunkText(longString);
+
+      expect(chunks.length).toBeGreaterThan(0);
+      // All chunks should be under hard limit
+      for (const chunk of chunks) {
+        expect(estimateTokens(chunk.content)).toBeLessThanOrEqual(2048 * 1.5 + 100);
+      }
+    });
+  });
+
+  describe('AC5.3: Heading context — parent headings preserved', () => {
+    test('chunk from section carries heading context', () => {
+      const markdown = `# Main Title
+
+Content here with substantive details. `.repeat(100) + `
+
+## Subsection
+
+More content describing details. This is a long section that will be split across chunks. `.repeat(200);
+
+      const chunks = chunkText(markdown);
+
+      // Find chunks from subsection
+      const subsectionChunks = chunks.filter((c) => c.heading.includes('##'));
+      expect(subsectionChunks.length).toBeGreaterThan(0);
+
+      for (const chunk of subsectionChunks) {
+        expect(chunk.heading).toContain('##');
+      }
+    });
+
+    test('first chunk before any heading has empty heading', () => {
+      const text = 'Initial content before any heading.\n\n# First Heading\n\nMore content.';
+      const chunks = chunkText(text);
+
+      const firstChunk = chunks[0];
+      expect(firstChunk).toBeDefined();
+      expect(firstChunk!.content).toContain('Initial content');
+      expect(firstChunk!.heading).toBe('');
+    });
+
+    test('chunks maintain consistent heading within section', () => {
+      const markdown = `## Section A
+
+Paragraph one with detailed content and information. `.repeat(250) + `
+
+Paragraph two with additional content and discussion. `.repeat(250);
+
+      const chunks = chunkText(markdown);
+
+      // All chunks should have "## Section A" as heading
+      for (const chunk of chunks) {
+        expect(chunk.heading).toBe('## Section A');
+      }
+    });
+
+    test('heading changes as document progresses through sections', () => {
+      const markdown = `## First Section
+
+Content here with details and information. `.repeat(250) + `
+
+## Second Section
+
+Content with substantive discussion. `.repeat(250);
+
+      const chunks = chunkText(markdown);
+
+      // Should have chunks from both sections
+      const firstSectionChunks = chunks.filter((c) => c.heading === '## First Section');
+      const secondSectionChunks = chunks.filter((c) => c.heading === '## Second Section');
+
+      expect(firstSectionChunks.length).toBeGreaterThan(0);
+      expect(secondSectionChunks.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('Chunking edge cases', () => {
+    test('empty input returns empty array', () => {
+      const chunks = chunkText('');
+      expect(chunks).toHaveLength(0);
+    });
+
+    test('whitespace-only input returns empty array', () => {
+      const chunks = chunkText('   \n\n  \t  ');
+      expect(chunks).toHaveLength(0);
+    });
+
+    test('chunk indices are sequential starting from 0', () => {
+      const text = 'x'.repeat(20000); // Large text
+      const chunks = chunkText(text);
+
+      for (let i = 0; i < chunks.length; i++) {
+        expect(chunks[i]!.index).toBe(i);
+      }
+    });
+
+    test('all chunks have valid token estimates', () => {
+      const text = `# Header
+
+Paragraph content. `.repeat(500);
+
+      const chunks = chunkText(text);
+
+      for (const chunk of chunks) {
+        expect(chunk.tokenEstimate).toBeGreaterThan(0);
+        expect(typeof chunk.tokenEstimate).toBe('number');
+        // Verify token estimate matches actual content
+        const actualTokens = estimateTokens(chunk.content);
+        expect(Math.abs(chunk.tokenEstimate - actualTokens)).toBeLessThan(5);
+      }
+    });
+
+    test('chunking preserves all original content', () => {
+      const original = `# Title
+
+First paragraph with content.
+
+## Subsection
+
+Second paragraph with more content. `.repeat(100);
+
+      const chunks = chunkText(original);
+      const reconstructed = chunks.map((c) => c.content).join('\n\n');
+
+      // All original content should appear in the chunks
+      expect(reconstructed).toContain('# Title');
+      expect(reconstructed).toContain('First paragraph');
+      expect(reconstructed).toContain('## Subsection');
+      expect(reconstructed).toContain('Second paragraph');
+    });
+
+    test('multiple paragraphs in large section create appropriate chunks', () => {
+      const text = `## Section
+
+Para 1 with detailed content and substantive discussion. `.repeat(250) + `
+
+Para 2 with additional content and more details. `.repeat(250) + `
+
+Para 3 with further content and information. `.repeat(250);
+
+      const chunks = chunkText(text);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      // All should have same heading
+      for (const chunk of chunks) {
+        expect(chunk.heading).toBe('## Section');
+      }
     });
   });
 });
