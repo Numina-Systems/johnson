@@ -1,35 +1,97 @@
-# Interface mode: "tui", "discord", or "both"
-interface = "both"
+# ─── Interface ────────────────────────────────────────────────────────────────
+# Which UI to start: "tui" (terminal), "discord" (bot), or "both"
+interface = "tui"
 
+# ─── Main Model ───────────────────────────────────────────────────────────────
+# The primary LLM the agent uses for conversation and tool calls.
+# Providers: "anthropic", "openai-compat", "openrouter", "ollama", "lemonade"
+#
+# For Anthropic: set ANTHROPIC_API_KEY env var (no base_url needed)
+# For OpenRouter: set base_url and api_key below, or OPENROUTER_API_KEY env var
+# For Ollama: runs locally, no api_key needed
+# For Lemonade: local inference server
+# For OpenAI-compat: any OpenAI-compatible API (e.g. vLLM, LiteLLM)
 [model]
 provider = "lemonade"
 name = "Gemma-4-26B-A4B-it-GGUF"
 max_tokens = 8192
+# base_url = "http://localhost:8080/v1"   # required for openai-compat, openrouter, lemonade
+# api_key = ""                             # or set via env var per provider
 
+# ─── Sub-Model (optional but recommended) ─────────────────────────────────────
+# A lightweight model for utility tasks: context compaction, session titling,
+# summarization, and reflexive recall decomposition.
+#
+# If omitted, these tasks fall back to the main model (capped at 8k tokens),
+# which works but wastes main-model capacity on simple jobs.
+#
+# A small, fast model (2-4B params) is ideal here — these tasks just need
+# basic JSON generation and text summarization.
+#
+# Same provider options as [model]. Examples:
+#
+#   Ollama (local):
+#   [sub_model]
+#   provider = "ollama"
+#   name = "gemma3:4b"
+#   max_tokens = 2048
+#
+#   OpenRouter (hosted):
+#   [sub_model]
+#   provider = "openrouter"
+#   name = "google/gemma-2-9b-it"
+#   max_tokens = 2048
+#   base_url = "https://openrouter.ai/api/v1"
+#   api_key = ""  # or set OPENROUTER_API_KEY env var
+
+# ─── Agent Loop ───────────────────────────────────────────────────────────────
 [agent]
-max_tool_rounds = 50
-context_budget = 0.8
-context_limit = 131072
-model_timeout = 300000
-# recall_enabled = false        # enable reflexive recall pipeline
-# recall_token_budget = 1500    # max tokens for recalled context
+max_tool_rounds = 50          # max tool call rounds per chat turn
+context_budget = 0.8          # fraction of context_limit before compaction triggers
+context_limit = 131072        # model's context window size in tokens
+model_timeout = 300000        # ms before a model call times out
 
+# Reflexive Recall — automatically retrieves relevant knowledge from the
+# document store for each user message, so the agent has contextual awareness
+# without you re-stating prior knowledge.
+#
+# Requirements:
+#   1. [embedding] must be configured (recall uses semantic search)
+#   2. [sub_model] is recommended (used for query decomposition; falls back
+#      to main model if not set, which is slower and more expensive)
+#   3. The store needs documents to search — use doc_upsert or ingest_file
+#      to add knowledge:* documents before enabling
+#
+# recall_enabled = false        # set to true to enable
+# recall_token_budget = 1500    # max tokens of recalled context injected into prompt
+
+# ─── Sandbox Runtime ──────────────────────────────────────────────────────────
+# Controls the Deno sandbox where the agent's execute_code tool runs.
 [runtime]
-working_dir = "./workspace"
-allowed_hosts = []
-timeout_ms = 30000
-max_code_size = 100000
-max_output_size = 500000
-unrestricted = true
+working_dir = "./workspace"   # files the agent can read/write (relative to project root)
+allowed_hosts = []            # network hosts the sandbox can reach (empty = none)
+timeout_ms = 30000            # per-execution timeout
+max_code_size = 100000        # max chars of code per execution
+max_output_size = 500000      # max chars of output captured
+unrestricted = true           # if true, relaxes sandbox file/network restrictions
 
+# ─── Embeddings (optional) ────────────────────────────────────────────────────
+# Required for: semantic search (hybridSearch), reflexive recall.
+# Without this, search falls back to FTS-only and recall is disabled.
+#
+# Currently only supports Ollama. Run: ollama pull nomic-embed-text:v1.5
 [embedding]
 provider = "ollama"
 model = "nomic-embed-text:v1.5"
 dimensions = 768
+# endpoint = "http://localhost:11434"  # default; change if Ollama runs elsewhere
 
-# Discord bot config (optional — set DISCORD_BOT_TOKEN env var or token here)
-#[discord]
+# ─── Discord Bot (optional) ───────────────────────────────────────────────────
+# Set interface = "discord" or "both" above, then configure here.
+# The bot token can also be set via DISCORD_BOT_TOKEN env var.
+#
+# [discord]
 # token = ""
-#prefix = "!"
-#allowed_channels = []  # empty = all channels
-#allowed_users = []     # empty = respond to everyone; add Discord user IDs to restrict
+# prefix = "!"
+# allowed_channels = []   # empty = all channels
+# allowed_users = []      # empty = respond to everyone; add Discord user IDs to restrict
