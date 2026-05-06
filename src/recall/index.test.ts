@@ -4,8 +4,7 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { createStore, type Store } from '../store/store.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { EmbeddingProvider } from '../embedding/types.ts';
-import { performRecall, type RecallDeps } from './index.ts';
-import type { RecallResult } from './retrieve.ts';
+import { performRecall } from './index.ts';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mock builders
