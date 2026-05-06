@@ -1,6 +1,12 @@
 // pattern: Functional Core
 
 import type { Message, ModelProvider, ToolDefinition, UsageStats } from '../model/types.ts';
+
+/** Minimal shape for recalled context passed to prompt builders. Subset of RecallFragment from src/recall/retrieve.ts. */
+export type RecalledContextEntry = {
+  readonly rkey: string;
+  readonly content: string;
+};
 import type { CodeRuntime } from '../runtime/types.ts';
 import type { EmbeddingProvider } from '../embedding/types.ts';
 import type { VectorStore } from '../search/vector-store.ts';
@@ -20,6 +26,8 @@ export type AgentConfig = {
   readonly modelTimeout: number;
   readonly temperature?: number;
   readonly timezone: string;
+  readonly recallEnabled: boolean;
+  readonly recallTokenBudget: number;
 };
 
 export type ChatStats = {
@@ -48,7 +56,10 @@ export type AgentDependencies = {
   readonly secrets?: SecretManager;
   readonly subAgent?: SubAgentLLM;
   readonly customTools?: CustomToolManager;
-  readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
+  readonly systemPromptProvider?: (
+    toolDocs: string,
+    recalledContext?: ReadonlyArray<RecalledContextEntry>,
+  ) => Promise<string>;
   readonly recallClient?: RecallClient;
   readonly workingDir?: string;
 };
@@ -67,7 +78,7 @@ export type ChatImage = {
   filename?: string;
 };
 
-export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done';
+export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done' | 'recall_done';
 
 export type AgentEvent = {
   readonly kind: AgentEventKind;

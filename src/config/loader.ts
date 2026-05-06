@@ -37,6 +37,8 @@ const DEFAULT_AGENT: AgentLoopConfig = {
   contextLimit: 160_000,
   modelTimeout: 300_000,
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  recallEnabled: false,
+  recallTokenBudget: 1500,
 };
 
 function resolveApiKey(provider: string, explicit: string | undefined): string | undefined {
@@ -97,6 +99,8 @@ export function loadConfig(configPath: string): AppConfig {
     contextLimit: pick(raw.agent, 'contextLimit', DEFAULT_AGENT.contextLimit),
     modelTimeout: pick(raw.agent, 'modelTimeout', DEFAULT_AGENT.modelTimeout),
     timezone: pick(raw.agent, 'timezone', DEFAULT_AGENT.timezone),
+    recallEnabled: pick(raw.agent, 'recallEnabled', DEFAULT_AGENT.recallEnabled),
+    recallTokenBudget: pick(raw.agent, 'recallTokenBudget', DEFAULT_AGENT.recallTokenBudget),
   };
 
   const embeddingProvider = pick(raw.embedding, 'provider', 'ollama');

@@ -9,11 +9,12 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
-import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind } from './types.ts';
+import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
 import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 import { maybeGenerateSessionTitle } from './session-title.ts';
+import { performRecall } from '../recall/index.ts';
 
 const DENO_DIR = join(import.meta.dir, '..', 'runtime', 'deno');
 
@@ -146,46 +147,6 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Native tools that the model invokes directly (not through execute_code)
     const nativeTools = registry.generateToolDefinitions();
 
-    // Build system prompt via provider (if set) or inline fallback
-    let systemPrompt: string;
-    const buildInlinePrompt = async (): Promise<string> => {
-      const persona = await Bun.file(deps.personaPath).text();
-      const coreMemory = loadCoreMemoryFromStore(deps.store);
-      const allDocs = deps.store.docList(500);
-      const skillNames = allDocs.documents
-        .filter(d => d.rkey.startsWith('skill:'))
-        .map(d => d.rkey);
-      return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone);
-    };
-
-    if (deps.systemPromptProvider) {
-      try {
-        systemPrompt = await deps.systemPromptProvider(toolDocs);
-        cachedSystemPrompt = systemPrompt;
-      } catch (err) {
-        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
-        if (cachedSystemPrompt) {
-          systemPrompt = cachedSystemPrompt;
-        } else {
-          process.stderr.write(`[agent] no cached prompt; falling back to inline prompt build\n`);
-          systemPrompt = await buildInlinePrompt();
-          cachedSystemPrompt = systemPrompt;
-        }
-      }
-    } else {
-      systemPrompt = await buildInlinePrompt();
-    }
-
-    if (deps.customTools) {
-      const summaries = deps.customTools.getApprovedToolSummaries();
-      if (summaries.length > 0) {
-        const listing = summaries
-          .map(s => `- **${s.name}** — ${s.description}`)
-          .join('\n');
-        systemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
-      }
-    }
-
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
@@ -212,7 +173,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     trimOldToolResults(history);
 
     // Handle context overflow via compaction
-    if (needsCompaction(history, systemPrompt, deps.config.contextLimit, deps.config.contextBudget)) {
+    if (needsCompaction(history, '', deps.config.contextLimit, deps.config.contextBudget)) {
       if (!deps.subAgent) throw new Error('subAgent required for compaction');
       const compacted = await compactContext(history, {
         store: deps.store,
@@ -222,6 +183,70 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       const currentMessage = history[history.length - 1];
       history = [...compacted, ...(currentMessage ? [currentMessage] : [])];
 
+    }
+
+    // Recall step — runs after compaction, before tool loop
+    let recalledContext: ReadonlyArray<RecalledContextEntry> | undefined;
+    if (deps.config.recallEnabled) {
+      const recallResult = await performRecall(userMessage, {
+        store: deps.store,
+        embedding: deps.embedding,
+        subAgent: deps.subAgent,
+        tokenBudget: deps.config.recallTokenBudget,
+      });
+      if (recallResult) {
+        recalledContext = recallResult.fragments.map(f => ({ rkey: f.rkey, content: f.content }));
+        await emit('recall_done', {
+          elapsed: recallResult.elapsed,
+          fragmentCount: recallResult.fragments.length,
+          totalTokens: recallResult.totalTokens,
+        });
+      } else {
+        await emit('recall_done', { elapsed: 0, fragmentCount: 0, totalTokens: 0 });
+      }
+    }
+
+    // Build system prompt via provider (if set) or inline fallback
+    // (Moved here after recall step so recalledContext can be included)
+    let systemPrompt: string;
+    const buildInlinePrompt = async (
+      recalledCtx?: ReadonlyArray<RecalledContextEntry>,
+    ): Promise<string> => {
+      const persona = await Bun.file(deps.personaPath).text();
+      const coreMemory = loadCoreMemoryFromStore(deps.store);
+      const allDocs = deps.store.docList(500);
+      const skillNames = allDocs.documents
+        .filter(d => d.rkey.startsWith('skill:'))
+        .map(d => d.rkey);
+      return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone, recalledCtx);
+    };
+
+    if (deps.systemPromptProvider) {
+      try {
+        systemPrompt = await deps.systemPromptProvider(toolDocs, recalledContext);
+        cachedSystemPrompt = systemPrompt;
+      } catch (err) {
+        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
+        if (cachedSystemPrompt) {
+          systemPrompt = cachedSystemPrompt;
+        } else {
+          process.stderr.write(`[agent] no cached prompt; falling back to inline prompt build\n`);
+          systemPrompt = await buildInlinePrompt(recalledContext);
+          cachedSystemPrompt = systemPrompt;
+        }
+      }
+    } else {
+      systemPrompt = await buildInlinePrompt(recalledContext);
+    }
+
+    if (deps.customTools) {
+      const summaries = deps.customTools.getApprovedToolSummaries();
+      if (summaries.length > 0) {
+        const listing = summaries
+          .map(s => `- **${s.name}** — ${s.description}`)
+          .join('\n');
+        systemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
+      }
     }
 
     // e. Tool loop
