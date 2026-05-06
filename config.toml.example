@@ -15,8 +15,8 @@ interface = "tui"
 provider = "lemonade"
 name = "Gemma-4-26B-A4B-it-GGUF"
 max_tokens = 8192
-# base_url = "http://localhost:8080/v1"   # required for openai-compat, openrouter, lemonade
-# api_key = ""                             # or set via env var per provider
+base_url = "http://localhost:8080/v1"     # required — where your inference server runs
+# api_key = ""                             # if your provider requires one
 
 # ─── Sub-Model (optional but recommended) ─────────────────────────────────────
 # A lightweight model for utility tasks: context compaction, session titling,
@@ -32,6 +32,8 @@ max_tokens = 8192
 # provider = "ollama"
 # name = "gemma3:4b"
 # max_tokens = 2048
+# base_url = "http://localhost:11434"    # required — where your inference server runs
+# api_key = ""                            # if your provider requires one
 
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 [agent]
@@ -73,7 +75,7 @@ unrestricted = true           # if true, relaxes sandbox file/network restrictio
 provider = "ollama"
 model = "nomic-embed-text:v1.5"
 dimensions = 768
-# endpoint = "http://localhost:11434"  # default; change if Ollama runs elsewhere
+endpoint = "http://localhost:11434"    # required — where your Ollama instance runs
 
 # ─── Discord Bot (optional) ───────────────────────────────────────────────────
 # Set interface = "discord" or "both" above, then configure here.
