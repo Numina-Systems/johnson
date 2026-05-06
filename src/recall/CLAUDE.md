@@ -36,4 +36,4 @@ so the agent has contextual awareness without the user re-stating prior knowledg
 - `index.ts` - Orchestrator (Imperative Shell): guards, fallback, entry point
 - `decompose.ts` - Parser/validator for decomposition JSON (Functional Core)
 - `decompose-message.ts` - SubAgentLLM call for decomposition (Imperative Shell)
-- `retrieve.ts` - Retrieval pipeline: search, dedupe, filter, rank, trim (Functional Core)
+- `retrieve.ts` - Retrieval pipeline: search, dedupe, filter, rank, trim (Functional Core pure helpers + Imperative Shell retrieveContext)

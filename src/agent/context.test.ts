@@ -1,5 +1,3 @@
-// pattern: Functional Core — pure function tests for buildSystemPrompt
-
 import { describe, test, expect } from 'bun:test';
 import { buildSystemPrompt } from './context.ts';
 
