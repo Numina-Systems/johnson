@@ -10,8 +10,8 @@ describe('buildSystemPrompt', () => {
   const testToolDocs = '\n\n## Tool Reference\n\nTools available...';
   const testTimezone = 'UTC';
 
-  describe('AC7.1 — Section positioning', () => {
-    test('Recalled Context appears after self doc and before Available Skills', () => {
+  describe('reflexive-recall.AC7.1 — Section positioning', () => {
+    test('reflexive-recall.AC7.1: Recalled Context appears after self doc and before Available Skills', () => {
       const recalledContext = [
         { rkey: 'knowledge:test', content: 'Test content' },
       ];
@@ -39,8 +39,8 @@ describe('buildSystemPrompt', () => {
     });
   });
 
-  describe('AC7.2 — Fragment rendering', () => {
-    test('Renders each fragment with rkey header and content', () => {
+  describe('reflexive-recall.AC7.2 — Fragment rendering', () => {
+    test('reflexive-recall.AC7.2: Renders each fragment with rkey header and content', () => {
       const recalledContext = [
         { rkey: 'knowledge:caldav', content: 'CalDAV protocol notes' },
         { rkey: 'skill:fetch-page', content: 'Fetches web pages' },
@@ -84,8 +84,8 @@ describe('buildSystemPrompt', () => {
     });
   });
 
-  describe('AC7.3 — Absent recalledContext', () => {
-    test('Produces no Recalled Context section when recalledContext is undefined', () => {
+  describe('reflexive-recall.AC7.3 — Absent recalledContext', () => {
+    test('reflexive-recall.AC7.3: Produces no Recalled Context section when recalledContext is undefined', () => {
       const prompt = buildSystemPrompt(
         testPersona,
         testSelfDoc,
@@ -124,8 +124,8 @@ describe('buildSystemPrompt', () => {
     });
   });
 
-  describe('AC4.3 — Zero documents', () => {
-    test('Zero matching documents produces no system prompt section', () => {
+  describe('reflexive-recall.AC4.3 — Zero documents', () => {
+    test('reflexive-recall.AC4.3: Zero matching documents produces no system prompt section', () => {
       const prompt = buildSystemPrompt(
         testPersona,
         testSelfDoc,

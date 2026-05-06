@@ -1,4 +1,4 @@
-// pattern: Functional Core
+// pattern: Functional Core (pure helpers) + Imperative Shell (retrieveContext)
 
 import type { DecompositionResult } from './decompose.ts';
 import { hybridSearch, type HybridSearchDeps } from '../search/hybrid.ts';

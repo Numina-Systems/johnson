@@ -2,6 +2,7 @@
 
 import type { Message, ModelProvider, ToolDefinition, UsageStats } from '../model/types.ts';
 
+/** Minimal shape for recalled context passed to prompt builders. Subset of RecallFragment from src/recall/retrieve.ts. */
 export type RecalledContextEntry = {
   readonly rkey: string;
   readonly content: string;

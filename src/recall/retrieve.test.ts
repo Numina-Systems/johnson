@@ -1,5 +1,3 @@
-// pattern: Functional Core (test)
-
 import { describe, test, expect, beforeEach } from 'bun:test';
 import {
   type RecallFragment,

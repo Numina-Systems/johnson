@@ -188,8 +188,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Recall step — runs after compaction, before tool loop
     let recalledContext: ReadonlyArray<RecalledContextEntry> | undefined;
     if (deps.config.recallEnabled) {
-      const userText = userMessage;
-      const recallResult = await performRecall(userText, {
+      const recallResult = await performRecall(userMessage, {
         store: deps.store,
         embedding: deps.embedding,
         subAgent: deps.subAgent,

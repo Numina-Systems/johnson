@@ -1,5 +1,3 @@
-// pattern: Functional Core (test)
-
 import { describe, test, expect } from 'bun:test';
 import {
   parseDecompositionResponse,

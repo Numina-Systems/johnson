@@ -1,5 +1,3 @@
-// pattern: Imperative Shell (test)
-
 import { describe, test, expect } from 'bun:test';
 import { decomposeMessage } from './decompose-message.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
