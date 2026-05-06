@@ -24,14 +24,15 @@ constellation-lite is a code-first AI agent. The model's primary tool is `execut
 
 Each `Agent` owns its own `history: Message[]`. The `chat()` function:
 1. Regenerates TypeScript stubs for the Deno sandbox (`src/runtime/deno/tools.ts`) on every call
-2. Builds a system prompt via `systemPromptProvider` callback (if set) with cached fallback, or inline from persona + `self` document + skill names + tool docs
-3. Collects native tool definitions from the registry (tools with mode `native` or `both`)
-4. Runs a tool loop (up to `maxToolRounds`): model call → dispatch (`execute_code` via sandbox IPC, native tools via registry) → tool result → repeat
-5. Handles context overflow by calling `compactContext()` before the loop
-6. Emits lifecycle events (`llm_start`, `llm_done`, `tool_start`, `tool_done`) via the `onEvent` callback in `ChatOptions`
-7. Propagates `reasoning_content` from model responses onto assistant messages (extended thinking support)
-8. On max-iteration exhaustion, forces a final text-only response (no tools) so the agent always replies
-9. After each chat, fires `maybeGenerateSessionTitle()` (`src/agent/session-title.ts`) to auto-title sessions via the sub-agent
+2. Collects native tool definitions from the registry (tools with mode `native` or `both`)
+3. Handles context overflow by calling `compactContext()` before the tool loop
+4. Runs reflexive recall (if `recallEnabled`) to retrieve relevant knowledge fragments, emitting `recall_done`
+5. Builds a system prompt via `systemPromptProvider` callback (if set) or inline, injecting recalled context
+6. Runs a tool loop (up to `maxToolRounds`): model call → dispatch (`execute_code` via sandbox IPC, native tools via registry) → tool result → repeat
+7. Emits lifecycle events (`llm_start`, `llm_done`, `tool_start`, `tool_done`, `recall_done`) via the `onEvent` callback in `ChatOptions`
+8. Propagates `reasoning_content` from model responses onto assistant messages (extended thinking support)
+9. On max-iteration exhaustion, forces a final text-only response (no tools) so the agent always replies
+10. After each chat, fires `maybeGenerateSessionTitle()` (`src/agent/session-title.ts`) to auto-title sessions via the sub-agent
 
 ### Sandbox IPC (`src/runtime/executor.ts`)
 
@@ -59,7 +60,7 @@ Tools are organized into domain-specific modules under `src/tools/`, each export
 - **Notify** (`notify.ts`) — `notify_discord` (sandbox mode, Discord webhook). Requires `DISCORD_WEBHOOK_URL` secret.
 - **Image** (`image.ts`) — `view_image` (native mode). Fetches a URL and returns a base64 `ImageSourceBlock` so the model can see the image.
 - **Summarize** (`summarize.ts`) — `summarize` (both mode). Delegates to the sub-agent LLM. Requires `[sub_model]` config.
-- **Ingest** (`ingest.ts` + `chunking.ts`) — `ingest_file` (native mode). Reads workspace files and routes by intent: `memory` (appends to `self`), `knowledge` (stores as documents with semantic chunking), `context` (returns content inline). Large files are chunked via `chunking.ts` (Functional Core) and summarised via `SubAgentLLM`. Security: resolves paths relative to `workingDir`, blocks traversal above workspace root, rejects binary files and files >400KB. Only registered when `deps.workingDir` is set.
+- **Ingest** (`ingest.ts` + `chunking.ts`) — `ingest_file` (native mode). Reads workspace files and routes by intent: `memory` (appends to `self`), `knowledge` (stores as documents with semantic chunking), `context` (returns content inline). Large files are chunked via `chunking.ts` (Functional Core) and summarised via `SubAgentLLM`. Security: resolves paths relative to `workingDir`, blocks traversal above workspace root, rejects binary files and files >1MB. Only registered when `deps.workingDir` is set.
 - **Custom Tools** (`custom-tool-manager.ts` + `custom-tools.ts`) — `create_custom_tool`, `list_custom_tools`, `call_custom_tool` (sandbox mode). User-created tools stored as `customtool:*` documents with hash-based approval, similar to the skill grant system.
 
 ### Persistent Store (`src/store/store.ts`)
@@ -97,14 +98,17 @@ In-process cron via `croner`. Accepts cron expressions or human intervals (`6h`,
 
 ### Configuration (`src/config/`)
 
-`config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable.
+`config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable. Recall is configured under `[agent]`: `recallEnabled` (default `false`) and `recallTokenBudget` (default `1500`).
 
 ### Reflexive Recall (`src/recall/`)
 
-Multi-phase retrieval pipeline for context-aware knowledge recall:
+Automatic context retrieval pipeline that runs on each `chat()` call (when `recallEnabled` is true). Entry point: `performRecall(message, deps) → RecallResult | null`.
 
-- **Decomposition** (`decompose.ts` + `decompose-message.ts`) — Phase 1. Functional Core parses structured decomposition (semantic queries + named entities). Imperative Shell delegates to SubAgentLLM for unstructured message decomposition.
-- **Retrieval** (`retrieve.ts`) — Phase 2. Functional Core runs semantic queries via `hybridSearch` (up to 5 per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `archive:`, excluding `self`, `operator`, `task:*`), ranks by RRF score, and trims to token budget (default 1500). Returns `RecallResult` with fragments, total tokens, query count, and elapsed time.
+- **Orchestrator** (`index.ts`) — Imperative Shell. Guards: skips if message < 10 chars, no embedding provider, or empty store. Falls back gracefully: no SubAgentLLM uses raw message as query; LLM failure caught and falls back similarly.
+- **Decomposition** (`decompose.ts` + `decompose-message.ts`) — Decomposes user message into semantic queries (1-4) and named entities via SubAgentLLM. Functional Core parses/validates JSON response; Imperative Shell handles LLM call.
+- **Retrieval** (`retrieve.ts`) — Functional Core. Runs semantic queries via `hybridSearch` (up to 5 results per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `archive:`), sorts by score, and trims to token budget. Returns `RecallResult`.
+
+Recalled fragments are injected into the system prompt as a `## Recalled Context` section via `buildSystemPrompt()`. The `systemPromptProvider` callback signature accepts an optional `recalledContext` parameter.
 
 ### Interfaces
 
