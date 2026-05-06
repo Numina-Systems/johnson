@@ -1,8 +1,7 @@
 // pattern: Functional Core
 
 import type { DecompositionResult } from './decompose.ts';
-import { hybridSearch, type HybridSearchDeps, type HybridSearchResult } from '../search/hybrid.ts';
-import type { Store } from '../store/store.ts';
+import { hybridSearch, type HybridSearchDeps } from '../search/hybrid.ts';
 import { estimateTokens } from '../agent/context.ts';
 
 // ─────────────────────────────────────────────────────────────────────────
