@@ -1423,4 +1423,99 @@ describe('recall integration', () => {
     expect(capturedEvent!.data['elapsed']).toBe(0);
     expect(capturedEvent!.data['totalTokens']).toBe(0);
   });
+
+  test('reflexive-recall.AC9.1: event ordering between compaction and recall before llm_start', async () => {
+    const events: AgentEvent[] = [];
+    const model: ModelProvider = {
+      complete: async (req) => {
+        return {
+          content: [{ type: 'text', text: 'Response' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    // Set very low contextLimit to trigger compaction
+    const config = makeConfig({
+      recallEnabled: true,
+      contextLimit: 0.5, // Very low limit to trigger compaction
+      contextBudget: 100, // Small budget
+    });
+
+    const mockEmbedding: EmbeddingProvider = {
+      embed: async () => Array.from(new Float32Array(768)),
+      embedBatch: async () => [],
+      dimensions: 768,
+    };
+
+    const mockSubAgent: SubAgentLLM = {
+      complete: async () => 'test query',
+    };
+
+    const docStore: Store = {
+      ...createNoopStore(),
+      docList: (limit?: number, cursor?: string) => {
+        return {
+          documents: [
+            { rkey: 'knowledge:test', content: 'Test knowledge base', createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z' },
+          ],
+          cursor: undefined,
+        };
+      },
+      docSearch: (query: string, limit?: number) => [
+        {
+          rkey: 'knowledge:test',
+          content: 'Test knowledge base entry',
+          rank: 0.9,
+        },
+      ],
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(model, config, personaPath),
+      embedding: mockEmbedding,
+      subAgent: mockSubAgent,
+      store: docStore,
+    };
+
+    const agent = createAgent(deps);
+
+    // First call with a long message to build context
+    await agent.chat('First message with substantial content to build context for compaction', {
+      onEvent: async (event) => {
+        events.push(event);
+      },
+    });
+
+    // Clear events and make second call that could trigger both compaction and recall
+    events.length = 0;
+    await agent.chat('This is a long enough message to test recall and potentially compaction', {
+      onEvent: async (event) => {
+        events.push(event);
+      },
+    });
+
+    // Find indices of key events
+    const recallDoneIndex = events.findIndex(e => e.kind === 'recall_done');
+    const llmStartIndex = events.findIndex(e => e.kind === 'llm_start');
+    const compactionStartIndex = events.findIndex(e => e.kind === 'compaction_start');
+    const compactionDoneIndex = events.findIndex(e => e.kind === 'compaction_done');
+
+    // The important check: if both recall_done and llm_start occur, recall_done should come first
+    if (recallDoneIndex !== -1 && llmStartIndex !== -1) {
+      expect(recallDoneIndex).toBeLessThan(llmStartIndex);
+    }
+
+    // If compaction occurred, it should complete before llm_start
+    if (compactionStartIndex !== -1 && llmStartIndex !== -1) {
+      expect(compactionStartIndex).toBeLessThan(llmStartIndex);
+    }
+    if (compactionDoneIndex !== -1 && llmStartIndex !== -1) {
+      expect(compactionDoneIndex).toBeLessThan(llmStartIndex);
+    }
+
+    // Verify the basic structure: llm_start must exist
+    expect(llmStartIndex).toBeGreaterThanOrEqual(0);
+  });
 });

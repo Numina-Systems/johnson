@@ -239,11 +239,17 @@ describe('trimToTokenBudget', () => {
 describe('retrieveContext', () => {
   let mockStore: Store;
   let mockEmbedding: EmbeddingProvider;
+  let docSearchCalls: Array<{ query: string; limit?: number }>;
+  let hybridSearchSpy: { calls: Array<{ query: string; limit: number }> };
 
   beforeEach(() => {
+    docSearchCalls = [];
+    hybridSearchSpy = { calls: [] };
+
     // Mock store with docSearch and docGet
     mockStore = {
       docSearch: (query: string, limit?: number) => {
+        docSearchCalls.push({ query, limit });
         // Simulate FTS results
         if (query.includes('test')) {
           return [
@@ -378,5 +384,133 @@ describe('retrieveContext', () => {
 
     // queryCount = queries.length + entities.length
     expect(result.queryCount).toBe(3);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Missing coverage tests
+  // ─────────────────────────────────────────────────────────────────────────
+
+  test('reflexive-recall.AC2.1: per-query limit of 5 for hybridSearch', async () => {
+    // This test verifies that hybridSearch is called with limit 5 for each semantic query
+    // We'll use a spy on the store.docSearch to verify the behavior indirectly
+    const decomposition: DecompositionResult = {
+      queries: ['query1', 'query2'],
+      entities: [],
+    };
+    const deps: HybridSearchDeps = { store: mockStore, embedding: mockEmbedding };
+
+    const result = await retrieveContext(decomposition, deps, 1500);
+
+    // Each semantic query should call hybridSearch(deps, query, 5)
+    // hybridSearch calls store.docSearch with expandedLimit = 5 * 2 = 10
+    // We expect 2 docSearch calls (one per query)
+    expect(docSearchCalls.length).toBe(2);
+    // Each docSearch call should have limit parameter of 10 (expanded from 5)
+    for (const call of docSearchCalls) {
+      expect(call.limit).toBe(10);
+    }
+  });
+
+  test('reflexive-recall.AC2.2: per-entity limit of 3 for docSearch and source is entity', async () => {
+    // This test verifies:
+    // 1. docSearch is called with limit 3 for each entity
+    // 2. returned entity fragments have source: 'entity'
+    const decomposition: DecompositionResult = {
+      queries: [],
+      entities: ['entity1', 'entity2'],
+    };
+    const deps: HybridSearchDeps = { store: mockStore, embedding: mockEmbedding };
+
+    const result = await retrieveContext(decomposition, deps, 1500);
+
+    // Should have 2 docSearch calls for the 2 entities
+    expect(docSearchCalls.length).toBe(2);
+    // Each call should use limit 3
+    for (const call of docSearchCalls) {
+      expect(call.limit).toBe(3);
+    }
+
+    // All returned fragments should have source: 'entity'
+    for (const fragment of result.fragments) {
+      expect(fragment.source).toBe('entity');
+    }
+  });
+
+  test('reflexive-recall.AC2.3: output sorted descending by score and entity scores use 1/(60+rank)', async () => {
+    // This test verifies:
+    // 1. output is sorted descending by score
+    // 2. entity fragment scores equal 1/(60+rank) where rank is from docSearch
+    const decomposition: DecompositionResult = {
+      queries: [],
+      entities: ['test'],
+    };
+    const deps: HybridSearchDeps = { store: mockStore, embedding: mockEmbedding };
+
+    const result = await retrieveContext(decomposition, deps, 1500);
+
+    // Verify fragments are sorted descending by score
+    for (let i = 1; i < result.fragments.length; i++) {
+      expect(result.fragments[i]!.score).toBeLessThanOrEqual(result.fragments[i - 1]!.score);
+    }
+
+    // Verify entity fragment scores match formula: 1/(60+rank)
+    // From mock: rank 1 -> score = 1/61, rank 2 -> score = 1/62
+    for (const fragment of result.fragments) {
+      if (fragment.source === 'entity') {
+        // Expected scores from mock docSearch results
+        if (fragment.rkey === 'knowledge:test1') {
+          expect(fragment.score).toBe(1 / 61); // rank 1
+        } else if (fragment.rkey === 'knowledge:test2') {
+          expect(fragment.score).toBe(1 / 62); // rank 2
+        }
+      }
+    }
+  });
+
+  test('reflexive-recall.AC2.1: no more than 5 fragments per semantic query', async () => {
+    // Even if hybridSearch were to return more results, they should be limited to 5
+    // This test creates a mock that could return many results and verifies the limit
+    const multiResultStore: Store = {
+      ...mockStore,
+      docSearch: (query: string, limit?: number) => {
+        // Return up to limit results
+        if (query.includes('multi')) {
+          const allResults = [
+            { rkey: 'knowledge:multi1', content: 'content 1', rank: 1 },
+            { rkey: 'knowledge:multi2', content: 'content 2', rank: 2 },
+            { rkey: 'knowledge:multi3', content: 'content 3', rank: 3 },
+            { rkey: 'knowledge:multi4', content: 'content 4', rank: 4 },
+            { rkey: 'knowledge:multi5', content: 'content 5', rank: 5 },
+            { rkey: 'knowledge:multi6', content: 'content 6', rank: 6 },
+            { rkey: 'knowledge:multi7', content: 'content 7', rank: 7 },
+            { rkey: 'knowledge:multi8', content: 'content 8', rank: 8 },
+            { rkey: 'knowledge:multi9', content: 'content 9', rank: 9 },
+            { rkey: 'knowledge:multi10', content: 'content 10', rank: 10 },
+          ];
+          return allResults.slice(0, limit);
+        }
+        return [];
+      },
+      docGet: (rkey: string) => {
+        if (rkey.startsWith('knowledge:multi')) {
+          const num = rkey.replace('knowledge:multi', '');
+          return { content: `content ${num}`, rkey, createdAt: '', updatedAt: '' };
+        }
+        return null;
+      },
+    } as unknown as Store;
+
+    const decomposition: DecompositionResult = {
+      queries: ['multi'],
+      entities: [],
+    };
+    const deps: HybridSearchDeps = { store: multiResultStore, embedding: mockEmbedding };
+
+    const result = await retrieveContext(decomposition, deps, 10000);
+
+    // hybridSearch should return at most 5 results per query (from semantic search)
+    // Since we have only 1 query and large token budget, we should get at most 5 semantic fragments
+    const semanticFragments = result.fragments.filter(f => f.source === 'semantic');
+    expect(semanticFragments.length).toBeLessThanOrEqual(5);
   });
 });
