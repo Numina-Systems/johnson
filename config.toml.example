@@ -25,24 +25,13 @@ max_tokens = 8192
 # If omitted, these tasks fall back to the main model (capped at 8k tokens),
 # which works but wastes main-model capacity on simple jobs.
 #
-# A small, fast model (2-4B params) is ideal here — these tasks just need
-# basic JSON generation and text summarization.
+# A small, fast model (2-4B params) is ideal — these tasks just need basic
+# JSON generation and text summarization. Same provider options as [model].
 #
-# Same provider options as [model]. Examples:
-#
-#   Ollama (local):
-#   [sub_model]
-#   provider = "ollama"
-#   name = "gemma3:4b"
-#   max_tokens = 2048
-#
-#   OpenRouter (hosted):
-#   [sub_model]
-#   provider = "openrouter"
-#   name = "google/gemma-2-9b-it"
-#   max_tokens = 2048
-#   base_url = "https://openrouter.ai/api/v1"
-#   api_key = ""  # or set OPENROUTER_API_KEY env var
+# [sub_model]
+# provider = "ollama"
+# name = "gemma3:4b"
+# max_tokens = 2048
 
 # ─── Agent Loop ───────────────────────────────────────────────────────────────
 [agent]
