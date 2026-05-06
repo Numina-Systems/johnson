@@ -19,6 +19,7 @@ export function buildSystemPrompt(
   skillNames: ReadonlyArray<string>,
   toolDocs: string = '',
   timezone: string = 'UTC',
+  recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
 ): string {
   const sections: Array<string> = [persona.trim()];
 
@@ -39,6 +40,14 @@ export function buildSystemPrompt(
   // Core memory (self document)
   if (selfDoc) {
     sections.push(selfDoc);
+  }
+
+  // Recalled context (if present and non-empty)
+  if (recalledContext && recalledContext.length > 0) {
+    const fragmentsText = recalledContext
+      .map(f => `### ${f.rkey}\n${f.content}`)
+      .join('\n\n');
+    sections.push(`\n\n## Recalled Context\n${fragmentsText}`);
   }
 
   sections.push('\n\n## Available Skills');
