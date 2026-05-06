@@ -1,6 +1,11 @@
 // pattern: Functional Core
 
 import type { Message, ModelProvider, ToolDefinition, UsageStats } from '../model/types.ts';
+
+export type RecalledContextEntry = {
+  readonly rkey: string;
+  readonly content: string;
+};
 import type { CodeRuntime } from '../runtime/types.ts';
 import type { EmbeddingProvider } from '../embedding/types.ts';
 import type { VectorStore } from '../search/vector-store.ts';
@@ -52,7 +57,7 @@ export type AgentDependencies = {
   readonly customTools?: CustomToolManager;
   readonly systemPromptProvider?: (
     toolDocs: string,
-    recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+    recalledContext?: ReadonlyArray<RecalledContextEntry>,
   ) => Promise<string>;
   readonly recallClient?: RecallClient;
   readonly workingDir?: string;

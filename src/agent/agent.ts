@@ -9,7 +9,7 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
-import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind } from './types.ts';
+import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
 import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
@@ -186,9 +186,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     }
 
     // Recall step — runs after compaction, before tool loop
-    let recalledContext: ReadonlyArray<{ rkey: string; content: string }> | undefined;
+    let recalledContext: ReadonlyArray<RecalledContextEntry> | undefined;
     if (deps.config.recallEnabled) {
-      const userText = typeof userMessage === 'string' ? userMessage : userMessage;
+      const userText = userMessage;
       const recallResult = await performRecall(userText, {
         store: deps.store,
         embedding: deps.embedding,
@@ -211,7 +211,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // (Moved here after recall step so recalledContext can be included)
     let systemPrompt: string;
     const buildInlinePrompt = async (
-      recalledCtx?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+      recalledCtx?: ReadonlyArray<RecalledContextEntry>,
     ): Promise<string> => {
       const persona = await Bun.file(deps.personaPath).text();
       const coreMemory = loadCoreMemoryFromStore(deps.store);

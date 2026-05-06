@@ -49,6 +49,8 @@ function makeDeps(
       contextLimit: 100_000,
       modelTimeout: 30_000,
       timezone: 'UTC',
+      recallEnabled: false,
+      recallTokenBudget: 1500,
     },
     personaPath: '/tmp/persona.md',
     store: createStore(':memory:'),

@@ -55,6 +55,9 @@ function createNoopStore(): Store {
     updateGrantStatus: () => {},
     updateGrantSecrets: () => {},
     deleteGrant: () => false,
+    addManagedThread: () => {},
+    removeManagedThread: () => false,
+    getManagedThreadIds: () => new Set(),
     close: () => {},
   };
 }
@@ -75,6 +78,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     modelTimeout: 30_000,
     temperature: 0,
     timezone: 'UTC',
+    recallEnabled: false,
+    recallTokenBudget: 1500,
     ...overrides,
   };
 }
@@ -1224,8 +1229,9 @@ describe('recall integration', () => {
 
     const config = makeConfig({ recallEnabled: false });
     const mockEmbedding: EmbeddingProvider = {
-      embed: async () => new Float32Array(768),
-      modelName: 'test-embed',
+      embed: async () => Array.from(new Float32Array(768)),
+      embedBatch: async () => [],
+      dimensions: 768,
     };
 
     const deps: AgentDependencies = {
@@ -1258,33 +1264,31 @@ describe('recall integration', () => {
 
     const config = makeConfig({ recallEnabled: true });
     const mockEmbedding: EmbeddingProvider = {
-      embed: async () => new Float32Array(768),
-      modelName: 'test-embed',
+      embed: async () => Array.from(new Float32Array(768)),
+      embedBatch: async () => [],
+      dimensions: 768,
     };
 
     const mockSubAgent: SubAgentLLM = {
-      complete: async () => ({
-        content: 'test query',
-        usage: { input_tokens: 5, output_tokens: 3 },
-      }),
+      complete: async () => 'test query',
     };
 
     // Create a store with documents for recall to find
     const docStore: Store = {
       ...createNoopStore(),
-      docList: (limit: number) => {
+      docList: (limit?: number, cursor?: string) => {
         return {
           documents: [
-            { rkey: 'knowledge:test', content: 'Test knowledge base', embedding: null, created_at: 0 },
+            { rkey: 'knowledge:test', content: 'Test knowledge base', createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z' },
           ],
           cursor: undefined,
         };
       },
-      docSearch: () => [
+      docSearch: (query: string, limit?: number) => [
         {
           rkey: 'knowledge:test',
           content: 'Test knowledge base entry',
-          score: 0.9,
+          rank: 0.9,
         },
       ],
     };
@@ -1321,32 +1325,30 @@ describe('recall integration', () => {
 
     const config = makeConfig({ recallEnabled: true });
     const mockEmbedding: EmbeddingProvider = {
-      embed: async () => new Float32Array(768),
-      modelName: 'test-embed',
+      embed: async () => Array.from(new Float32Array(768)),
+      embedBatch: async () => [],
+      dimensions: 768,
     };
 
     const mockSubAgent: SubAgentLLM = {
-      complete: async () => ({
-        content: 'test query',
-        usage: { input_tokens: 5, output_tokens: 3 },
-      }),
+      complete: async () => 'test query',
     };
 
     const docStore: Store = {
       ...createNoopStore(),
-      docList: (limit: number) => {
+      docList: (limit?: number, cursor?: string) => {
         return {
           documents: [
-            { rkey: 'knowledge:test', content: 'Test doc', embedding: null, created_at: 0 },
+            { rkey: 'knowledge:test', content: 'Test doc', createdAt: '2025-01-01T00:00:00Z', updatedAt: '2025-01-01T00:00:00Z' },
           ],
           cursor: undefined,
         };
       },
-      docSearch: () => [
+      docSearch: (query: string, limit?: number) => [
         {
           rkey: 'knowledge:test',
           content: 'Retrieved content',
-          score: 0.9,
+          rank: 0.9,
         },
       ],
     };
@@ -1368,12 +1370,15 @@ describe('recall integration', () => {
     });
 
     expect(capturedEvent).toBeDefined();
-    expect(typeof capturedEvent!.data.elapsed).toBe('number');
-    expect(capturedEvent!.data.elapsed >= 0).toBe(true);
-    expect(typeof capturedEvent!.data.fragmentCount).toBe('number');
-    expect(capturedEvent!.data.fragmentCount >= 0).toBe(true);
-    expect(typeof capturedEvent!.data.totalTokens).toBe('number');
-    expect(capturedEvent!.data.totalTokens >= 0).toBe(true);
+    const elapsed = capturedEvent!.data['elapsed'];
+    const fragmentCount = capturedEvent!.data['fragmentCount'];
+    const totalTokens = capturedEvent!.data['totalTokens'];
+    expect(typeof elapsed).toBe('number');
+    expect((elapsed as number) >= 0).toBe(true);
+    expect(typeof fragmentCount).toBe('number');
+    expect((fragmentCount as number) >= 0).toBe(true);
+    expect(typeof totalTokens).toBe('number');
+    expect((totalTokens as number) >= 0).toBe(true);
   });
 
   test('reflexive-recall.AC8.2: recall_done fires with zero fragments when store is empty', async () => {
@@ -1390,8 +1395,9 @@ describe('recall integration', () => {
 
     const config = makeConfig({ recallEnabled: true });
     const mockEmbedding: EmbeddingProvider = {
-      embed: async () => new Float32Array(768),
-      modelName: 'test-embed',
+      embed: async () => Array.from(new Float32Array(768)),
+      embedBatch: async () => [],
+      dimensions: 768,
     };
 
     // Empty store — no documents
@@ -1413,8 +1419,8 @@ describe('recall integration', () => {
     });
 
     expect(capturedEvent).toBeDefined();
-    expect(capturedEvent!.data.fragmentCount).toBe(0);
-    expect(capturedEvent!.data.elapsed).toBe(0);
-    expect(capturedEvent!.data.totalTokens).toBe(0);
+    expect(capturedEvent!.data['fragmentCount']).toBe(0);
+    expect(capturedEvent!.data['elapsed']).toBe(0);
+    expect(capturedEvent!.data['totalTokens']).toBe(0);
   });
 });

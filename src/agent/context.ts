@@ -2,6 +2,7 @@
 
 import type { Message, ContentBlock, ToolUseBlock, ToolResultBlock } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
+import type { RecalledContextEntry } from './types.ts';
 
 /**
  * Load the agent's core identity from the `self` document.
@@ -19,7 +20,7 @@ export function buildSystemPrompt(
   skillNames: ReadonlyArray<string>,
   toolDocs: string = '',
   timezone: string = 'UTC',
-  recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+  recalledContext?: ReadonlyArray<RecalledContextEntry>,
 ): string {
   const sections: Array<string> = [persona.trim()];
 

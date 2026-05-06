@@ -32,11 +32,11 @@ export type RuntimeConfig = {
 export type AgentLoopConfig = {
   readonly maxToolRounds: number;
   readonly contextBudget: number;
-  readonly contextLimit: number;  // token count that triggers context compaction
-  readonly modelTimeout: number;  // ms timeout for LLM calls
-  readonly timezone: string;      // IANA timezone (e.g. "America/New_York")
-  readonly recallEnabled: boolean;
-  readonly recallTokenBudget: number;
+  readonly contextLimit: number;    // token count that triggers context compaction
+  readonly modelTimeout: number;    // ms timeout for LLM calls
+  readonly timezone: string;        // IANA timezone (e.g. "America/New_York")
+  readonly recallEnabled: boolean;  // enable reflexive recall pipeline
+  readonly recallTokenBudget: number;  // max tokens for recalled context
 };
 
 export type EmbeddingConfig = {

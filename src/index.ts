@@ -15,6 +15,7 @@ import { createDenoExecutor } from './runtime/executor.ts';
 import { createAgent } from './agent/agent.ts';
 import { createAgentTools } from './agent/tools.ts';
 import { buildSystemPrompt, loadCoreMemoryFromStore } from './agent/context.ts';
+import type { RecalledContextEntry } from './agent/types.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
 import { createScheduler } from './scheduler/index.ts';
 import { createSecretManager } from './secrets/index.ts';
@@ -107,7 +108,7 @@ async function main(): Promise<void> {
   // not at construction, so the late binding is safe.
   const systemPromptProvider = async (
     toolDocs: string,
-    recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+    recalledContext?: ReadonlyArray<RecalledContextEntry>,
   ): Promise<string> => {
     const persona = await Bun.file(PERSONA_PATH).text();
     const coreMemory = loadCoreMemoryFromStore(store);
