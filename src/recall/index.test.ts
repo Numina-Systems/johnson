@@ -1,4 +1,4 @@
-// pattern: Imperative Shell (test) — exercises performRecall against mocks and real in-memory store
+// Integration tests for performRecall orchestrator against mocks and real in-memory store
 
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { createStore, type Store } from '../store/store.ts';
@@ -24,17 +24,20 @@ function makeMockSubAgent(response: string): { subAgent: SubAgentLLM; calls: Arr
 
 function makeMockEmbedding(throwOnEmbed: boolean = false): { embedding: EmbeddingProvider; embedCalls: string[] } {
   const embedCalls: string[] = [];
+
+  const embedFn = async (text: string) => {
+    embedCalls.push(text);
+    if (throwOnEmbed) {
+      throw new Error('Embedding provider error');
+    }
+    // Return fixed-dimension vector
+    return Array(1536).fill(0).map((_, i) => (i === 0 ? 1 : 0));
+  };
+
   const embedding: EmbeddingProvider = {
-    async embed(text: string) {
-      embedCalls.push(text);
-      if (throwOnEmbed) {
-        throw new Error('Embedding provider error');
-      }
-      // Return fixed-dimension vector
-      return Array(1536).fill(0).map((_, i) => (i === 0 ? 1 : 0));
-    },
+    embed: embedFn,
     async embedBatch(texts: ReadonlyArray<string>) {
-      return Promise.all(texts.map((t) => this.embed(t)));
+      return Promise.all(texts.map((t) => embedFn(t)));
     },
     dimensions: 1536,
   };

@@ -83,8 +83,7 @@ export async function performRecall(message: string, deps: RecallDeps): Promise<
     deps.tokenBudget,
   );
 
-  // Set elapsed time
-  result.elapsed = Date.now() - startTime;
-
-  return result;
+  // Set elapsed time by creating new object with updated elapsed property
+  const elapsed = Date.now() - startTime;
+  return { ...result, elapsed };
 }
