@@ -390,7 +390,14 @@ export function createStore(dbPath: string): Store {
     },
 
     docSearch(query: string, limit = 20): Array<{ rkey: string; content: string; rank: number }> {
-      return stmtDocSearch.all(query, limit) as Array<{ rkey: string; content: string; rank: number }>;
+      const sanitized = query
+        .replace(/[":*^~(){}[\]\\]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(term => `"${term}"`)
+        .join(' ');
+      if (!sanitized) return [];
+      return stmtDocSearch.all(sanitized, limit) as Array<{ rkey: string; content: string; rank: number }>;
     },
 
     // ── Embeddings ────────────────────────────────────────────────
