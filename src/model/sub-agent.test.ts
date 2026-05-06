@@ -243,19 +243,14 @@ describe('createSubAgent — ollama', () => {
     expect(opts['num_predict']).toBe(4000);
   });
 
-  test('falls back to default localhost URL when baseUrl is not provided', async () => {
-    installFetchMock(() =>
-      jsonResponse({ message: { content: 'default url ok' } }),
-    );
-
+  test('throws when baseUrl is not provided', async () => {
     const subAgent = createSubAgent({
       provider: 'ollama',
       name: 'llama3',
       maxTokens: 4000,
     });
 
-    await subAgent.complete('hi');
-    expect(calls[0]!.url).toBe('http://localhost:11434/api/chat');
+    await expect(subAgent.complete('hi')).rejects.toThrow('requires base_url');
   });
 });
 

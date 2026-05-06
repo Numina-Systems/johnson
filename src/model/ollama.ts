@@ -43,7 +43,6 @@ type OllamaResponse = {
   eval_count?: number;
 };
 
-const DEFAULT_BASE_URL = 'http://localhost:11434';
 const MAX_RETRIES = 3;
 const RETRYABLE_CODES = new Set([429, 500, 502]);
 const RETRYABLE_MESSAGES = ['ECONNREFUSED', 'fetch failed'];
@@ -157,7 +156,10 @@ async function sleep(ms: number): Promise<void> {
 }
 
 export function createOllamaProvider(config: Readonly<ModelConfig>): ModelProvider {
-  const baseUrl = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+  if (!config.baseUrl) {
+    throw new Error('Model provider "ollama" requires base_url (e.g. "http://localhost:11434")');
+  }
+  const baseUrl = config.baseUrl.replace(/\/+$/, '');
   const endpoint = `${baseUrl}/api/chat`;
 
   return {

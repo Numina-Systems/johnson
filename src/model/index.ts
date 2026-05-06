@@ -21,10 +21,13 @@ export function createModelProvider(config: Readonly<ModelConfig>): ModelProvide
     case 'ollama':
       return createOllamaProvider(config);
     case 'lemonade':
+      if (!config.baseUrl) {
+        throw new Error('Model provider "lemonade" requires base_url (e.g. "http://localhost:13305/api/v1")');
+      }
       return createOpenAICompatProvider({
         ...config,
         provider: 'openai-compat',
-        baseUrl: config.baseUrl ?? 'http://localhost:13305/api/v1',
+        baseUrl: config.baseUrl,
         apiKey: config.apiKey ?? 'lemonade',
       });
     case 'openrouter':

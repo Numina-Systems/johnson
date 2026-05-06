@@ -144,12 +144,15 @@ export function loadConfig(configPath: string): AppConfig {
   const interfaceMode: InterfaceMode =
     rawInterface === 'discord' || rawInterface === 'both' ? rawInterface : 'tui';
 
+  const recallEndpoint = pick(raw.recall, 'endpoint', '');
   const recall: RecallConfig | undefined = pick(raw.recall, 'enabled', false)
-    ? {
-        endpoint: pick(raw.recall, 'endpoint', 'http://localhost:8420'),
-        enabled: true,
-        timeoutMs: pick(raw.recall, 'timeoutMs', 5000),
-      }
+    ? recallEndpoint
+      ? {
+          endpoint: recallEndpoint,
+          enabled: true,
+          timeoutMs: pick(raw.recall, 'timeoutMs', 5000),
+        }
+      : (() => { throw new Error('[recall] enabled=true requires endpoint (e.g. "http://localhost:8420")'); })()
     : undefined;
 
   return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel, recall };

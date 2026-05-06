@@ -141,8 +141,10 @@ export function createSubAgent(config: Readonly<SubModelConfig>): SubAgentLLM {
         }
 
         if (provider === 'ollama') {
-          const url = baseUrl ?? 'http://localhost:11434';
-          return await completeViaOllama(url, name, maxTokens, prompt, system);
+          if (!baseUrl) {
+            throw new Error('Sub-agent provider "ollama" requires base_url (e.g. "http://localhost:11434")');
+          }
+          return await completeViaOllama(baseUrl, name, maxTokens, prompt, system);
         }
 
         if (provider === 'openai-compat' || provider === 'openrouter' || provider === 'lemonade') {

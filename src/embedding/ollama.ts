@@ -3,7 +3,6 @@
 import type { EmbeddingConfig } from '../config/types.ts';
 import type { EmbeddingProvider } from './types.ts';
 
-const DEFAULT_ENDPOINT = 'http://localhost:11434';
 // Conservative estimate — code, URLs, and non-Latin text tokenize at fewer chars per token
 const CHARS_PER_TOKEN = 2.5;
 
@@ -14,7 +13,10 @@ function truncateToContext(text: string, contextLength: number): string {
 }
 
 export function createOllamaEmbedding(config: Readonly<EmbeddingConfig>): EmbeddingProvider {
-  const endpoint = config.endpoint ?? DEFAULT_ENDPOINT;
+  if (!config.endpoint) {
+    throw new Error('Embedding provider "ollama" requires endpoint (e.g. "http://localhost:11434")');
+  }
+  const endpoint = config.endpoint;
   const url = `${endpoint}/api/embed`;
   const contextLength = config.contextLength;
 
