@@ -15,6 +15,8 @@ import type {
 } from '../model/types.ts';
 import type { CodeRuntime, ExecutionResult } from '../runtime/types.ts';
 import type { Store, DocumentRow, GrantRow } from '../store/store.ts';
+import type { EmbeddingProvider } from '../embedding/types.ts';
+import type { SubAgentLLM } from '../model/sub-agent.ts';
 
 type ModelCall = {
   request: ModelRequest;
@@ -1191,5 +1193,228 @@ describe('systemPromptProvider first-call failure', () => {
     expect(capturedSystem).toBeDefined();
     expect(capturedSystem!.length).toBeGreaterThan(0);
     expect(capturedSystem).toContain('Inline Fallback Persona');
+  });
+});
+
+describe('recall integration', () => {
+  let tmpDir: string;
+  let personaPath: string;
+
+  beforeAll(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'recall-agent-test-'));
+    personaPath = join(tmpDir, 'persona.md');
+    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
+  });
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('reflexive-recall.AC6.1 (first variant): recall_enabled=false skips recall entirely', async () => {
+    const events: AgentEvent[] = [];
+    const model: ModelProvider = {
+      complete: async (req) => {
+        return {
+          content: [{ type: 'text', text: 'Response without recall' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ recallEnabled: false });
+    const mockEmbedding: EmbeddingProvider = {
+      embed: async () => new Float32Array(768),
+      modelName: 'test-embed',
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(model, config, personaPath),
+      embedding: mockEmbedding,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('This is a long enough message to test recall', {
+      onEvent: async (event) => {
+        events.push(event);
+      },
+    });
+
+    const recallEvents = events.filter(e => e.kind === 'recall_done');
+    expect(recallEvents.length).toBe(0);
+  });
+
+  test('reflexive-recall.AC6.1 (second variant): recall_enabled=true triggers recall', async () => {
+    const events: AgentEvent[] = [];
+    const model: ModelProvider = {
+      complete: async (req) => {
+        return {
+          content: [{ type: 'text', text: 'Response with recall' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ recallEnabled: true });
+    const mockEmbedding: EmbeddingProvider = {
+      embed: async () => new Float32Array(768),
+      modelName: 'test-embed',
+    };
+
+    const mockSubAgent: SubAgentLLM = {
+      complete: async () => ({
+        content: 'test query',
+        usage: { input_tokens: 5, output_tokens: 3 },
+      }),
+    };
+
+    // Create a store with documents for recall to find
+    const docStore: Store = {
+      ...createNoopStore(),
+      docList: (limit: number) => {
+        return {
+          documents: [
+            { rkey: 'knowledge:test', content: 'Test knowledge base', embedding: null, created_at: 0 },
+          ],
+          cursor: undefined,
+        };
+      },
+      docSearch: () => [
+        {
+          rkey: 'knowledge:test',
+          content: 'Test knowledge base entry',
+          score: 0.9,
+        },
+      ],
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(model, config, personaPath),
+      embedding: mockEmbedding,
+      subAgent: mockSubAgent,
+      store: docStore,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('This is a long enough message to test recall', {
+      onEvent: async (event) => {
+        events.push(event);
+      },
+    });
+
+    const recallEvents = events.filter(e => e.kind === 'recall_done');
+    expect(recallEvents.length).toBe(1);
+  });
+
+  test('reflexive-recall.AC8.1: recall_done event includes elapsed, fragmentCount, and totalTokens', async () => {
+    let capturedEvent: AgentEvent | undefined;
+    const model: ModelProvider = {
+      complete: async (req) => {
+        return {
+          content: [{ type: 'text', text: 'Response' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ recallEnabled: true });
+    const mockEmbedding: EmbeddingProvider = {
+      embed: async () => new Float32Array(768),
+      modelName: 'test-embed',
+    };
+
+    const mockSubAgent: SubAgentLLM = {
+      complete: async () => ({
+        content: 'test query',
+        usage: { input_tokens: 5, output_tokens: 3 },
+      }),
+    };
+
+    const docStore: Store = {
+      ...createNoopStore(),
+      docList: (limit: number) => {
+        return {
+          documents: [
+            { rkey: 'knowledge:test', content: 'Test doc', embedding: null, created_at: 0 },
+          ],
+          cursor: undefined,
+        };
+      },
+      docSearch: () => [
+        {
+          rkey: 'knowledge:test',
+          content: 'Retrieved content',
+          score: 0.9,
+        },
+      ],
+    };
+
+    const deps: AgentDependencies = {
+      ...makeDeps(model, config, personaPath),
+      embedding: mockEmbedding,
+      subAgent: mockSubAgent,
+      store: docStore,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('This is a long enough message to test recall', {
+      onEvent: async (event) => {
+        if (event.kind === 'recall_done') {
+          capturedEvent = event;
+        }
+      },
+    });
+
+    expect(capturedEvent).toBeDefined();
+    expect(typeof capturedEvent!.data.elapsed).toBe('number');
+    expect(capturedEvent!.data.elapsed >= 0).toBe(true);
+    expect(typeof capturedEvent!.data.fragmentCount).toBe('number');
+    expect(capturedEvent!.data.fragmentCount >= 0).toBe(true);
+    expect(typeof capturedEvent!.data.totalTokens).toBe('number');
+    expect(capturedEvent!.data.totalTokens >= 0).toBe(true);
+  });
+
+  test('reflexive-recall.AC8.2: recall_done fires with zero fragments when store is empty', async () => {
+    let capturedEvent: AgentEvent | undefined;
+    const model: ModelProvider = {
+      complete: async (req) => {
+        return {
+          content: [{ type: 'text', text: 'Response' }],
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        };
+      },
+    };
+
+    const config = makeConfig({ recallEnabled: true });
+    const mockEmbedding: EmbeddingProvider = {
+      embed: async () => new Float32Array(768),
+      modelName: 'test-embed',
+    };
+
+    // Empty store — no documents
+    const emptyStore = createNoopStore();
+
+    const deps: AgentDependencies = {
+      ...makeDeps(model, config, personaPath),
+      embedding: mockEmbedding,
+      store: emptyStore,
+    };
+
+    const agent = createAgent(deps);
+    await agent.chat('This is a long enough message to test recall', {
+      onEvent: async (event) => {
+        if (event.kind === 'recall_done') {
+          capturedEvent = event;
+        }
+      },
+    });
+
+    expect(capturedEvent).toBeDefined();
+    expect(capturedEvent!.data.fragmentCount).toBe(0);
+    expect(capturedEvent!.data.elapsed).toBe(0);
+    expect(capturedEvent!.data.totalTokens).toBe(0);
   });
 });
