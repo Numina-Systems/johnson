@@ -105,14 +105,17 @@ async function main(): Promise<void> {
   // Persistent session history is passed via conversationOverride on each chat() call.
   // Note: scheduler is wired in below via agentDeps — the agent reads it at tool-call time,
   // not at construction, so the late binding is safe.
-  const systemPromptProvider = async (toolDocs: string): Promise<string> => {
+  const systemPromptProvider = async (
+    toolDocs: string,
+    recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+  ): Promise<string> => {
     const persona = await Bun.file(PERSONA_PATH).text();
     const coreMemory = loadCoreMemoryFromStore(store);
     const allDocs = store.docList(500);
     const skillNames = allDocs.documents
       .filter(d => d.rkey.startsWith('skill:'))
       .map(d => d.rkey);
-    return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, config.agent.timezone);
+    return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, config.agent.timezone, recalledContext);
   };
 
   const agentDeps: AgentDependencies = {
@@ -126,6 +129,8 @@ async function main(): Promise<void> {
       contextLimit: config.agent.contextLimit,
       modelTimeout: config.agent.modelTimeout,
       timezone: config.agent.timezone,
+      recallEnabled: config.agent.recallEnabled,
+      recallTokenBudget: config.agent.recallTokenBudget,
     },
     personaPath: PERSONA_PATH,
     embedding,

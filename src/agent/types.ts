@@ -20,6 +20,8 @@ export type AgentConfig = {
   readonly modelTimeout: number;
   readonly temperature?: number;
   readonly timezone: string;
+  readonly recallEnabled: boolean;
+  readonly recallTokenBudget: number;
 };
 
 export type ChatStats = {
@@ -48,7 +50,10 @@ export type AgentDependencies = {
   readonly secrets?: SecretManager;
   readonly subAgent?: SubAgentLLM;
   readonly customTools?: CustomToolManager;
-  readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
+  readonly systemPromptProvider?: (
+    toolDocs: string,
+    recalledContext?: ReadonlyArray<{ readonly rkey: string; readonly content: string }>,
+  ) => Promise<string>;
   readonly recallClient?: RecallClient;
   readonly workingDir?: string;
 };
@@ -67,7 +72,7 @@ export type ChatImage = {
   filename?: string;
 };
 
-export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done';
+export type AgentEventKind = 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done' | 'recall_done';
 
 export type AgentEvent = {
   readonly kind: AgentEventKind;
