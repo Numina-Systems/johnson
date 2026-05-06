@@ -104,12 +104,16 @@ export function loadConfig(configPath: string): AppConfig {
   };
 
   const embeddingProvider = pick(raw.embedding, 'provider', 'ollama');
+  const embeddingApiKey = embeddingProvider === 'lemonade'
+    ? (process.env['LEMONADE_API_KEY'] ?? 'lemonade')
+    : pick(raw.embedding, 'apiKey', undefined);
   const embedding: EmbeddingConfig = {
     provider: embeddingProvider,
     model: pick(raw.embedding, 'model', 'nomic-embed-text'),
     dimensions: pick(raw.embedding, 'dimensions', 768),
     contextLength: pick(raw.embedding, 'contextLength', 8192),
     endpoint: process.env['EMBEDDING_ENDPOINT'] ?? pick(raw.embedding, 'endpoint', undefined),
+    apiKey: embeddingApiKey,
   };
 
   // Discord config (optional — only needed when interface includes discord)

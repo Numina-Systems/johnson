@@ -70,12 +70,17 @@ unrestricted = true           # if true, relaxes sandbox file/network restrictio
 # Required for: semantic search (hybridSearch), reflexive recall.
 # Without this, search falls back to FTS-only and recall is disabled.
 #
-# Currently only supports Ollama. Run: ollama pull nomic-embed-text:v1.5
+# This is a dedicated embedding model (not a generative model) — it converts
+# text into vectors for similarity search. It is separate from [sub_model].
+#
+# Providers: "ollama", "openai-compat", "lemonade"
+# Set dimensions to match your model's output (check model docs).
 [embedding]
 provider = "ollama"
 model = "nomic-embed-text:v1.5"
 dimensions = 768
-endpoint = "http://localhost:11434"    # required — where your Ollama instance runs
+endpoint = "http://localhost:11434"    # required — where your embedding server runs
+# api_key = ""                         # if your provider requires one
 
 # ─── Discord Bot (optional) ───────────────────────────────────────────────────
 # Set interface = "discord" or "both" above, then configure here.

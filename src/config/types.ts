@@ -40,9 +40,10 @@ export type AgentLoopConfig = {
 };
 
 export type EmbeddingConfig = {
-  readonly provider: 'ollama';
+  readonly provider: 'ollama' | 'openai-compat' | 'lemonade';
   readonly model: string;
   readonly endpoint?: string;
+  readonly apiKey?: string;
   readonly dimensions: number;
   readonly contextLength: number;
 };
