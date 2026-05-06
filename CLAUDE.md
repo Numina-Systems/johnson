@@ -99,6 +99,13 @@ In-process cron via `croner`. Accepts cron expressions or human intervals (`6h`,
 
 `config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable.
 
+### Reflexive Recall (`src/recall/`)
+
+Multi-phase retrieval pipeline for context-aware knowledge recall:
+
+- **Decomposition** (`decompose.ts` + `decompose-message.ts`) — Phase 1. Functional Core parses structured decomposition (semantic queries + named entities). Imperative Shell delegates to SubAgentLLM for unstructured message decomposition.
+- **Retrieval** (`retrieve.ts`) — Phase 2. Functional Core runs semantic queries via `hybridSearch` (up to 5 per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `archive:`, excluding `self`, `operator`, `task:*`), ranks by RRF score, and trims to token budget (default 1500). Returns `RecallResult` with fragments, total tokens, query count, and elapsed time.
+
 ### Interfaces
 
 - **TUI** (`src/tui/`): Ink/React terminal UI with stack-based navigation. `App.tsx` is the navigation shell routing between 6 screens in `src/tui/screens/`:
