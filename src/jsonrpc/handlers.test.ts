@@ -625,6 +625,16 @@ describe('skill handlers', () => {
     await expect(handler({ status: 'granted' })).rejects.toThrow('skill/grant requires rkey and status');
   });
 
+  test('skill/grant throws for invalid status value', async () => {
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/grant'];
+
+    await expect(handler({ rkey: 'skill:test', status: 'pending' }))
+      .rejects.toThrow('skill/grant status must be "granted" or "revoked"');
+    await expect(handler({ rkey: 'skill:test', status: 'invalid' }))
+      .rejects.toThrow('skill/grant status must be "granted" or "revoked"');
+  });
+
   test('skill/updateSecrets calls updateGrantSecrets with array', async () => {
     let capturedRkey: string | undefined;
     let capturedSecrets: ReadonlyArray<string> | undefined;
