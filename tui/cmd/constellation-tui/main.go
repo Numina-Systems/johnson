@@ -1,40 +1,30 @@
 package main
 
 import (
+	"constellation-tui/internal/app"
+	"constellation-tui/internal/backend"
+	"constellation-tui/internal/protocol"
 	"context"
+	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"constellation-tui/internal/app"
-	"constellation-tui/internal/protocol"
 	tea "charm.land/bubbletea/v2"
 )
 
 func main() {
+	withDiscord := flag.Bool("with-discord", false, "Start Discord bot alongside TUI")
+	flag.Parse()
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	backendCmd := exec.CommandContext(ctx, "bun", "run", "src/index.ts", "--interface", "jsonrpc")
-	backendCmd.Dir = ".."
-	backendCmd.Stderr = os.Stderr
-
-	stdin, err := backendCmd.StdinPipe()
+	proc := backend.NewBackendProcess("..", *withDiscord)
+	stdout, stdin, err := proc.Start(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create stdin pipe: %v\n", err)
-		os.Exit(1)
-	}
-
-	stdout, err := backendCmd.StdoutPipe()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to create stdout pipe: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := backendCmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start backend: %v\n", err)
 		os.Exit(1)
 	}
@@ -47,42 +37,27 @@ func main() {
 
 	ready, err := client.WaitReady(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to receive ready notification: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed to receive ready: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "backend ready: protocol v%s, capabilities: %v\n",
-		ready.ProtocolVersion, ready.Capabilities)
+	// Protocol version check
+	if ready.ProtocolVersion != "1" {
+		fmt.Fprintf(os.Stderr, "unsupported protocol version: %s (expected 1)\n", ready.ProtocolVersion)
+		proc.Shutdown(5 * time.Second)
+		os.Exit(1)
+	}
 
-	// Create and run the TUI
-	appModel := app.NewAppModel(client)
+	appModel := app.NewAppModel(client, proc)
 	p := tea.NewProgram(appModel)
 
-	result, err := p.Run()
-	if err != nil {
+	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
-		os.Exit(1)
 	}
 
-	if result != nil {
-		fmt.Fprintf(os.Stderr, "TUI exited\n")
-	}
-
-	// Gracefully shut down the backend
+	// Clean shutdown
 	client.Close()
-
-	backendCmd.Process.Signal(syscall.SIGTERM)
-
-	// Wait with timeout
-	done := make(chan error, 1)
-	go func() { done <- backendCmd.Wait() }()
-
-	select {
-	case <-done:
-		// Process exited cleanly
-	case <-time.After(5 * time.Second):
-		// Force kill if it doesn't exit in time
-		backendCmd.Process.Kill()
-		<-done
+	if err := proc.Shutdown(5 * time.Second); err != nil {
+		fmt.Fprintf(os.Stderr, "backend shutdown: %v\n", err)
 	}
 }
