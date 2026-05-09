@@ -25,7 +25,6 @@ function makeDeps(overrides: Partial<AgentDependencies> = {}): Readonly<AgentDep
     model: undefined as any,
     runtime: undefined as any,
     config: undefined as any,
-    personaPath: '',
     store: makeStore(),
     recallClient: undefined,
     ...overrides,

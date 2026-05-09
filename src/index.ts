@@ -14,8 +14,6 @@ import type { SubAgentLLM } from './model/sub-agent.ts';
 import { createDenoExecutor } from './runtime/executor.ts';
 import { createAgent } from './agent/agent.ts';
 import { createAgentTools } from './agent/tools.ts';
-import { buildSystemPrompt, loadCoreMemoryFromStore } from './agent/context.ts';
-import type { RecalledContextEntry } from './agent/types.ts';
 import { createEmbeddingProvider } from './embedding/index.ts';
 import { createScheduler } from './scheduler/index.ts';
 import { createSecretManager } from './secrets/index.ts';
@@ -31,7 +29,6 @@ import { RecallClient } from './recall/client.ts';
 import { log } from './util/log.ts';
 
 const CONFIG_PATH = resolve(import.meta.dir, '..', 'config.toml');
-const PERSONA_PATH = resolve(import.meta.dir, '..', 'persona.md');
 const DATA_DIR = resolve(import.meta.dir, '..', 'data');
 const TASKS_PATH = resolve(DATA_DIR, 'tasks.json');
 const SECRETS_PATH = resolve(DATA_DIR, 'secrets.json');
@@ -110,19 +107,6 @@ async function main(): Promise<void> {
   // Persistent session history is passed via conversationOverride on each chat() call.
   // Note: scheduler is wired in below via agentDeps — the agent reads it at tool-call time,
   // not at construction, so the late binding is safe.
-  const systemPromptProvider = async (
-    toolDocs: string,
-    recalledContext?: ReadonlyArray<RecalledContextEntry>,
-  ): Promise<string> => {
-    const persona = await Bun.file(PERSONA_PATH).text();
-    const coreMemory = loadCoreMemoryFromStore(store);
-    const allDocs = store.docList(500);
-    const skillNames = allDocs.documents
-      .filter(d => d.rkey.startsWith('skill:'))
-      .map(d => d.rkey);
-    return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, config.agent.timezone, recalledContext);
-  };
-
   const agentDeps: AgentDependencies = {
     model,
     runtime,
@@ -138,14 +122,12 @@ async function main(): Promise<void> {
       recallTokenBudget: config.agent.recallTokenBudget,
       devMode: config.agent.devMode,
     },
-    personaPath: PERSONA_PATH,
     embedding,
     get scheduler() { return scheduler; },
     store,
     secrets,
     subAgent,
     customTools,
-    systemPromptProvider,
     recallClient,
     workingDir: config.runtime.workingDir,
   };
@@ -181,10 +163,8 @@ async function main(): Promise<void> {
       secrets,
       scheduler,
       customTools,
-      systemPromptProvider,
       toolDocs,
       builtinTools,
-      personaPath: PERSONA_PATH,
       timezone: config.agent.timezone,
     });
   }

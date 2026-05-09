@@ -8,7 +8,7 @@ import ToolsScreen from './screens/ToolsScreen.tsx';
 import SecretsScreen from './screens/SecretsScreen.tsx';
 import SchedulesScreen from './screens/SchedulesScreen.tsx';
 import SystemPromptScreen from './screens/SystemPromptScreen.tsx';
-import { buildSystemPrompt, loadCoreMemoryFromStore } from '../agent/context.ts';
+import { buildSystemPrompt } from '../agent/prompt.ts';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -29,32 +29,32 @@ export default function App(deps: AppProps): React.ReactElement {
   }, []);
 
   const getSystemPrompt = useCallback(async (): Promise<string> => {
-    let prompt: string;
-    if (deps.systemPromptProvider) {
-      prompt = await deps.systemPromptProvider(deps.toolDocs ?? '');
-    } else if (!deps.personaPath || !deps.timezone) {
-      return 'System prompt unavailable: personaPath/timezone not provided.';
-    } else {
-      const persona = await Bun.file(deps.personaPath).text();
-      const coreMemory = loadCoreMemoryFromStore(deps.store);
-      const allDocs = deps.store.docList(500);
-      const skillNames = allDocs.documents
-        .filter((d) => d.rkey.startsWith('skill:'))
-        .map((d) => d.rkey);
-      prompt = buildSystemPrompt(persona, coreMemory, skillNames, deps.toolDocs ?? '', deps.timezone);
+    if (!deps.timezone) {
+      return 'System prompt unavailable: timezone not provided.';
     }
 
-    if (deps.customTools) {
-      const summaries = deps.customTools.getApprovedToolSummaries();
-      if (summaries.length > 0) {
-        const listing = summaries
-          .map((s) => `- **${s.name}** — ${s.description}`)
-          .join('\n');
-        prompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
-      }
-    }
+    const selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+    const allDocs = deps.store.docList(500);
+    const skillNames = allDocs.documents
+      .filter((d) => d.rkey.startsWith('skill:'))
+      .map((d) => d.rkey);
 
-    return prompt;
+    const customToolSummaries = deps.customTools
+      ? deps.customTools.getApprovedToolSummaries()
+      : undefined;
+
+    const secretNames = deps.secrets
+      ? deps.secrets.listKeys()
+      : undefined;
+
+    return buildSystemPrompt({
+      selfDoc,
+      skillNames,
+      toolDocs: deps.toolDocs ?? '',
+      timezone: deps.timezone,
+      customToolSummaries,
+      secretNames,
+    });
   }, [deps]);
 
   // Ctrl+C fallback (always active)

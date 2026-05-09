@@ -88,13 +88,11 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 function makeDeps(
   model: ModelProvider,
   config: AgentConfig,
-  personaPath: string,
 ): AgentDependencies {
   return {
     model,
     runtime: noopRuntime,
     config,
-    personaPath,
     store: createNoopStore(),
   };
 }
@@ -141,7 +139,7 @@ describe('agent reasoning_content propagation', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(mockModel, makeConfig({ maxToolRounds: 3 }), personaPath));
+    const agent = createAgent(makeDeps(mockModel, makeConfig({ maxToolRounds: 3 })));
 
     const first = await agent.chat('first user message');
     expect(first.text).toBe('I have responded.');
@@ -187,7 +185,7 @@ describe('agent reasoning_content propagation', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(mockModel, makeConfig({ maxToolRounds: 3 }), personaPath));
+    const agent = createAgent(makeDeps(mockModel, makeConfig({ maxToolRounds: 3 })));
     await agent.chat('first');
     await agent.chat('second');
 
@@ -233,7 +231,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 2 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('hello');
 
     const overrideHistory = (result as unknown as { history?: Message[] }).history;
@@ -266,7 +264,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 2 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('hello');
 
     expect(result.text).toBe('Final text');
@@ -293,7 +291,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 2 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('hello');
 
     expect(result.stats.inputTokens).toBe(13 + 13 + 7);
@@ -319,7 +317,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 3 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('hello');
 
     expect(result.stats.rounds).toBe(4);
@@ -339,7 +337,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 5 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('hello');
 
     expect(callCount).toBe(1);
@@ -370,7 +368,7 @@ describe('graceful max-iteration exhaustion', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 3 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
     const result = await agent.chat('please do work');
 
     expect(result.text).toBe('Forced wrap-up response');
@@ -441,7 +439,6 @@ describe('agent loop tool dispatch routing', () => {
       model: mockModel,
       runtime: recordingRuntime,
       config: makeConfig({ maxToolRounds: 5 }),
-      personaPath,
       store: createNoopStore(),
     };
 
@@ -490,7 +487,6 @@ describe('agent loop tool dispatch routing', () => {
       model: mockModel,
       runtime: recordingRuntime,
       config: makeConfig({ maxToolRounds: 5 }),
-      personaPath,
       store: createNoopStore(),
     };
 
@@ -684,7 +680,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 })));
     const result = await agent.chat('hello');
 
     expect(calls.length).toBe(3);
@@ -713,7 +709,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 })));
     const result = await agent.chat('hello');
 
     expect(result.text).toBe('Final text');
@@ -739,7 +735,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 2 })));
     const result = await agent.chat('hello');
 
     expect(result.stats.inputTokens).toBe(13 + 13 + 7);
@@ -764,7 +760,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 3 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 3 })));
     const result = await agent.chat('hello');
 
     expect(result.stats.rounds).toBe(4);
@@ -783,7 +779,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 5 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 5 })));
     const result = await agent.chat('hello');
 
     expect(callCount).toBe(1);
@@ -813,7 +809,7 @@ describe('graceful max-iteration exhaustion', () => {
       },
     };
 
-    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 3 }), personaPath));
+    const agent = createAgent(makeDeps(model, makeConfig({ maxToolRounds: 3 })));
     const result = await agent.chat('please do work');
 
     expect(result.text).toBe('Forced wrap-up response');
@@ -835,82 +831,6 @@ describe('graceful max-iteration exhaustion', () => {
   });
 });
 
-describe('systemPromptProvider', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'gh12-agent-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, 'unused persona');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test('GH12.AC7.1: uses provider return value as system prompt', async () => {
-    const expectedPrompt = 'Custom system prompt from provider';
-    let capturedSystem: string | undefined;
-
-    const mockModel: ModelProvider = {
-      complete: async (request) => {
-        capturedSystem = request.system;
-        return {
-          content: [{ type: 'text', text: 'ok' }],
-          stop_reason: 'end_turn',
-          usage: { input_tokens: 1, output_tokens: 1 },
-        };
-      },
-    };
-
-    const deps: AgentDependencies = {
-      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
-      systemPromptProvider: async (_toolDocs: string) => expectedPrompt,
-    };
-
-    const agent = createAgent(deps);
-    await agent.chat('hello');
-
-    expect(capturedSystem).toBe(expectedPrompt);
-  });
-
-  test('GH12.AC6.1: falls back to cached prompt when provider throws', async () => {
-    const goodPrompt = 'Good system prompt';
-    let providerCalls = 0;
-    const capturedSystems: Array<string | undefined> = [];
-
-    const mockModel: ModelProvider = {
-      complete: async (request) => {
-        capturedSystems.push(request.system);
-        return {
-          content: [{ type: 'text', text: 'ok' }],
-          stop_reason: 'end_turn',
-          usage: { input_tokens: 1, output_tokens: 1 },
-        };
-      },
-    };
-
-    const provider = async (_toolDocs: string): Promise<string> => {
-      providerCalls++;
-      if (providerCalls === 1) return goodPrompt;
-      throw new Error('provider broke');
-    };
-
-    const deps: AgentDependencies = {
-      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
-      systemPromptProvider: provider,
-    };
-
-    const agent = createAgent(deps);
-
-    await agent.chat('hello');
-    expect(capturedSystems[0]).toBe(goodPrompt);
-
-    await agent.chat('hello again');
-    expect(capturedSystems[1]).toBe(goodPrompt);
-  });
-});
 describe('GH02 event emission', () => {
   let tmpDir: string;
   let personaPath: string;
@@ -962,7 +882,6 @@ describe('GH02 event emission', () => {
       model: provider,
       runtime,
       config,
-      personaPath: personaPath,
       store: createNoopStore(),
     };
     const agent = createAgent(deps);
@@ -992,7 +911,6 @@ describe('GH02 event emission', () => {
       model: provider,
       runtime,
       config,
-      personaPath: personaPath,
       store: createNoopStore(),
     };
     const agent = createAgent(deps);
@@ -1015,7 +933,6 @@ describe('GH02 event emission', () => {
       model: provider,
       runtime,
       config,
-      personaPath: personaPath,
       store: createNoopStore(),
     };
     const agent = createAgent(deps);
@@ -1042,7 +959,6 @@ describe('GH02 event emission', () => {
       model: provider,
       runtime,
       config,
-      personaPath: personaPath,
       store: createNoopStore(),
     };
     const agent = createAgent(deps);
@@ -1095,7 +1011,7 @@ describe('forced final response: events and reasoning_content', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 2 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
 
     const events: AgentEvent[] = [];
     const onEvent = async (event: AgentEvent): Promise<void> => {
@@ -1144,7 +1060,7 @@ describe('forced final response: events and reasoning_content', () => {
     };
 
     const config = makeConfig({ maxToolRounds: 2 });
-    const agent = createAgent(makeDeps(model, config, personaPath));
+    const agent = createAgent(makeDeps(model, config));
 
     await agent.chat('first');
     await agent.chat('second');
@@ -1154,51 +1070,6 @@ describe('forced final response: events and reasoning_content', () => {
       (m) => m.role === 'assistant' && m.reasoning_content === 'Reasoning during forced wrap-up.',
     );
     expect(assistantWithReasoning).toBeDefined();
-  });
-});
-
-describe('systemPromptProvider first-call failure', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'gh13-spp-first-fail-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Inline Fallback Persona\nFallback content.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  test('falls back to inline prompt build when provider throws on first call', async () => {
-    let capturedSystem: string | undefined;
-    const mockModel: ModelProvider = {
-      complete: async (request) => {
-        capturedSystem = request.system;
-        return {
-          content: [{ type: 'text', text: 'ok' }],
-          stop_reason: 'end_turn',
-          usage: { input_tokens: 1, output_tokens: 1 },
-        };
-      },
-    };
-
-    const provider = async (_toolDocs: string): Promise<string> => {
-      throw new Error('provider broke on first call');
-    };
-
-    const deps: AgentDependencies = {
-      ...makeDeps(mockModel, makeConfig({ maxToolRounds: 1 }), personaPath),
-      systemPromptProvider: provider,
-    };
-
-    const agent = createAgent(deps);
-    await agent.chat('hello');
-
-    expect(capturedSystem).toBeDefined();
-    expect(capturedSystem!.length).toBeGreaterThan(0);
-    expect(capturedSystem).toContain('Inline Fallback Persona');
   });
 });
 
@@ -1236,7 +1107,7 @@ describe('recall integration', () => {
     };
 
     const deps: AgentDependencies = {
-      ...makeDeps(model, config, personaPath),
+      ...makeDeps(model, config),
       embedding: mockEmbedding,
     };
 
@@ -1295,7 +1166,7 @@ describe('recall integration', () => {
     };
 
     const deps: AgentDependencies = {
-      ...makeDeps(model, config, personaPath),
+      ...makeDeps(model, config),
       embedding: mockEmbedding,
       subAgent: mockSubAgent,
       store: docStore,
@@ -1355,7 +1226,7 @@ describe('recall integration', () => {
     };
 
     const deps: AgentDependencies = {
-      ...makeDeps(model, config, personaPath),
+      ...makeDeps(model, config),
       embedding: mockEmbedding,
       subAgent: mockSubAgent,
       store: docStore,
@@ -1405,7 +1276,7 @@ describe('recall integration', () => {
     const emptyStore = createNoopStore();
 
     const deps: AgentDependencies = {
-      ...makeDeps(model, config, personaPath),
+      ...makeDeps(model, config),
       embedding: mockEmbedding,
       store: emptyStore,
     };
@@ -1474,7 +1345,7 @@ describe('recall integration', () => {
     };
 
     const deps: AgentDependencies = {
-      ...makeDeps(model, config, personaPath),
+      ...makeDeps(model, config),
       embedding: mockEmbedding,
       subAgent: mockSubAgent,
       store: docStore,

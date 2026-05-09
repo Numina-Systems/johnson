@@ -32,7 +32,6 @@ function makeDeps(overrides: { secrets?: SecretManager } = {}): Readonly<AgentDe
     model: undefined as any,
     runtime: undefined as any,
     config: undefined as any,
-    personaPath: '',
     store: undefined as any,
   };
 }

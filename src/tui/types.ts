@@ -17,10 +17,8 @@ export type TuiDependencies = {
   readonly secrets?: SecretManager;
   readonly scheduler?: TaskStore;
   readonly customTools?: CustomToolManager;
-  readonly systemPromptProvider?: (toolDocs: string) => Promise<string>;
   readonly toolDocs?: string;
   readonly builtinTools?: ReadonlyArray<{ name: string; description: string }>;
-  readonly personaPath?: string;
   readonly timezone?: string;
 };
 

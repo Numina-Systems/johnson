@@ -49,7 +49,6 @@ export type AgentDependencies = {
   readonly model: ModelProvider;
   readonly runtime: CodeRuntime;
   readonly config: AgentConfig;
-  readonly personaPath: string;
   readonly embedding?: EmbeddingProvider;
   readonly vectorStore?: VectorStore;
   readonly scheduler?: TaskStore;
@@ -57,10 +56,6 @@ export type AgentDependencies = {
   readonly secrets?: SecretManager;
   readonly subAgent?: SubAgentLLM;
   readonly customTools?: CustomToolManager;
-  readonly systemPromptProvider?: (
-    toolDocs: string,
-    recalledContext?: ReadonlyArray<RecalledContextEntry>,
-  ) => Promise<string>;
   readonly recallClient?: RecallClient;
   readonly workingDir?: string;
 };

@@ -17,12 +17,9 @@ type RuntimeCall = { code: string; env?: Record<string, string> };
 
 describe('GH10: custom tools end-to-end through createAgentTools', () => {
   let tmpDir: string;
-  let personaPath: string;
 
   beforeAll(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'gh10-integration-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test\n');
   });
 
   afterAll(() => {
@@ -77,7 +74,6 @@ describe('GH10: custom tools end-to-end through createAgentTools', () => {
         recallTokenBudget: 1500,
         devMode: false,
       },
-      personaPath,
       store,
       secrets,
       customTools,

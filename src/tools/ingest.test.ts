@@ -53,7 +53,6 @@ function makeDeps(
       recallTokenBudget: 1500,
       devMode: false,
     },
-    personaPath: '/tmp/persona.md',
     store: createStore(':memory:'),
     workingDir,
   };

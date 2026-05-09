@@ -10,7 +10,8 @@ import type {
   ContentBlock,
 } from '../model/types.ts';
 import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
-import { buildSystemPrompt, estimateTokens, loadCoreMemoryFromStore, repairConversation, trimOldToolResults } from './context.ts';
+import { estimateTokens, repairConversation, trimOldToolResults } from './context.ts';
+import { buildSystemPrompt } from './prompt.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 import { maybeGenerateSessionTitle } from './session-title.ts';
@@ -93,7 +94,6 @@ export function formatNativeToolResult(
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
-  let cachedSystemPrompt = '';
 
   // Serialize all chat() calls — history is shared mutable state.
   // Without this lock, a Discord message arriving during a TUI chat's
@@ -206,48 +206,30 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       }
     }
 
-    // Build system prompt via provider (if set) or inline fallback
-    // (Moved here after recall step so recalledContext can be included)
-    let systemPrompt: string;
-    const buildInlinePrompt = async (
-      recalledCtx?: ReadonlyArray<RecalledContextEntry>,
-    ): Promise<string> => {
-      const persona = await Bun.file(deps.personaPath).text();
-      const coreMemory = loadCoreMemoryFromStore(deps.store);
-      const allDocs = deps.store.docList(500);
-      const skillNames = allDocs.documents
-        .filter(d => d.rkey.startsWith('skill:'))
-        .map(d => d.rkey);
-      return buildSystemPrompt(persona, coreMemory, skillNames, toolDocs, deps.config.timezone, recalledCtx);
-    };
+    // Build system prompt directly — no provider indirection
+    const selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+    const allDocs = deps.store.docList(500);
+    const skillNames = allDocs.documents
+      .filter(d => d.rkey.startsWith('skill:'))
+      .map(d => d.rkey);
 
-    if (deps.systemPromptProvider) {
-      try {
-        systemPrompt = await deps.systemPromptProvider(toolDocs, recalledContext);
-        cachedSystemPrompt = systemPrompt;
-      } catch (err) {
-        process.stderr.write(`[agent] system prompt provider failed, using cached: ${err instanceof Error ? err.message : err}\n`);
-        if (cachedSystemPrompt) {
-          systemPrompt = cachedSystemPrompt;
-        } else {
-          process.stderr.write(`[agent] no cached prompt; falling back to inline prompt build\n`);
-          systemPrompt = await buildInlinePrompt(recalledContext);
-          cachedSystemPrompt = systemPrompt;
-        }
-      }
-    } else {
-      systemPrompt = await buildInlinePrompt(recalledContext);
-    }
+    const customToolSummaries = deps.customTools
+      ? deps.customTools.getApprovedToolSummaries()
+      : undefined;
 
-    if (deps.customTools) {
-      const summaries = deps.customTools.getApprovedToolSummaries();
-      if (summaries.length > 0) {
-        const listing = summaries
-          .map(s => `- **${s.name}** — ${s.description}`)
-          .join('\n');
-        systemPrompt += `\n\n## Custom Tools (call via tools.call_custom_tool)\n\n${listing}`;
-      }
-    }
+    const secretNames = deps.secrets
+      ? deps.secrets.listKeys()
+      : undefined;
+
+    const systemPrompt = buildSystemPrompt({
+      selfDoc,
+      skillNames,
+      toolDocs,
+      timezone: deps.config.timezone,
+      recalledContext,
+      customToolSummaries,
+      secretNames,
+    });
 
     // e. Tool loop
     let exitedNormally = false;
