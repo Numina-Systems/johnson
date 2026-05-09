@@ -1,6 +1,6 @@
 // pattern: Functional Core — pure prompt builder with template constants and interpolation
 
-import type { RecalledContextEntry } from './types.ts';
+import type { RecalledContextEntry } from "./types.ts";
 
 /**
  * Before You Act — Check Your Memory section
@@ -12,12 +12,12 @@ const MEMORY_CHECK_SECTION = `## Before You Act — Check Your Memory
 **However, each NEW thread or channel starts fresh**, and different threads are isolated from each other. Before acting on any request that could have context from a *different* conversation:
 
 1. **Search first** — Run \`doc_search\` or \`doc_get\` for relevant documents before creating, writing, or doing anything substantive. A 2-second search beats recreating something that already exists.
-2. **Check \`operator\`** — If the request involves Giulia's preferences, projects, or prior decisions, fetch the \`operator\` document.
+2. **Check \`operator\`** — If the request involves the Operator's preferences, projects, or prior decisions, fetch the \`operator\` document.
 3. **Check \`task:*\`** — If the request sounds like it continues ongoing work, search for related \`task:*\` documents.
 
-**You are talking to the same person across multiple channels.** Context from a conversation in one channel is NOT visible in another. When Giulia says "create a note," she may be referring to something you discussed in a different channel — search before assuming.
+**You are talking to the same person across multiple channels.** Context from a conversation in one channel is NOT visible in another. When the operator says "create a note," she may be referring to something you discussed in a different channel — search before assuming.
 
-**When Giulia corrects you** (e.g. "that's marketing, not high priority"), save the lesson to your \`self\` document so it applies everywhere — not just the current thread.`;
+**When the operator corrects you** (e.g. "that's marketing, not high priority"), save the lesson to your \`self\` document so it applies everywhere — not just the current thread.`;
 
 /**
  * How You Call Tools section with {native_tools_list} placeholder
@@ -77,7 +77,7 @@ You have a unified document store. Documents are stored with a \`rkey\` (record 
 ### Conventional rkeys
 
 - \`self\` — your own notes about yourself: things you've learned about how to behave, mistakes to avoid, patterns that work. **Auto-loaded into your system prompt every conversation.** Keep it compact — this costs tokens every turn. Think of it as "notes to future me."
-- \`operator\` — compact profile of Giulia: key preferences, personal details, active projects. **NOT auto-loaded** — fetch it when you need context about her. Keep it short — it's an index, not an encyclopedia. Point to \`ref:*\` docs for details.
+- \`operator\` — compact profile of the operator: key preferences, personal details, active projects. **NOT auto-loaded** — fetch it when you need context about her. Keep it short — it's an index, not an encyclopedia. Point to \`ref:*\` docs for details.
 - \`ref:<topic>\` — detailed reference material (vault structure, protocols, API docs). Fetched on demand when \`operator\` or a search points to them. Use this for anything too large to keep in \`operator\`.
 - \`knowledge:<name>\` — ingested file content. Small files stored as a single document; large files get a summary document at \`knowledge:<name>\` plus individual chunks at \`knowledge:<name>:chunk:<n>\`. Created by \`ingest_file\` with \`knowledge\` intent. Searchable via \`doc_search\`.
 - \`skill:<name>\` — a reusable TypeScript skill (e.g. \`skill:apple-caldav\`, \`skill:exa-news-search\`)
@@ -104,7 +104,7 @@ You have a unified document store. Documents are stored with a \`rkey\` (record 
 - **Project context and decisions** → \`operator\` or \`task:<project-name>\`
 - **Task progress** (what you're working on, what's been decided) → \`task:<name>\`
 - **Lessons about yourself** (mistakes, things that worked, behavioral notes) → \`self\`
-- **Conversation summaries** — at the end of substantial conversations, update \`operator\` with anything you learned about Giulia
+- **Conversation summaries** — at the end of substantial conversations, update \`operator\` with anything you learned about the operator
 - **Notes, meetings, people, projects, ideas, research** → **Obsidian vault** (see below), then also \`doc_upsert\` a copy for your own recall
 
 ### Document format
@@ -117,7 +117,7 @@ Write plain text, not markdown. Use \`key: value\` lines for structured data (e.
 - **Read before writing.** Always \`doc_get\` a document before updating it so you merge with existing content, not overwrite it.
 - Save early, save often.
 - The \`self\` document is always in context — keep it small and focused. Don't dump conversation summaries there.
-- The \`operator\` document is not auto-loaded to save tokens. Fetch it at the start of any conversation where you need context about Giulia.`;
+- The \`operator\` document is not auto-loaded to save tokens. Fetch it at the start of any conversation where you need context about the operator.`;
 
 /**
  * Chaining Tool Calls section
@@ -148,7 +148,7 @@ All times you present to the user MUST be in {timezone}. Never use UTC unless ex
  * Self Doc section template
  */
 const SELF_DOC_TEMPLATE = `## Your Memory (auto-loaded)
-This is your saved identity and memory:
+You are an agent running on the Johnson harness with a single operator. This is your saved identity and memory:
 
 {self_doc}`;
 
@@ -189,7 +189,7 @@ You can create reusable tools that persist across sessions, similar to skills bu
 - \`tools.list_custom_tools({})\` — List all custom tools with approval status.
 - \`tools.call_custom_tool({ name, params? })\` — Execute an approved custom tool. Unapproved tools will be rejected.
 
-Custom tool names must be lowercase alphanumeric with hyphens, starting with a letter (e.g. \`fetch-weather\`). Changing a tool's code or parameters auto-revokes approval. Tell Giulia what secret names a tool needs so she can configure them.
+Custom tool names must be lowercase alphanumeric with hyphens, starting with a letter (e.g. \`fetch-weather\`). Changing a tool's code or parameters auto-revokes approval. Tell the operator what secret names a tool needs so she can configure them.
 
 {secret_names}`;
 
@@ -206,7 +206,10 @@ export type SystemPromptParams = {
   readonly toolDocs?: string;
   readonly timezone?: string;
   readonly recalledContext?: ReadonlyArray<RecalledContextEntry>;
-  readonly customToolSummaries?: ReadonlyArray<{ name: string; description: string }>;
+  readonly customToolSummaries?: ReadonlyArray<{
+    name: string;
+    description: string;
+  }>;
   readonly secretNames?: ReadonlyArray<string>;
   readonly nativeToolNames?: ReadonlyArray<string>;
 };
@@ -237,87 +240,107 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
   sections.push(MEMORY_CHECK_SECTION);
 
   // 2. Tool Calling with native tools interpolation
-  const nativeToolsSection = params.nativeToolNames && params.nativeToolNames.length > 0
-    ? `Currently:\n\n${params.nativeToolNames.map(name => `- **\`${name}\`** *(native only)* — See tool reference below.`).join('\n')}`
-    : '';
+  const nativeToolsSection =
+    params.nativeToolNames && params.nativeToolNames.length > 0
+      ? `Currently:\n\n${params.nativeToolNames.map((name) => `- **\`${name}\`** *(native only)* — See tool reference below.`).join("\n")}`
+      : "";
 
   const toolCallingWithInterpolation = TOOL_CALLING_SECTION.replace(
-    '{native_tools_list}',
+    "{native_tools_list}",
     nativeToolsSection
       ? `The following are available as direct tool calls:\n\n${nativeToolsSection}`
-      : 'See the Tool Reference section below for the current list of native tools.'
+      : "See the Tool Reference section below for the current list of native tools.",
   );
-  sections.push('\n\n' + toolCallingWithInterpolation);
+  sections.push("\n\n" + toolCallingWithInterpolation);
 
   // 3. Documents (always present)
-  sections.push('\n\n' + DOCUMENTS_SECTION);
+  sections.push("\n\n" + DOCUMENTS_SECTION);
 
   // 4. Chaining (always present)
-  sections.push('\n\n' + CHAINING_SECTION);
+  sections.push("\n\n" + CHAINING_SECTION);
 
   // 5. Error Handling (always present)
-  sections.push('\n\n' + ERROR_HANDLING_SECTION);
+  sections.push("\n\n" + ERROR_HANDLING_SECTION);
 
   // 6. Current Time (always present, interpolate timezone and formatted time)
-  const timezone = params.timezone || 'UTC';
+  const timezone = params.timezone || "UTC";
   const now = new Date();
-  const formatted = now.toLocaleString('en-US', {
+  const formatted = now.toLocaleString("en-US", {
     timeZone: timezone,
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
   });
-  const currentTimeSection = CURRENT_TIME_TEMPLATE
-    .replace('{formatted_time}', formatted)
-    .replace(/\{timezone\}/g, timezone); // Replace all occurrences
-  sections.push('\n\n' + currentTimeSection);
+  const currentTimeSection = CURRENT_TIME_TEMPLATE.replace(
+    "{formatted_time}",
+    formatted,
+  ).replace(/\{timezone\}/g, timezone); // Replace all occurrences
+  sections.push("\n\n" + currentTimeSection);
 
   // 7. Self Doc (include section header even if content is empty, per AC2.6)
-  sections.push('\n\n' + SELF_DOC_TEMPLATE.replace('{self_doc}', params.selfDoc));
+  sections.push(
+    "\n\n" + SELF_DOC_TEMPLATE.replace("{self_doc}", params.selfDoc),
+  );
 
   // 8. Recalled Context (omit section if not provided or empty)
   if (params.recalledContext && params.recalledContext.length > 0) {
     const fragments = params.recalledContext
-      .map(entry => `### ${entry.rkey}\n${entry.content}`)
-      .join('\n\n');
-    const recalledSection = RECALLED_CONTEXT_TEMPLATE.replace('{fragments}', fragments);
-    sections.push('\n\n' + recalledSection);
+      .map((entry) => `### ${entry.rkey}\n${entry.content}`)
+      .join("\n\n");
+    const recalledSection = RECALLED_CONTEXT_TEMPLATE.replace(
+      "{fragments}",
+      fragments,
+    );
+    sections.push("\n\n" + recalledSection);
   }
 
   // 9. Skills List (always present, empty or populated)
-  const skillsContent = params.skillNames.length === 0
-    ? SKILLS_LIST_EMPTY
-    : SKILLS_LIST_TEMPLATE.replace('{skills}', params.skillNames.map(name => `- ${name}`).join('\n'));
-  sections.push('\n\n## Available Skills\n\n' + skillsContent);
+  const skillsContent =
+    params.skillNames.length === 0
+      ? SKILLS_LIST_EMPTY
+      : SKILLS_LIST_TEMPLATE.replace(
+          "{skills}",
+          params.skillNames.map((name) => `- ${name}`).join("\n"),
+        );
+  sections.push("\n\n## Available Skills\n\n" + skillsContent);
 
   // 10. Tool Docs (omit if not provided or empty)
   if (params.toolDocs && params.toolDocs.trim()) {
-    const toolDocsSection = TOOL_DOCS_TEMPLATE.replace('{tool_docs}', params.toolDocs);
-    sections.push('\n\n' + toolDocsSection);
+    const toolDocsSection = TOOL_DOCS_TEMPLATE.replace(
+      "{tool_docs}",
+      params.toolDocs,
+    );
+    sections.push("\n\n" + toolDocsSection);
   }
 
   // 11. Custom Tools Template (always include instructional text, interpolate secretNames if provided)
   let customToolsTemplate = CUSTOM_TOOLS_TEMPLATE;
   if (params.secretNames && params.secretNames.length > 0) {
-    const secretsList = `Configured secrets: ${params.secretNames.map(name => `\`${name}\``).join(', ')}`;
-    customToolsTemplate = customToolsTemplate.replace('{secret_names}', secretsList);
+    const secretsList = `Configured secrets: ${params.secretNames.map((name) => `\`${name}\``).join(", ")}`;
+    customToolsTemplate = customToolsTemplate.replace(
+      "{secret_names}",
+      secretsList,
+    );
   } else {
-    customToolsTemplate = customToolsTemplate.replace('{secret_names}', '');
+    customToolsTemplate = customToolsTemplate.replace("{secret_names}", "");
   }
-  sections.push('\n\n' + customToolsTemplate);
+  sections.push("\n\n" + customToolsTemplate);
 
   // 12. Custom Tools List (omit if not provided or empty)
   if (params.customToolSummaries && params.customToolSummaries.length > 0) {
     const customToolsList = params.customToolSummaries
-      .map(tool => `- **${tool.name}** — ${tool.description}`)
-      .join('\n');
-    const customToolsListSection = CUSTOM_TOOLS_LIST_TEMPLATE.replace('{custom_tools_list}', customToolsList);
-    sections.push('\n\n' + customToolsListSection);
+      .map((tool) => `- **${tool.name}** — ${tool.description}`)
+      .join("\n");
+    const customToolsListSection = CUSTOM_TOOLS_LIST_TEMPLATE.replace(
+      "{custom_tools_list}",
+      customToolsList,
+    );
+    sections.push("\n\n" + customToolsListSection);
   }
 
-  return sections.join('\n');
+  return sections.join("\n");
 }
