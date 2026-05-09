@@ -127,7 +127,7 @@ describe('Store pagination', () => {
     test('sorts sessions by updatedAt descending', () => {
       store.createSession('session-1', 'Session 1');
 
-      // Create a small delay to ensure different timestamps
+      // Ensure different timestamps at millisecond precision
       Bun.sleep(1);
 
       store.createSession('session-2', 'Session 2');
@@ -153,7 +153,8 @@ describe('Store pagination', () => {
       // Create 7 sessions
       for (let i = 1; i <= 7; i++) {
         store.createSession(`session-${i}`, `Session ${i}`);
-        Bun.sleep(1); // Ensure different timestamps
+        // Ensure different timestamps at millisecond precision
+        Bun.sleep(1);
       }
 
       // Fetch all with pagination (limit 3)
@@ -181,6 +182,33 @@ describe('Store pagination', () => {
 
       expect(allSessions).toHaveLength(7);
       expect(cursor).toBeUndefined();
+    });
+
+    test('malformed cursor (no pipe) returns empty sessions gracefully', () => {
+      store.createSession('session-1', 'Session 1');
+
+      const result = store.listSessionsPaginated(10, 'garbage-no-pipe');
+
+      expect(result.sessions).toEqual([]);
+      expect(result.cursor).toBeUndefined();
+    });
+
+    test('malformed cursor (missing id part) returns empty sessions gracefully', () => {
+      store.createSession('session-1', 'Session 1');
+
+      const result = store.listSessionsPaginated(10, '2026-05-09T10:00:00Z|');
+
+      expect(result.sessions).toEqual([]);
+      expect(result.cursor).toBeUndefined();
+    });
+
+    test('malformed cursor (missing timestamp part) returns empty sessions gracefully', () => {
+      store.createSession('session-1', 'Session 1');
+
+      const result = store.listSessionsPaginated(10, '|session-1');
+
+      expect(result.sessions).toEqual([]);
+      expect(result.cursor).toBeUndefined();
     });
   });
 
@@ -377,6 +405,17 @@ describe('Store pagination', () => {
       expect(result.cursor!.length > 0).toBe(true);
       // Cursor should be parseable as an integer (the message id)
       expect(Number.isInteger(parseInt(result.cursor!, 10))).toBe(true);
+    });
+
+    test('malformed cursor (non-numeric) returns empty messages gracefully', () => {
+      store.createSession('session-1', 'Session 1');
+      store.appendMessage('session-1', 'user', 'Message 1');
+      store.appendMessage('session-1', 'assistant', 'Message 2');
+
+      const result = store.getMessagesPaginated('session-1', 10, 'garbage');
+
+      expect(result.messages).toEqual([]);
+      expect(result.cursor).toBeUndefined();
     });
   });
 

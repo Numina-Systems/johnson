@@ -486,9 +486,13 @@ export function createStore(dbPath: string): Store {
       const fetchLimit = Math.max(1, Math.min(limit, 500));
       let rows: Array<{ id: string; title: string | null; updated_at: string; message_count: number }>;
 
-      if (cursor) {
+      if (cursor && cursor.length > 0) {
         // cursor format: "updated_at|id"
-        const [updatedAt, id] = cursor.split('|');
+        const parts = cursor.split('|');
+        if (parts.length !== 2 || !parts[0] || !parts[1]) {
+          return { sessions: [] };
+        }
+        const [updatedAt, id] = parts;
         rows = stmtListSessionsPaginated.all(updatedAt, id, fetchLimit + 1) as Array<{
           id: string;
           title: string | null;
@@ -550,8 +554,11 @@ export function createStore(dbPath: string): Store {
       const fetchLimit = Math.max(1, Math.min(limit, 500));
       let rows: Array<{ id: number; role: string; content: string; created_at: string }>;
 
-      if (cursor) {
+      if (cursor && cursor.length > 0) {
         const cursorId = parseInt(cursor, 10);
+        if (isNaN(cursorId)) {
+          return { messages: [] };
+        }
         rows = stmtGetMessagesPaginated.all(sessionId, cursorId, fetchLimit + 1) as Array<{
           id: number;
           role: string;

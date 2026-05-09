@@ -2,20 +2,23 @@ package app
 
 import (
 	"constellation-tui/internal/protocol"
+	"fmt"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/list"
 )
 
 // SessionsModel represents the sessions screen
 type SessionsModel struct {
-	list   list.Model
-	client *protocol.Client
-	width  int
-	height int
+	list      list.Model
+	client    *protocol.Client
+	width     int
+	height    int
+	errorMsg  string
 }
 
 // NewSessionsModel creates a new sessions screen model
 func NewSessionsModel(client *protocol.Client) *SessionsModel {
+	// Initial dimensions are defaults (80x24), overridden by WindowSizeMsg on first render
 	return &SessionsModel{
 		list:   list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 24),
 		client: client,
@@ -37,15 +40,21 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.list.SetSize(msg.Width, msg.Height)
 	case sessionsLoadedMsg:
+		m.errorMsg = ""
 		items := make([]list.Item, len(msg.sessions))
 		for i, s := range msg.sessions {
 			items[i] = newSessionItem(s)
 		}
 		m.list.SetItems(items)
 	case sessionCreatedMsg:
+		m.errorMsg = ""
 		return m, loadSessionsCmd(m.client)
 	case sessionDeletedMsg:
+		m.errorMsg = ""
 		return m, loadSessionsCmd(m.client)
+	case sessionsErrorMsg:
+		m.errorMsg = msg.err.Error()
+		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "enter":
@@ -67,7 +76,13 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *SessionsModel) View() tea.View {
-	return tea.NewView(m.list.View())
+	var view string
+	if m.errorMsg != "" {
+		view = fmt.Sprintf("Error: %s\n\n%s", m.errorMsg, m.list.View())
+	} else {
+		view = m.list.View()
+	}
+	return tea.NewView(view)
 }
 
 // sessionItem represents a session in the list
@@ -102,7 +117,7 @@ func (s sessionItem) Title() string {
 }
 
 func (s sessionItem) Description() string {
-	return ""
+	return fmt.Sprintf("%d messages · %s", s.messageCount, s.updatedAt)
 }
 
 // Custom message types for async results

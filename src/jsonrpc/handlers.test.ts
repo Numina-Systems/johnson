@@ -1,3 +1,4 @@
+// pattern: Imperative Shell (test)
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { createHandlers } from './handlers.ts';
 import type { Store } from '../store/store.ts';
@@ -64,6 +65,7 @@ function createMockStore(): Store {
 }
 
 describe('session handlers', () => {
+  // Unit tests with mock Store. Store integration (pagination, SQL binding) is covered by pagination.test.ts.
   let store: Store;
 
   beforeEach(() => {
