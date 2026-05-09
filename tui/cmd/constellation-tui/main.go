@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 package main
 
 import (

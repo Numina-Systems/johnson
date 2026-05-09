@@ -48,6 +48,7 @@ export type JsonRpcDependencies = {
 };
 
 export function createHandlers(deps: JsonRpcDependencies): Record<string, MethodHandler> {
+  // Params are cast without structural validation — TypeBox schema validation planned for future iteration.
   const handlers: Record<string, MethodHandler> = {
     'session/list': async (params: Record<string, unknown> | undefined) => {
       const p = params as SessionListParams | undefined;

@@ -6,6 +6,9 @@ import type { Agent } from '../agent/types.ts';
 import type { SecretManager } from '../secrets/manager.ts';
 import type { TaskStore } from '../scheduler/types.ts';
 
+// Note: Agent response notifications leak to stdout during tests when no emitter is provided.
+// This is cosmetic and does not affect test correctness since output is buffered.
+
 // Mock Store implementation
 function createMockStore(): Store {
   return {

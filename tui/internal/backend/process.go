@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 package backend
 
 import (
@@ -15,6 +16,7 @@ type BackendProcess struct {
 	withDiscord bool
 	workDir     string
 	exited      chan error
+	done        chan struct{}
 }
 
 func NewBackendProcess(workDir string, withDiscord bool) *BackendProcess {
@@ -22,6 +24,7 @@ func NewBackendProcess(workDir string, withDiscord bool) *BackendProcess {
 		workDir:     workDir,
 		withDiscord: withDiscord,
 		exited:      make(chan error, 1),
+		done:        make(chan struct{}),
 	}
 }
 
@@ -63,6 +66,7 @@ func (b *BackendProcess) Start(ctx context.Context) (io.ReadCloser, io.WriteClos
 	go func() {
 		err := b.cmd.Wait()
 		b.exited <- err
+		close(b.done)
 	}()
 
 	return stdout, stdin, nil
@@ -91,6 +95,10 @@ func (b *BackendProcess) WaitExit() <-chan error {
 	return b.exited
 }
 
+func (b *BackendProcess) Done() <-chan struct{} {
+	return b.done
+}
+
 func (b *BackendProcess) Restart(ctx context.Context) (io.ReadCloser, io.WriteCloser, error) {
 	// Kill old process if still running
 	if b.cmd != nil && b.cmd.Process != nil {
@@ -103,8 +111,9 @@ func (b *BackendProcess) Restart(ctx context.Context) (io.ReadCloser, io.WriteCl
 		b.cancel()
 	}
 
-	// Create new exit channel for the new process
+	// Create new exit and done channels for the new process
 	b.exited = make(chan error, 1)
+	b.done = make(chan struct{})
 
 	// Start new process
 	return b.Start(ctx)

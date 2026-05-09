@@ -1,7 +1,9 @@
+// pattern: Imperative Shell
 package app
 
 import (
 	"constellation-tui/internal/protocol"
+	"context"
 	"fmt"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/list"
@@ -144,7 +146,7 @@ type NavigateToChatMsg struct {
 func loadSessionsCmd(client *protocol.Client) tea.Cmd {
 	return func() tea.Msg {
 		var result protocol.SessionListResult
-		err := client.Call(nil, "session/list", nil, &result)
+		err := client.Call(context.Background(), "session/list", nil, &result)
 		if err != nil {
 			return sessionsErrorMsg{err}
 		}
@@ -155,7 +157,7 @@ func loadSessionsCmd(client *protocol.Client) tea.Cmd {
 func createSessionCmd(client *protocol.Client) tea.Cmd {
 	return func() tea.Msg {
 		var result protocol.SessionCreateResult
-		err := client.Call(nil, "session/create", protocol.SessionCreateParams{}, &result)
+		err := client.Call(context.Background(), "session/create", protocol.SessionCreateParams{}, &result)
 		if err != nil {
 			return sessionsErrorMsg{err}
 		}
@@ -166,7 +168,7 @@ func createSessionCmd(client *protocol.Client) tea.Cmd {
 func deleteSessionCmd(client *protocol.Client, id string) tea.Cmd {
 	return func() tea.Msg {
 		var result protocol.SessionDeleteResult
-		err := client.Call(nil, "session/delete", protocol.SessionDeleteParams{ID: id}, &result)
+		err := client.Call(context.Background(), "session/delete", protocol.SessionDeleteParams{ID: id}, &result)
 		if err != nil {
 			return sessionsErrorMsg{err}
 		}

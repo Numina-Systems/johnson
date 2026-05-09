@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 package app
 
 import (
@@ -63,6 +64,7 @@ func (m *AppModel) Init() tea.Cmd {
 
 func watchBackend(proc *backend.BackendProcess) tea.Cmd {
 	return func() tea.Msg {
+		<-proc.Done()
 		err := <-proc.WaitExit()
 		return backendCrashedMsg{err: err}
 	}
