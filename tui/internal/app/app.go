@@ -23,6 +23,9 @@ type AppModel struct {
 	sessions     *SessionsModel
 	chat         *ChatModel
 	tools        *ToolsModel
+	secrets      *SecretsModel
+	schedules    *SchedulesModel
+	prompt       *PromptModel
 	width        int
 	height       int
 }
@@ -66,6 +69,18 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tools.width = msg.Width
 			m.tools.height = msg.Height
 		}
+		if m.secrets != nil {
+			m.secrets.width = msg.Width
+			m.secrets.height = msg.Height
+		}
+		if m.schedules != nil {
+			m.schedules.width = msg.Width
+			m.schedules.height = msg.Height
+		}
+		if m.prompt != nil {
+			m.prompt.width = msg.Width
+			m.prompt.height = msg.Height
+		}
 		sessionsModel, cmd := m.sessions.Update(msg)
 		m.sessions = sessionsModel.(*SessionsModel)
 
@@ -79,6 +94,18 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, toolsCmd := m.tools.Update(msg)
 			cmds = append(cmds, toolsCmd)
 		}
+		if m.activeScreen == ScreenSecrets && m.secrets != nil {
+			_, secretsCmd := m.secrets.Update(msg)
+			cmds = append(cmds, secretsCmd)
+		}
+		if m.activeScreen == ScreenSchedules && m.schedules != nil {
+			_, schedulesCmd := m.schedules.Update(msg)
+			cmds = append(cmds, schedulesCmd)
+		}
+		if m.activeScreen == ScreenPrompt && m.prompt != nil {
+			_, promptCmd := m.prompt.Update(msg)
+			cmds = append(cmds, promptCmd)
+		}
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyPressMsg:
@@ -88,14 +115,17 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pushScreen(ScreenTools)
 			return m, m.tools.Init()
 		case "ctrl+s":
+			m.secrets = NewSecretsModel(m.client)
 			m.pushScreen(ScreenSecrets)
-			return m, nil
+			return m, m.secrets.Init()
 		case "ctrl+d":
+			m.schedules = NewSchedulesModel(m.client)
 			m.pushScreen(ScreenSchedules)
-			return m, nil
+			return m, m.schedules.Init()
 		case "ctrl+p":
+			m.prompt = NewPromptModel(m.client)
 			m.pushScreen(ScreenPrompt)
-			return m, nil
+			return m, m.prompt.Init()
 		case "ctrl+c":
 			return m, tea.Quit
 		}
@@ -116,6 +146,21 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScreenTools:
 		if m.tools != nil {
 			_, cmd := m.tools.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	case ScreenSecrets:
+		if m.secrets != nil {
+			_, cmd := m.secrets.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	case ScreenSchedules:
+		if m.schedules != nil {
+			_, cmd := m.schedules.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	case ScreenPrompt:
+		if m.prompt != nil {
+			_, cmd := m.prompt.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -141,11 +186,20 @@ func (m *AppModel) View() tea.View {
 		}
 		return tea.NewView("Tools screen initializing...")
 	case ScreenSecrets:
-		return tea.NewView("Secrets screen (not yet implemented)")
+		if m.secrets != nil {
+			return m.secrets.View()
+		}
+		return tea.NewView("Secrets screen initializing...")
 	case ScreenSchedules:
-		return tea.NewView("Schedules screen (not yet implemented)")
+		if m.schedules != nil {
+			return m.schedules.View()
+		}
+		return tea.NewView("Schedules screen initializing...")
 	case ScreenPrompt:
-		return tea.NewView("System Prompt screen (not yet implemented)")
+		if m.prompt != nil {
+			return m.prompt.View()
+		}
+		return tea.NewView("Prompt screen initializing...")
 	default:
 		return tea.NewView("Unknown screen")
 	}
