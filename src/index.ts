@@ -221,7 +221,7 @@ async function main(): Promise<void> {
   }
 
   if (mode === 'jsonrpc') {
-    const jsonrpcDeps: JsonRpcDependencies = {};
+    const jsonrpcDeps: JsonRpcDependencies = { store };
     const handlers = createHandlers(jsonrpcDeps);
     startJsonRpcServer(handlers);
   }

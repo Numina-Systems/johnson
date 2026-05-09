@@ -36,3 +36,52 @@ export type ReadyParams = {
 export type MethodHandler = (
   params: Record<string, unknown> | undefined,
 ) => Promise<unknown>;
+
+// Session types for JSON-RPC handlers
+
+export type SessionListParams = {
+  readonly limit?: number;
+  readonly cursor?: string;
+};
+
+export type SessionListResult = {
+  readonly sessions: ReadonlyArray<{
+    readonly id: string;
+    readonly title: string | null;
+    readonly updatedAt: string;
+    readonly messageCount: number;
+  }>;
+  readonly cursor?: string;
+};
+
+export type SessionCreateParams = {
+  readonly title?: string;
+};
+
+export type SessionCreateResult = {
+  readonly id: string;
+};
+
+export type SessionDeleteParams = {
+  readonly id: string;
+};
+
+export type SessionDeleteResult = {
+  readonly ok: boolean;
+};
+
+export type SessionMessagesParams = {
+  readonly sessionId: string;
+  readonly limit?: number;
+  readonly cursor?: string;
+};
+
+export type SessionMessagesResult = {
+  readonly messages: ReadonlyArray<{
+    readonly id: number;
+    readonly role: string;
+    readonly content: string;
+    readonly createdAt: string;
+  }>;
+  readonly cursor?: string;
+};
