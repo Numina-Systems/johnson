@@ -34,38 +34,21 @@ import { startJsonRpcServer } from './jsonrpc/server.ts';
 import { createHandlers } from './jsonrpc/handlers.ts';
 import type { JsonRpcDependencies } from './jsonrpc/handlers.ts';
 import { buildSystemPrompt } from './agent/prompt.ts';
+import { parseCliArgs } from './config/cli.ts';
 
 const CONFIG_PATH = resolve(import.meta.dir, '..', 'config.toml');
 const DATA_DIR = resolve(import.meta.dir, '..', 'data');
 const TASKS_PATH = resolve(DATA_DIR, 'tasks.json');
 const SECRETS_PATH = resolve(DATA_DIR, 'secrets.json');
 
-function parseCliArgs(): {interfaceOverride?: string} {
-  const args = process.argv.slice(2);
-  const result: {interfaceOverride?: string} = {};
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--interface' && i + 1 < args.length) {
-      result.interfaceOverride = args[i + 1];
-      i++;
-    }
-  }
-
-  return result;
-}
-
 async function main(): Promise<void> {
-  // Parse CLI arguments
-  const cliArgs = parseCliArgs();
-
   // Load config
   let config = loadConfig(CONFIG_PATH);
 
   // Override interface mode if specified via CLI
-  if (cliArgs.interfaceOverride) {
-    if (VALID_INTERFACE_MODES.includes(cliArgs.interfaceOverride as InterfaceMode)) {
-      config = {...config, interface: cliArgs.interfaceOverride as InterfaceMode};
-    }
+  const cliInterface = parseCliArgs(process.argv.slice(2));
+  if (cliInterface) {
+    config = {...config, interface: cliInterface};
   }
 
   // Set process-wide timezone from config — affects Date formatting in the host process
@@ -203,6 +186,11 @@ async function main(): Promise<void> {
     });
   }
 
+  // Enforce stdout discipline in jsonrpc or both mode before anything else writes to stdout
+  if (mode === 'jsonrpc' || mode === 'both') {
+    enforceStdoutDiscipline();
+  }
+
   if (mode === 'discord' || mode === 'both') {
     if (!config.discord) {
       log('⚠ Discord interface requested but no [discord] config or DISCORD_BOT_TOKEN found.');
@@ -217,8 +205,6 @@ async function main(): Promise<void> {
   }
 
   if (mode === 'jsonrpc' || mode === 'both') {
-    // Enforce stdout discipline in jsonrpc mode before anything else writes to stdout
-    enforceStdoutDiscipline();
 
     // JSONRPC gets its own agent with in-memory history
     const jsonrpcAgent = createAgent({ ...agentDeps, scheduler });

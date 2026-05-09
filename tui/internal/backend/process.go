@@ -14,7 +14,6 @@ type BackendProcess struct {
 	cancel      context.CancelFunc
 	withDiscord bool
 	workDir     string
-	stderr      io.ReadCloser
 	exited      chan error
 }
 
@@ -75,29 +74,16 @@ func (b *BackendProcess) Shutdown(timeout time.Duration) error {
 	}
 
 	// Send SIGTERM
-	b.cmd.Process.Signal(syscall.SIGTERM)
+	_ = b.cmd.Process.Signal(syscall.SIGTERM) // error OK if process already exited
 
 	// Wait for graceful exit with timeout
-	done := make(chan error, 1)
-	go func() {
-		// Drain the exited channel if there's an error waiting
-		select {
-		case err := <-b.exited:
-			done <- err
-		default:
-			// Process hasn't exited yet, wait for it
-			done <- b.cmd.Wait()
-		}
-	}()
-
 	select {
-	case err := <-done:
-		// Process exited cleanly
+	case err := <-b.exited:
 		return err
 	case <-time.After(timeout):
 		// Force kill if it doesn't exit in time
 		b.cmd.Process.Kill()
-		return <-done
+		return <-b.exited
 	}
 }
 
@@ -109,8 +95,7 @@ func (b *BackendProcess) Restart(ctx context.Context) (io.ReadCloser, io.WriteCl
 	// Kill old process if still running
 	if b.cmd != nil && b.cmd.Process != nil {
 		b.cmd.Process.Kill()
-		// Wait for exit signal to be processed
-		<-time.After(100 * time.Millisecond)
+		<-b.exited  // wait for actual exit
 	}
 
 	// Cancel old context

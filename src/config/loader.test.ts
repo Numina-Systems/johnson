@@ -5,6 +5,7 @@ import { writeFileSync, unlinkSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadConfig } from './loader.ts';
+import { parseCliArgs } from './cli.ts';
 
 let tempDir: string;
 const SUB_MODEL_ENV_KEYS = [
@@ -233,5 +234,47 @@ api_key = "k"
     } finally {
       unlinkSync(path);
     }
+  });
+});
+
+describe('parseCliArgs — CLI argument parsing', () => {
+  test('--interface discord results in discord mode', () => {
+    const result = parseCliArgs(['prog', 'arg', '--interface', 'discord', 'other']);
+    expect(result).toBe('discord');
+  });
+
+  test('--interface both results in both mode', () => {
+    const result = parseCliArgs(['--interface', 'both']);
+    expect(result).toBe('both');
+  });
+
+  test('--interface jsonrpc results in jsonrpc mode', () => {
+    const result = parseCliArgs(['--interface', 'jsonrpc']);
+    expect(result).toBe('jsonrpc');
+  });
+
+  test('--interface tui results in tui mode', () => {
+    const result = parseCliArgs(['--interface', 'tui']);
+    expect(result).toBe('tui');
+  });
+
+  test('no --interface flag returns null', () => {
+    const result = parseCliArgs(['prog', 'other', 'args']);
+    expect(result).toBeNull();
+  });
+
+  test('--interface with invalid value returns null', () => {
+    const result = parseCliArgs(['--interface', 'garbage']);
+    expect(result).toBeNull();
+  });
+
+  test('--interface without value returns null', () => {
+    const result = parseCliArgs(['--interface']);
+    expect(result).toBeNull();
+  });
+
+  test('--interface at end of argv returns null', () => {
+    const result = parseCliArgs(['other', '--interface']);
+    expect(result).toBeNull();
   });
 });

@@ -70,6 +70,7 @@ func watchBackend(proc *backend.BackendProcess) tea.Cmd {
 
 func restartBackend(m *AppModel) tea.Cmd {
 	return func() tea.Msg {
+		// Use context.Background() to ensure restart completes even during shutdown
 		ctx := context.Background()
 
 		// Restart the process
