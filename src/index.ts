@@ -223,7 +223,17 @@ async function main(): Promise<void> {
   if (mode === 'jsonrpc') {
     // JSONRPC gets its own agent with in-memory history
     const jsonrpcAgent = createAgent({ ...agentDeps, scheduler });
-    const jsonrpcDeps: JsonRpcDependencies = { store, agent: jsonrpcAgent };
+    const jsonrpcRegistry = createAgentTools({ ...agentDeps, scheduler }, {});
+    const builtinTools = jsonrpcRegistry.list().map((t) => ({
+      name: t.name,
+      description: t.definition.description.split('\n')[0] ?? '',
+    }));
+    const jsonrpcDeps: JsonRpcDependencies = {
+      store,
+      agent: jsonrpcAgent,
+      customTools,
+      builtinTools,
+    };
     const handlers = createHandlers(jsonrpcDeps);
     startJsonRpcServer(handlers);
   }

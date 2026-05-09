@@ -1,13 +1,35 @@
 // pattern: Imperative Shell
 
-import type { MethodHandler, SessionListParams, SessionCreateParams, SessionDeleteParams, SessionMessagesParams, AgentChatParams, AgentResetResult } from './types.ts';
+import type {
+  MethodHandler,
+  SessionListParams,
+  SessionCreateParams,
+  SessionDeleteParams,
+  SessionMessagesParams,
+  AgentChatParams,
+  AgentResetResult,
+  SkillListResult,
+  SkillGrantParams,
+  SkillUpdateSecretsParams,
+  SkillDeleteParams,
+  CustomToolListResult,
+  CustomToolApproveParams,
+  CustomToolRevokeParams,
+  CustomToolUpdateSecretsParams,
+  GrantListResult,
+  BuiltinListResult,
+  OkResult,
+} from './types.ts';
 import type { Store } from '../store/store.ts';
 import type { Agent } from '../agent/types.ts';
+import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
 import { sendAgentEvent, sendAgentResponse } from './notifications.ts';
 
 export type JsonRpcDependencies = {
   readonly store: Store;
   readonly agent?: Agent;
+  readonly customTools?: CustomToolManager;
+  readonly builtinTools?: ReadonlyArray<{ readonly name: string; readonly description: string }>;
   readonly emitter?: {
     onAgentEvent?: (requestId: string, kind: string, data: Record<string, unknown>) => void;
     onAgentResponse?: (requestId: string, text: string, stats: Record<string, unknown>) => void;
@@ -91,5 +113,123 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
     };
   }
 
+  // Skills handlers
+  if (deps.store) {
+    handlers['skill/list'] = async (): Promise<SkillListResult> => {
+      const result = deps.store.docList(500);
+      const skills = [];
+
+      for (const doc of result.documents) {
+        if (!doc.rkey.startsWith('skill:')) continue;
+
+        const grant = deps.store.getGrant(doc.rkey);
+        const description = extractDescription(doc.content);
+
+        skills.push({
+          rkey: doc.rkey,
+          description,
+          grantStatus: grant?.status ?? null,
+          secrets: grant?.secrets ?? [],
+        });
+      }
+
+      return { skills };
+    };
+
+    handlers['skill/grant'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as SkillGrantParams | undefined;
+      if (!p?.rkey || !p?.status) {
+        throw new Error('skill/grant requires rkey and status');
+      }
+      deps.store.updateGrantStatus(p.rkey, p.status as any);
+      return { ok: true };
+    };
+
+    handlers['skill/updateSecrets'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as SkillUpdateSecretsParams | undefined;
+      if (!p?.rkey) {
+        throw new Error('skill/updateSecrets requires rkey');
+      }
+      deps.store.updateGrantSecrets(p.rkey, p.secrets ?? []);
+      return { ok: true };
+    };
+
+    handlers['skill/delete'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as SkillDeleteParams | undefined;
+      if (!p?.rkey) {
+        throw new Error('skill/delete requires rkey');
+      }
+      deps.store.docDelete(p.rkey);
+      deps.store.deleteGrant(p.rkey);
+      return { ok: true };
+    };
+
+    handlers['grant/list'] = async (): Promise<GrantListResult> => {
+      const grants = deps.store.listGrants();
+      return { grants };
+    };
+  }
+
+  // Custom tools handlers
+  if (deps.customTools) {
+    handlers['customTool/list'] = async (): Promise<CustomToolListResult> => {
+      const tools = deps.customTools!.listTools();
+      return {
+        tools: tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          approved: t.approved,
+          codeHash: t.codeHash,
+          secrets: t.secrets,
+        })),
+      };
+    };
+
+    handlers['customTool/approve'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as CustomToolApproveParams | undefined;
+      if (!p?.name) {
+        throw new Error('customTool/approve requires name');
+      }
+      const result = deps.customTools!.approveTool(p.name);
+      return { ok: result };
+    };
+
+    handlers['customTool/revoke'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as CustomToolRevokeParams | undefined;
+      if (!p?.name) {
+        throw new Error('customTool/revoke requires name');
+      }
+      const result = deps.customTools!.revokeTool(p.name);
+      return { ok: result };
+    };
+
+    handlers['customTool/updateSecrets'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as CustomToolUpdateSecretsParams | undefined;
+      if (!p?.name) {
+        throw new Error('customTool/updateSecrets requires name');
+      }
+      const result = deps.customTools!.updateSecrets(p.name, p.secrets ?? []);
+      return { ok: result };
+    };
+  }
+
+  // Builtin tools handler
+  if (deps.builtinTools) {
+    handlers['builtin/list'] = async (): Promise<BuiltinListResult> => {
+      return { tools: deps.builtinTools! };
+    };
+  }
+
   return handlers;
+}
+
+// pattern: Functional Core — helper to extract description from skill content
+function extractDescription(content: string): string | null {
+  const lines = content.split('\n');
+  for (const line of lines) {
+    if (line.startsWith('// Description:')) {
+      return line.replace(/^\/\/\s*Description:\s*/, '').trim();
+    }
+  }
+  return null;
 }

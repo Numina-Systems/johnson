@@ -492,3 +492,413 @@ describe('agent handlers', () => {
     expect(chatResult.requestId.length).toBeGreaterThan(0);
   });
 });
+
+describe('skill handlers', () => {
+  let store: Store;
+
+  beforeEach(() => {
+    store = createMockStore();
+  });
+
+  test('skill/list filters documents by skill: prefix and enriches with grant data (AC3.1)', async () => {
+    store.docList = () => ({
+      documents: [
+        {
+          rkey: 'skill:search',
+          content: '// Description: Search the web\nconst code = "..."',
+          createdAt: '2026-05-09T10:00:00Z',
+          updatedAt: '2026-05-09T10:00:00Z',
+        },
+        {
+          rkey: 'skill:summarize',
+          content: '// Description: Summarize text\nconst code = "..."',
+          createdAt: '2026-05-09T10:01:00Z',
+          updatedAt: '2026-05-09T10:01:00Z',
+        },
+        {
+          rkey: 'knowledge:something',
+          content: 'Not a skill',
+          createdAt: '2026-05-09T10:02:00Z',
+          updatedAt: '2026-05-09T10:02:00Z',
+        },
+      ],
+      cursor: undefined,
+    });
+
+    store.getGrant = (rkey: string) => {
+      if (rkey === 'skill:search') {
+        return {
+          skillName: 'skill:search',
+          codeHash: 'abc123',
+          status: 'granted',
+          secrets: ['EXA_API_KEY'],
+          createdAt: '2026-05-09T10:00:00Z',
+          updatedAt: '2026-05-09T10:00:00Z',
+        };
+      }
+      if (rkey === 'skill:summarize') {
+        return {
+          skillName: 'skill:summarize',
+          codeHash: 'def456',
+          status: 'pending',
+          secrets: [],
+          createdAt: '2026-05-09T10:01:00Z',
+          updatedAt: '2026-05-09T10:01:00Z',
+        };
+      }
+      return null;
+    };
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result.skills).toHaveLength(2);
+    expect(result.skills[0]).toEqual({
+      rkey: 'skill:search',
+      description: 'Search the web',
+      grantStatus: 'granted',
+      secrets: ['EXA_API_KEY'],
+    });
+    expect(result.skills[1]).toEqual({
+      rkey: 'skill:summarize',
+      description: 'Summarize text',
+      grantStatus: 'pending',
+      secrets: [],
+    });
+  });
+
+  test('skill/list returns null description and status when grant missing', async () => {
+    store.docList = () => ({
+      documents: [
+        {
+          rkey: 'skill:test',
+          content: 'const code = "..."',
+          createdAt: '2026-05-09T10:00:00Z',
+          updatedAt: '2026-05-09T10:00:00Z',
+        },
+      ],
+      cursor: undefined,
+    });
+
+    store.getGrant = () => null;
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/list'];
+
+    const result = await handler({});
+
+    expect(result.skills).toHaveLength(1);
+    expect(result.skills[0].description).toBeNull();
+    expect(result.skills[0].grantStatus).toBeNull();
+    expect(result.skills[0].secrets).toEqual([]);
+  });
+
+  test('skill/grant calls updateGrantStatus with correct status', async () => {
+    let capturedRkey: string | undefined;
+    let capturedStatus: string | undefined;
+
+    store.updateGrantStatus = (rkey: string, status: any) => {
+      capturedRkey = rkey;
+      capturedStatus = status;
+    };
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/grant'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ rkey: 'skill:test', status: 'granted' });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedRkey).toBe('skill:test');
+    expect(capturedStatus).toBe('granted');
+  });
+
+  test('skill/grant throws when rkey or status missing', async () => {
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/grant'];
+
+    await expect(handler({})).rejects.toThrow('skill/grant requires rkey and status');
+    await expect(handler({ rkey: 'skill:test' })).rejects.toThrow('skill/grant requires rkey and status');
+    await expect(handler({ status: 'granted' })).rejects.toThrow('skill/grant requires rkey and status');
+  });
+
+  test('skill/updateSecrets calls updateGrantSecrets with array', async () => {
+    let capturedRkey: string | undefined;
+    let capturedSecrets: ReadonlyArray<string> | undefined;
+
+    store.updateGrantSecrets = (rkey: string, secrets: ReadonlyArray<string>) => {
+      capturedRkey = rkey;
+      capturedSecrets = secrets;
+    };
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/updateSecrets'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({
+      rkey: 'skill:test',
+      secrets: ['API_KEY', 'SECRET'],
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedRkey).toBe('skill:test');
+    expect(capturedSecrets).toEqual(['API_KEY', 'SECRET']);
+  });
+
+  test('skill/updateSecrets defaults to empty array when secrets omitted', async () => {
+    let capturedSecrets: ReadonlyArray<string> | undefined;
+
+    store.updateGrantSecrets = (rkey: string, secrets: ReadonlyArray<string>) => {
+      capturedSecrets = secrets;
+    };
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/updateSecrets'];
+
+    const result = await handler({ rkey: 'skill:test' });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedSecrets).toEqual([]);
+  });
+
+  test('skill/delete calls both docDelete and deleteGrant (AC3.1)', async () => {
+    let deletedDocRkey: string | undefined;
+    let deletedGrantRkey: string | undefined;
+
+    store.docDelete = (rkey: string) => {
+      deletedDocRkey = rkey;
+      return true;
+    };
+
+    store.deleteGrant = (rkey: string) => {
+      deletedGrantRkey = rkey;
+      return true;
+    };
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/delete'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ rkey: 'skill:test' });
+
+    expect(result).toEqual({ ok: true });
+    expect(deletedDocRkey).toBe('skill:test');
+    expect(deletedGrantRkey).toBe('skill:test');
+  });
+
+  test('skill/delete throws when rkey missing', async () => {
+    const handlers = createHandlers({ store });
+    const handler = handlers['skill/delete'];
+
+    await expect(handler({})).rejects.toThrow('skill/delete requires rkey');
+  });
+
+  test('grant/list returns all grants from store', async () => {
+    store.listGrants = () => [
+      {
+        skillName: 'skill:search',
+        codeHash: 'abc123',
+        status: 'granted',
+        secrets: ['EXA_API_KEY'],
+        createdAt: '2026-05-09T10:00:00Z',
+        updatedAt: '2026-05-09T10:00:00Z',
+      },
+      {
+        skillName: 'skill:summarize',
+        codeHash: 'def456',
+        status: 'pending',
+        secrets: [],
+        createdAt: '2026-05-09T10:01:00Z',
+        updatedAt: '2026-05-09T10:01:00Z',
+      },
+    ];
+
+    const handlers = createHandlers({ store });
+    const handler = handlers['grant/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result.grants).toHaveLength(2);
+    expect(result.grants[0].skillName).toBe('skill:search');
+    expect(result.grants[1].status).toBe('pending');
+  });
+});
+
+describe('custom tool handlers', () => {
+  let store: Store;
+  let customTools: any;
+
+  beforeEach(() => {
+    store = createMockStore();
+    customTools = {
+      listTools: () => [],
+      getTool: (name: string) => undefined,
+      saveTool: (tool: any) => ({ ...tool, approved: false, codeHash: 'hash' }),
+      approveTool: (name: string) => false,
+      revokeTool: (name: string) => false,
+      updateSecrets: (name: string, secrets: ReadonlyArray<string>) => false,
+      getApprovedToolSummaries: () => [],
+    };
+  });
+
+  test('customTool/list returns all tools from manager', async () => {
+    customTools.listTools = () => [
+      {
+        name: 'weather',
+        description: 'Get weather',
+        parameters: {},
+        code: 'const code = "..."',
+        approved: true,
+        codeHash: 'abc123',
+        secrets: ['WEATHER_API_KEY'],
+      },
+      {
+        name: 'translate',
+        description: 'Translate text',
+        parameters: {},
+        code: 'const code = "..."',
+        approved: false,
+        codeHash: 'def456',
+        secrets: [],
+      },
+    ];
+
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result.tools).toHaveLength(2);
+    expect(result.tools[0]).toEqual({
+      name: 'weather',
+      description: 'Get weather',
+      approved: true,
+      codeHash: 'abc123',
+      secrets: ['WEATHER_API_KEY'],
+    });
+    expect(result.tools[1].approved).toBe(false);
+  });
+
+  test('customTool/approve calls approveTool and returns result', async () => {
+    let approvedName: string | undefined;
+
+    customTools.approveTool = (name: string) => {
+      approvedName = name;
+      return true;
+    };
+
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/approve'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ name: 'weather' });
+
+    expect(result).toEqual({ ok: true });
+    expect(approvedName).toBe('weather');
+  });
+
+  test('customTool/approve returns ok: false on failure', async () => {
+    customTools.approveTool = (name: string) => false;
+
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/approve'];
+
+    const result = await handler({ name: 'nonexistent' });
+
+    expect(result).toEqual({ ok: false });
+  });
+
+  test('customTool/approve throws when name missing', async () => {
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/approve'];
+
+    await expect(handler({})).rejects.toThrow('customTool/approve requires name');
+  });
+
+  test('customTool/revoke calls revokeTool and returns result', async () => {
+    let revokedName: string | undefined;
+
+    customTools.revokeTool = (name: string) => {
+      revokedName = name;
+      return true;
+    };
+
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/revoke'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ name: 'weather' });
+
+    expect(result).toEqual({ ok: true });
+    expect(revokedName).toBe('weather');
+  });
+
+  test('customTool/updateSecrets calls updateSecrets and returns result', async () => {
+    let updatedName: string | undefined;
+    let updatedSecrets: ReadonlyArray<string> | undefined;
+
+    customTools.updateSecrets = (name: string, secrets: ReadonlyArray<string>) => {
+      updatedName = name;
+      updatedSecrets = secrets;
+      return true;
+    };
+
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/updateSecrets'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({
+      name: 'weather',
+      secrets: ['WEATHER_API_KEY', 'CACHE_KEY'],
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(updatedName).toBe('weather');
+    expect(updatedSecrets).toEqual(['WEATHER_API_KEY', 'CACHE_KEY']);
+  });
+
+  test('customTool/updateSecrets throws when name missing', async () => {
+    const handlers = createHandlers({ store, customTools });
+    const handler = handlers['customTool/updateSecrets'];
+
+    await expect(handler({})).rejects.toThrow('customTool/updateSecrets requires name');
+  });
+});
+
+describe('builtin handler', () => {
+  let store: Store;
+
+  beforeEach(() => {
+    store = createMockStore();
+  });
+
+  test('builtin/list returns static builtin tools list', async () => {
+    const builtinTools = [
+      { name: 'doc_upsert', description: 'Create or update a document' },
+      { name: 'doc_delete', description: 'Delete a document' },
+      { name: 'doc_search', description: 'Search documents' },
+    ];
+
+    const handlers = createHandlers({ store, builtinTools });
+    const handler = handlers['builtin/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result).toEqual({ tools: builtinTools });
+  });
+
+  test('builtin/list returns empty array when no builtins provided', async () => {
+    const handlers = createHandlers({ store, builtinTools: [] });
+    const handler = handlers['builtin/list'];
+
+    const result = await handler({});
+
+    expect(result).toEqual({ tools: [] });
+  });
+});
