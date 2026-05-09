@@ -85,3 +85,84 @@ type ChatStats struct {
 	Rounds          int `json:"rounds"`
 	DurationMs      int `json:"durationMs"`
 }
+
+// Skills
+type SkillInfo struct {
+	Rkey        string   `json:"rkey"`
+	Description *string  `json:"description"`
+	GrantStatus *string  `json:"grantStatus"`
+	Secrets     []string `json:"secrets"`
+}
+
+type SkillListResult struct {
+	Skills []SkillInfo `json:"skills"`
+}
+
+type SkillGrantParams struct {
+	Rkey   string `json:"rkey"`
+	Status string `json:"status"`
+}
+
+type SkillUpdateSecretsParams struct {
+	Rkey    string   `json:"rkey"`
+	Secrets []string `json:"secrets"`
+}
+
+type SkillDeleteParams struct {
+	Rkey string `json:"rkey"`
+}
+
+// Custom Tools
+type CustomToolInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Approved    bool     `json:"approved"`
+	CodeHash    string   `json:"codeHash"`
+	Secrets     []string `json:"secrets"`
+}
+
+type CustomToolListResult struct {
+	Tools []CustomToolInfo `json:"tools"`
+}
+
+type CustomToolApproveParams struct {
+	Name string `json:"name"`
+}
+
+type CustomToolRevokeParams struct {
+	Name string `json:"name"`
+}
+
+type CustomToolUpdateSecretsParams struct {
+	Name    string   `json:"name"`
+	Secrets []string `json:"secrets"`
+}
+
+// Grants
+type GrantInfo struct {
+	SkillName string   `json:"skillName"`
+	CodeHash  string   `json:"codeHash"`
+	Status    string   `json:"status"`
+	Secrets   []string `json:"secrets"`
+	CreatedAt string   `json:"createdAt"`
+	UpdatedAt string   `json:"updatedAt"`
+}
+
+type GrantListResult struct {
+	Grants []GrantInfo `json:"grants"`
+}
+
+// Generic OK response
+type OkResult struct {
+	OK bool `json:"ok"`
+}
+
+// Builtins
+type BuiltinToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type BuiltinListResult struct {
+	Tools []BuiltinToolInfo `json:"tools"`
+}
