@@ -1,9 +1,6 @@
 // pattern: Imperative Shell (test) — exercises agent loop with mocks
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, expect, test } from 'bun:test';
 import { createAgent, formatNativeToolResult } from './agent.ts';
 import type { AgentConfig, AgentDependencies, AgentEvent } from './types.ts';
 import type {
@@ -98,18 +95,6 @@ function makeDeps(
 }
 
 describe('agent reasoning_content propagation', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'gh11-agent-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
 
   test('reasoning_content from model response appears on history message sent to next call', async () => {
     const receivedMessages: ReadonlyArray<Message>[] = [];
@@ -197,18 +182,6 @@ describe('agent reasoning_content propagation', () => {
 });
 
 describe('graceful max-iteration exhaustion', () => {
-  let tmpDir2: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir2 = mkdtempSync(join(tmpdir(), 'gh01-agent-test-'));
-    personaPath = join(tmpDir2, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir2, { recursive: true, force: true });
-  });
 
   test('GH01.AC1.1: system nudge appears in history when maxToolRounds exhausted', async () => {
     const calls: ModelCall[] = [];
@@ -391,18 +364,6 @@ describe('graceful max-iteration exhaustion', () => {
 });
 
 describe('agent loop tool dispatch routing', () => {
-  let tmpDir3: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir3 = mkdtempSync(join(tmpdir(), 'gh03-agent-test-'));
-    personaPath = join(tmpDir3, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir3, { recursive: true, force: true });
-  });
 
   test('GH03.AC6.1 / GH03.AC11.1: execute_code tool_use dispatches through Deno sandbox runtime', async () => {
     const runtimeCalls: Array<{ code: string }> = [];
@@ -647,19 +608,6 @@ describe('trimOldToolResults — image tool results', () => {
 });
 
 describe('graceful max-iteration exhaustion', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'gh01-agent-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
   test('GH01.AC1.1: system nudge appears in history when maxToolRounds exhausted', async () => {
     const calls: ModelCall[] = [];
     const model: ModelProvider = {
@@ -832,18 +780,6 @@ describe('graceful max-iteration exhaustion', () => {
 });
 
 describe('GH02 event emission', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'agent-gh02-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
 
   function makeToolUseThenEndModel(toolCode: string, toolOutput?: string): { provider: ModelProvider; runtime: CodeRuntime } {
     let call = 0;
@@ -979,18 +915,6 @@ describe('GH02 event emission', () => {
 });
 
 describe('forced final response: events and reasoning_content', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'gh13-forced-final-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
 
   test('emits llm_start and llm_done with forced:true around forced final model call', async () => {
     const model: ModelProvider = {
@@ -1074,18 +998,6 @@ describe('forced final response: events and reasoning_content', () => {
 });
 
 describe('recall integration', () => {
-  let tmpDir: string;
-  let personaPath: string;
-
-  beforeAll(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'recall-agent-test-'));
-    personaPath = join(tmpDir, 'persona.md');
-    writeFileSync(personaPath, '# Test Persona\nYou are a test agent.');
-  });
-
-  afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
 
   test('reflexive-recall.AC6.1 (first variant): recall_enabled=false skips recall entirely', async () => {
     const events: AgentEvent[] = [];
