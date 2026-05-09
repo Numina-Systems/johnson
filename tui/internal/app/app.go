@@ -22,6 +22,7 @@ type AppModel struct {
 	screenStack  []ScreenType
 	sessions     *SessionsModel
 	chat         *ChatModel
+	tools        *ToolsModel
 	width        int
 	height       int
 }
@@ -61,6 +62,10 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.width = msg.Width
 			m.chat.height = msg.Height
 		}
+		if m.tools != nil {
+			m.tools.width = msg.Width
+			m.tools.height = msg.Height
+		}
 		sessionsModel, cmd := m.sessions.Update(msg)
 		m.sessions = sessionsModel.(*SessionsModel)
 
@@ -70,13 +75,18 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, chatCmd := m.chat.Update(msg)
 			cmds = append(cmds, chatCmd)
 		}
+		if m.activeScreen == ScreenTools && m.tools != nil {
+			_, toolsCmd := m.tools.Update(msg)
+			cmds = append(cmds, toolsCmd)
+		}
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+t":
+			m.tools = NewToolsModel(m.client)
 			m.pushScreen(ScreenTools)
-			return m, nil
+			return m, m.tools.Init()
 		case "ctrl+s":
 			m.pushScreen(ScreenSecrets)
 			return m, nil
@@ -103,6 +113,11 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, cmd := m.chat.Update(msg)
 			cmds = append(cmds, cmd)
 		}
+	case ScreenTools:
+		if m.tools != nil {
+			_, cmd := m.tools.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	if len(cmds) > 0 {
@@ -121,7 +136,10 @@ func (m *AppModel) View() tea.View {
 		}
 		return tea.NewView("Chat screen initializing...")
 	case ScreenTools:
-		return tea.NewView("Tools screen (not yet implemented)")
+		if m.tools != nil {
+			return m.tools.View()
+		}
+		return tea.NewView("Tools screen initializing...")
 	case ScreenSecrets:
 		return tea.NewView("Secrets screen (not yet implemented)")
 	case ScreenSchedules:
