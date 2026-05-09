@@ -2,7 +2,6 @@
 
 import type { Message, ContentBlock, ToolUseBlock, ToolResultBlock } from '../model/types.ts';
 import type { Store } from '../store/store.ts';
-import type { RecalledContextEntry } from './types.ts';
 
 /**
  * Load the agent's core identity from the `self` document.
@@ -12,61 +11,6 @@ export function loadCoreMemoryFromStore(store: Store): string {
   const doc = store.docGet('self');
   if (!doc || !doc.content.trim()) return '';
   return `\n\n## Your Memory (auto-loaded)\nThis is your saved identity and memory:\n\n${doc.content.trim()}`;
-}
-
-export function buildSystemPrompt(
-  persona: string,
-  selfDoc: string,
-  skillNames: ReadonlyArray<string>,
-  toolDocs: string = '',
-  timezone: string = 'UTC',
-  recalledContext?: ReadonlyArray<RecalledContextEntry>,
-): string {
-  const sections: Array<string> = [persona.trim()];
-
-  // Inject current local time so the model always knows the date/time/timezone
-  const now = new Date();
-  const formatted = now.toLocaleString('en-US', {
-    timeZone: timezone,
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  });
-  sections.push(`\n## Current Time\n${formatted} (${timezone})\n\nAll times you present to the user MUST be in ${timezone}. Never use UTC unless explicitly asked.`);
-
-  // Core memory (self document)
-  if (selfDoc) {
-    sections.push(selfDoc);
-  }
-
-  // Recalled context (if present and non-empty)
-  if (recalledContext && recalledContext.length > 0) {
-    const fragmentsText = recalledContext
-      .map(f => `### ${f.rkey}\n${f.content}`)
-      .join('\n\n');
-    sections.push(`\n\n## Recalled Context\n${fragmentsText}`);
-  }
-
-  sections.push('\n\n## Available Skills');
-  if (skillNames.length === 0) {
-    sections.push('No skills saved yet. You can save working code as reusable skills with doc_upsert using a `skill:<name>` rkey.');
-  } else {
-    sections.push(
-      'You can run these saved skills. Use doc_get to load skill content before running:\n' +
-        skillNames.map((s) => `- ${s}`).join('\n'),
-    );
-  }
-
-  if (toolDocs) {
-    sections.push('\n\n## Tool Reference\n\nTools marked with `tools.<name>` are available **only inside TypeScript code you run via `execute_code`.** Call them as `await tools.<method>({...})`. Tools marked *(direct tool call)* are called directly — do NOT use execute_code for those.\n');
-    sections.push(toolDocs);
-  }
-
-  return sections.join('\n');
 }
 
 export function estimateTokens(text: string): number {
