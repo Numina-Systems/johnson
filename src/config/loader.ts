@@ -147,8 +147,9 @@ export function loadConfig(configPath: string): AppConfig {
     : undefined;
 
   const rawInterface = raw.interface ?? 'tui';
+  const validModes: ReadonlyArray<string> = ['tui', 'discord', 'both', 'jsonrpc'];
   const interfaceMode: InterfaceMode =
-    rawInterface === 'discord' || rawInterface === 'both' ? rawInterface : 'tui';
+    validModes.includes(rawInterface) ? rawInterface as InterfaceMode : 'tui';
 
   const recallEndpoint = pick(raw.recall, 'endpoint', '');
   const recall: RecallConfig | undefined = pick(raw.recall, 'enabled', false)

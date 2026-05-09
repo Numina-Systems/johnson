@@ -62,7 +62,7 @@ export type RecallConfig = {
   readonly timeoutMs: number;
 };
 
-export type InterfaceMode = 'tui' | 'discord' | 'both';
+export type InterfaceMode = 'tui' | 'discord' | 'both' | 'jsonrpc';
 
 export type AppConfig = {
   readonly model: ModelConfig;
