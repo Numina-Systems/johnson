@@ -41,6 +41,7 @@ function makeDeps(secrets?: SecretManager): AgentDependencies {
       timezone: 'UTC',
       recallEnabled: false,
       recallTokenBudget: 1500,
+      devMode: false,
     },
     personaPath: '/tmp/persona.md',
     store: {} as unknown as AgentDependencies['store'],

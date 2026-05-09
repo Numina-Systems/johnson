@@ -51,6 +51,7 @@ function makeDeps(
       timezone: 'UTC',
       recallEnabled: false,
       recallTokenBudget: 1500,
+      devMode: false,
     },
     personaPath: '/tmp/persona.md',
     store: createStore(':memory:'),

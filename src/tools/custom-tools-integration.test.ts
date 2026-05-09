@@ -75,6 +75,7 @@ describe('GH10: custom tools end-to-end through createAgentTools', () => {
         timezone: 'UTC',
         recallEnabled: false,
         recallTokenBudget: 1500,
+        devMode: false,
       },
       personaPath,
       store,

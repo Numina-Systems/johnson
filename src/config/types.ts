@@ -37,6 +37,7 @@ export type AgentLoopConfig = {
   readonly timezone: string;        // IANA timezone (e.g. "America/New_York")
   readonly recallEnabled: boolean;  // enable reflexive recall pipeline
   readonly recallTokenBudget: number;  // max tokens for recalled context
+  readonly devMode: boolean;
 };
 
 export type EmbeddingConfig = {

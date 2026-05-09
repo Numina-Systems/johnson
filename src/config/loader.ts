@@ -39,6 +39,7 @@ const DEFAULT_AGENT: AgentLoopConfig = {
   timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   recallEnabled: false,
   recallTokenBudget: 1500,
+  devMode: false,
 };
 
 function resolveApiKey(provider: string, explicit: string | undefined): string | undefined {
@@ -101,6 +102,7 @@ export function loadConfig(configPath: string): AppConfig {
     timezone: pick(raw.agent, 'timezone', DEFAULT_AGENT.timezone),
     recallEnabled: pick(raw.agent, 'recallEnabled', DEFAULT_AGENT.recallEnabled),
     recallTokenBudget: pick(raw.agent, 'recallTokenBudget', DEFAULT_AGENT.recallTokenBudget),
+    devMode: pick(raw.agent, 'devMode', DEFAULT_AGENT.devMode),
   };
 
   const embeddingProvider = pick(raw.embedding, 'provider', 'ollama');

@@ -80,6 +80,7 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     timezone: 'UTC',
     recallEnabled: false,
     recallTokenBudget: 1500,
+    devMode: false,
     ...overrides,
   };
 }

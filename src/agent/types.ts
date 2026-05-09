@@ -28,6 +28,7 @@ export type AgentConfig = {
   readonly timezone: string;
   readonly recallEnabled: boolean;
   readonly recallTokenBudget: number;
+  readonly devMode: boolean;
 };
 
 export type ChatStats = {

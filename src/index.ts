@@ -93,6 +93,10 @@ async function main(): Promise<void> {
     }
   }
 
+  if (config.agent.devMode) {
+    log('⚠ Dev mode enabled — skills and custom tools auto-approved with all secrets');
+  }
+
   // Ensure directories exist
   const { mkdir } = await import('fs/promises');
   await mkdir(DATA_DIR, { recursive: true });
@@ -132,6 +136,7 @@ async function main(): Promise<void> {
       timezone: config.agent.timezone,
       recallEnabled: config.agent.recallEnabled,
       recallTokenBudget: config.agent.recallTokenBudget,
+      devMode: config.agent.devMode,
     },
     personaPath: PERSONA_PATH,
     embedding,

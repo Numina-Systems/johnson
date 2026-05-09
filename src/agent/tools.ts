@@ -70,22 +70,29 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       let statusMsg = '';
       if (rkey.startsWith('skill:')) {
         const codeHash = hashCode(content);
-        const existingGrant = deps.store.getGrant(rkey);
-        let status: GrantStatus = 'pending';
-        if (existingGrant) {
-          if (existingGrant.codeHash === codeHash) {
-            status = existingGrant.status as GrantStatus;
-          } else {
-            status = 'revoked';
-          }
-        }
-        deps.store.saveGrant(rkey, codeHash, status);
 
-        statusMsg = status === 'pending'
-          ? ' ⏳ Pending review — use /review in the TUI to grant.'
-          : status === 'revoked'
-            ? ' 🔴 Code changed — grant revoked, needs re-review.'
-            : '';
+        if (deps.config.devMode) {
+          const allSecrets = deps.secrets ? deps.secrets.listKeys() : [];
+          deps.store.saveGrant(rkey, codeHash, 'granted', allSecrets);
+          statusMsg = ' 🔓 Dev mode — auto-granted with all secrets.';
+        } else {
+          const existingGrant = deps.store.getGrant(rkey);
+          let status: GrantStatus = 'pending';
+          if (existingGrant) {
+            if (existingGrant.codeHash === codeHash) {
+              status = existingGrant.status as GrantStatus;
+            } else {
+              status = 'revoked';
+            }
+          }
+          deps.store.saveGrant(rkey, codeHash, status);
+
+          statusMsg = status === 'pending'
+            ? ' ⏳ Pending review — use /review in the TUI to grant.'
+            : status === 'revoked'
+              ? ' 🔴 Code changed — grant revoked, needs re-review.'
+              : '';
+        }
       }
 
       // Embed if embedding provider available
@@ -217,27 +224,39 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       const doc = deps.store.docGet(rkey);
       if (!doc) throw new Error(`Skill not found: ${name}`);
 
-      // Check grant status
-      const grant = deps.store.getGrant(rkey);
-      if (!grant || grant.status !== 'granted') {
-        const reason = grant?.status === 'revoked'
-          ? 'Grant revoked — code changed since last review. Needs re-review via /review.'
-          : 'Skill pending review. Ask the user to run /review in the TUI to grant access.';
-        throw new Error(`🔒 Cannot run "${name}": ${reason}`);
-      }
-
-      // Verify code hash matches grant
-      const codeHash = hashCode(doc.content);
-      if (codeHash !== grant.codeHash) {
-        throw new Error(`🔒 Cannot run "${name}": code has changed since grant was issued. Needs re-review via /review.`);
-      }
-
-      // Resolve secrets from SecretManager
       let env: Record<string, string> | undefined;
-      if (deps.secrets && grant.secrets.length > 0) {
-        const resolved = deps.secrets.resolve(grant.secrets);
-        if (Object.keys(resolved).length > 0) {
-          env = resolved;
+
+      if (deps.config.devMode) {
+        // Dev mode: skip grant checks, inject all secrets
+        if (deps.secrets) {
+          const allKeys = deps.secrets.listKeys();
+          const resolved = deps.secrets.resolve(allKeys);
+          if (Object.keys(resolved).length > 0) {
+            env = resolved;
+          }
+        }
+      } else {
+        // Check grant status
+        const grant = deps.store.getGrant(rkey);
+        if (!grant || grant.status !== 'granted') {
+          const reason = grant?.status === 'revoked'
+            ? 'Grant revoked — code changed since last review. Needs re-review via /review.'
+            : 'Skill pending review. Ask the user to run /review in the TUI to grant access.';
+          throw new Error(`🔒 Cannot run "${name}": ${reason}`);
+        }
+
+        // Verify code hash matches grant
+        const codeHash = hashCode(doc.content);
+        if (codeHash !== grant.codeHash) {
+          throw new Error(`🔒 Cannot run "${name}": code has changed since grant was issued. Needs re-review via /review.`);
+        }
+
+        // Resolve secrets from SecretManager
+        if (deps.secrets && grant.secrets.length > 0) {
+          const resolved = deps.secrets.resolve(grant.secrets);
+          if (Object.keys(resolved).length > 0) {
+            env = resolved;
+          }
         }
       }
 
@@ -386,6 +405,7 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
       customTools: deps.customTools,
       runtime: deps.runtime,
       secrets: deps.secrets,
+      devMode: deps.config.devMode,
     });
   }
 

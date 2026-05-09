@@ -56,6 +56,11 @@ model_timeout = 300000        # ms before a model call times out
 # recall_enabled = false        # set to true to enable
 # recall_token_budget = 1500    # max tokens of recalled context injected into prompt
 
+# Dev mode — auto-approves skills and custom tools with access to all secrets.
+# Removes the human-in-the-loop grant step so the agent can iterate freely.
+# The Deno sandbox remains the security boundary (data/ denied, restricted hosts).
+# dev_mode = false
+
 # ─── Sandbox Runtime ──────────────────────────────────────────────────────────
 # Controls the Deno sandbox where the agent's execute_code tool runs.
 [runtime]
