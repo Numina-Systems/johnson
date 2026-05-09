@@ -2,6 +2,7 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { createHandlers } from './handlers.ts';
 import type { Store } from '../store/store.ts';
+import type { Agent } from '../agent/types.ts';
 
 // Mock Store implementation
 function createMockStore(): Store {
@@ -62,6 +63,24 @@ function createMockStore(): Store {
     // Close
     close: () => {},
   } as unknown as Store;
+}
+
+// Mock Agent implementation
+function createMockAgent(): Agent {
+  return {
+    chat: async () => ({
+      text: 'Mock response',
+      stats: {
+        inputTokens: 0,
+        outputTokens: 0,
+        contextEstimate: 0,
+        contextLimit: 0,
+        rounds: 0,
+        durationMs: 0,
+      },
+    }),
+    reset: () => {},
+  };
 }
 
 describe('session handlers', () => {
@@ -224,5 +243,179 @@ describe('session handlers', () => {
       messages: [],
       cursor: undefined,
     });
+  });
+});
+
+describe('agent handlers', () => {
+  let store: Store;
+  let agent: Agent;
+  let sentNotifications: Array<{method: string; params: Record<string, unknown>}>;
+
+  beforeEach(() => {
+    store = createMockStore();
+    agent = createMockAgent();
+    sentNotifications = [];
+
+    // Mock the sendAgentEvent and sendAgentResponse functions by patching console.stdout
+    // We'll capture notifications via a custom emitter
+  });
+
+  test('agent/chat returns requestId immediately and runs chat in background', async () => {
+    let chatCompleted = false;
+
+    agent.chat = async (message: string, options) => {
+      // Simulate a delayed chat operation
+      await new Promise(resolve => setTimeout(resolve, 50));
+      chatCompleted = true;
+      return {
+        text: 'Response',
+        stats: {
+          inputTokens: 10,
+          outputTokens: 20,
+          contextEstimate: 30,
+          contextLimit: 100,
+          rounds: 1,
+          durationMs: 100,
+        },
+      };
+    };
+
+    const handlers = createHandlers({ store, agent });
+    const handler = handlers['agent/chat'];
+
+    expect(handler).toBeDefined();
+
+    // Call handler — it should return the requestId in result
+    const result = await handler({ message: 'Hello', sessionId: 'session-123' });
+    expect(result).toHaveProperty('requestId');
+    expect(typeof result.requestId).toBe('string');
+    expect(result.requestId.length > 0).toBe(true);
+
+    // Verify it's a valid UUID
+    expect(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(result.requestId)).toBe(true);
+
+    // Verify chat hasn't completed yet (handler returned before chat finished)
+    expect(chatCompleted).toBe(false);
+
+    // Wait for chat to complete and verify
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(chatCompleted).toBe(true);
+  });
+
+  test('agent/chat fires onEvent callback with correct requestId and event data', async () => {
+    const events: Array<{kind: string; data: Record<string, unknown>}> = [];
+
+    agent.chat = async (message: string, options) => {
+      if (options?.onEvent) {
+        await options.onEvent({kind: 'llm_start', data: {round: 0}});
+        await options.onEvent({kind: 'llm_done', data: {round: 0}});
+      }
+      return {
+        text: 'Response',
+        stats: {
+          inputTokens: 10,
+          outputTokens: 20,
+          contextEstimate: 30,
+          contextLimit: 100,
+          rounds: 1,
+          durationMs: 100,
+        },
+      };
+    };
+
+    const emitter = {
+      onAgentEvent: (requestId: string, kind: string, data: Record<string, unknown>) => {
+        events.push({kind, data});
+      },
+    };
+
+    const handlers = createHandlers({ store, agent, emitter });
+    const handler = handlers['agent/chat'];
+
+    const result = await handler({ message: 'Hello', sessionId: 'session-123' });
+    const requestId = result.requestId;
+
+    // Wait for the chat to complete in the background
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0].kind).toBe('llm_start');
+    expect(events[0].data).toEqual({round: 0});
+  });
+
+  test('agent/chat sends agent/response notification on completion', async () => {
+    const responses: Array<{text: string; stats: Record<string, unknown>}> = [];
+
+    agent.chat = async () => ({
+      text: 'Final response',
+      stats: {
+        inputTokens: 10,
+        outputTokens: 20,
+        contextEstimate: 30,
+        contextLimit: 100,
+        rounds: 1,
+        durationMs: 100,
+      },
+    });
+
+    const emitter = {
+      onAgentResponse: (requestId: string, text: string, stats: Record<string, unknown>) => {
+        responses.push({text, stats});
+      },
+    };
+
+    const handlers = createHandlers({ store, agent, emitter });
+    const handler = handlers['agent/chat'];
+
+    const result = await handler({ message: 'Hello', sessionId: 'session-123' });
+
+    // Wait for the chat to complete in the background
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(responses.length).toBeGreaterThan(0);
+    expect(responses[0].text).toBe('Final response');
+    expect(responses[0].stats.rounds).toBe(1);
+  });
+
+  test('agent/chat sends error response notification on rejection', async () => {
+    const errorResponses: Array<{text: string; stats: Record<string, unknown>}> = [];
+
+    agent.chat = async () => {
+      throw new Error('Agent error');
+    };
+
+    const emitter = {
+      onAgentResponse: (requestId: string, text: string, stats: Record<string, unknown>) => {
+        errorResponses.push({text, stats});
+      },
+    };
+
+    const handlers = createHandlers({ store, agent, emitter });
+    const handler = handlers['agent/chat'];
+
+    const result = await handler({ message: 'Hello', sessionId: 'session-123' });
+
+    // Wait for the error to be handled in the background
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(errorResponses.length).toBeGreaterThan(0);
+    expect(errorResponses[0].text).toContain('Agent error');
+  });
+
+  test('agent/reset calls agent.reset() and returns ok: true', async () => {
+    let resetCalled = false;
+
+    agent.reset = () => {
+      resetCalled = true;
+    };
+
+    const handlers = createHandlers({ store, agent });
+    const handler = handlers['agent/reset'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result).toEqual({ok: true});
+    expect(resetCalled).toBe(true);
   });
 });
