@@ -205,3 +205,57 @@ export type BuiltinToolInfo = {
 export type BuiltinListResult = {
   readonly tools: ReadonlyArray<BuiltinToolInfo>;
 };
+
+// Secrets types for JSON-RPC handlers
+
+export type SecretListResult = {
+  readonly keys: ReadonlyArray<string>;
+};
+
+export type SecretSetParams = {
+  readonly key: string;
+  readonly value: string;
+};
+
+export type SecretRemoveParams = {
+  readonly key: string;
+};
+
+// Schedules types for JSON-RPC handlers
+
+export type TaskRunInfo = {
+  readonly taskId: string;
+  readonly startedAt: string;
+  readonly output: string;
+  readonly success: boolean;
+  readonly durationMs: number;
+};
+
+export type TaskStateInfo = {
+  readonly id: string;
+  readonly name: string;
+  readonly prompt: string;
+  readonly schedule: string;
+  readonly deliverTo?: string;
+  readonly trigger?: string;
+  readonly skill?: string;
+  readonly createdAt: string;
+  readonly enabled: boolean;
+  readonly lastRun?: TaskRunInfo;
+  readonly runCount: number;
+};
+
+export type ScheduleListResult = {
+  readonly tasks: ReadonlyArray<TaskStateInfo>;
+};
+
+export type ScheduleSetEnabledParams = {
+  readonly id: string;
+  readonly enabled: boolean;
+};
+
+// Prompt types for JSON-RPC handlers
+
+export type PromptGetResult = {
+  readonly prompt: string;
+};
