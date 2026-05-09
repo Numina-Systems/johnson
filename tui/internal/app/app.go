@@ -1,7 +1,10 @@
 package app
 
 import (
+	"constellation-tui/internal/backend"
 	"constellation-tui/internal/protocol"
+	"context"
+	"fmt"
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -18,6 +21,7 @@ const (
 
 type AppModel struct {
 	client       *protocol.Client
+	backend      *backend.BackendProcess
 	activeScreen ScreenType
 	screenStack  []ScreenType
 	sessions     *SessionsModel
@@ -28,23 +32,106 @@ type AppModel struct {
 	prompt       *PromptModel
 	width        int
 	height       int
+	crashed      bool
+	crashErr     string
 }
 
-func NewAppModel(client *protocol.Client) *AppModel {
+type backendCrashedMsg struct {
+	err error
+}
+
+type backendRestartedMsg struct {
+	client *protocol.Client
+}
+
+func NewAppModel(client *protocol.Client, backend *backend.BackendProcess) *AppModel {
 	return &AppModel{
-		client:      client,
+		client:       client,
+		backend:      backend,
 		activeScreen: ScreenSessions,
-		screenStack: []ScreenType{ScreenSessions},
-		sessions:    NewSessionsModel(client),
+		screenStack:  []ScreenType{ScreenSessions},
+		sessions:     NewSessionsModel(client),
 	}
 }
 
 func (m *AppModel) Init() tea.Cmd {
-	return m.sessions.Init()
+	return tea.Batch(
+		m.sessions.Init(),
+		watchBackend(m.backend),
+	)
+}
+
+func watchBackend(proc *backend.BackendProcess) tea.Cmd {
+	return func() tea.Msg {
+		err := <-proc.WaitExit()
+		return backendCrashedMsg{err: err}
+	}
+}
+
+func restartBackend(m *AppModel) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Restart the process
+		stdout, stdin, err := m.backend.Restart(ctx)
+		if err != nil {
+			return backendCrashedMsg{err: fmt.Errorf("failed to restart backend: %w", err)}
+		}
+
+		// Create new protocol client
+		newClient, err := protocol.NewClient(ctx, stdout, stdin)
+		if err != nil {
+			return backendCrashedMsg{err: fmt.Errorf("failed to create protocol client: %w", err)}
+		}
+
+		// Wait for ready notification
+		ready, err := newClient.WaitReady(ctx)
+		if err != nil {
+			return backendCrashedMsg{err: fmt.Errorf("failed to receive ready notification: %w", err)}
+		}
+
+		// Protocol version check
+		if ready.ProtocolVersion != "1" {
+			return backendCrashedMsg{err: fmt.Errorf("unsupported protocol version: %s (expected 1)", ready.ProtocolVersion)}
+		}
+
+		return backendRestartedMsg{
+			client: newClient,
+		}
+	}
 }
 
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case backendCrashedMsg:
+		if msg.err == nil {
+			// Clean exit, not a crash
+			return m, tea.Quit
+		}
+		// Backend crashed unexpectedly
+		m.crashed = true
+		m.crashErr = msg.err.Error()
+		return m, nil
+
+	case backendRestartedMsg:
+		// Backend restarted successfully
+		m.client = msg.client
+		m.crashed = false
+		m.crashErr = ""
+		m.activeScreen = ScreenSessions
+		m.screenStack = []ScreenType{ScreenSessions}
+		m.sessions = NewSessionsModel(m.client)
+		m.chat = nil
+		m.tools = nil
+		m.secrets = nil
+		m.schedules = nil
+		m.prompt = nil
+		// Resume watching backend
+		return m, tea.Batch(
+			m.sessions.Init(),
+			watchBackend(m.backend),
+		)
+
 	case NavigateToChatMsg:
 		// Create new chat model with selected session
 		m.chat = NewChatModel(m.client, msg.SessionID)
@@ -109,6 +196,18 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyPressMsg:
+		// Handle crash recovery UI
+		if m.crashed {
+			switch msg.String() {
+			case "r":
+				return m, restartBackend(m)
+			case "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
+
+		// Normal keybindings
 		switch msg.String() {
 		case "ctrl+t":
 			m.tools = NewToolsModel(m.client)
@@ -172,6 +271,13 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *AppModel) View() tea.View {
+	if m.crashed {
+		return tea.NewView(fmt.Sprintf(
+			"Backend process exited unexpectedly.\n\nError: %s\n\nPress 'r' to restart, or 'q' to quit.",
+			m.crashErr,
+		))
+	}
+
 	switch m.activeScreen {
 	case ScreenSessions:
 		return m.sessions.View()
