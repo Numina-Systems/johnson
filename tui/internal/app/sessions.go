@@ -59,8 +59,9 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			if selected, ok := m.list.SelectedItem().(sessionItem); ok {
-				// TODO: Navigate to chat with selected session
-				_ = selected
+				return m, func() tea.Msg {
+					return NavigateToChatMsg{SessionID: selected.id}
+				}
 			}
 		case "n":
 			return m, createSessionCmd(m.client)
@@ -133,6 +134,10 @@ type sessionDeletedMsg struct{}
 
 type sessionsErrorMsg struct {
 	err error
+}
+
+type NavigateToChatMsg struct {
+	SessionID string
 }
 
 // Command functions

@@ -17,12 +17,13 @@ const (
 )
 
 type AppModel struct {
-	client      *protocol.Client
+	client       *protocol.Client
 	activeScreen ScreenType
-	screenStack []ScreenType
-	sessions    *SessionsModel
-	width       int
-	height      int
+	screenStack  []ScreenType
+	sessions     *SessionsModel
+	chat         *ChatModel
+	width        int
+	height       int
 }
 
 func NewAppModel(client *protocol.Client) *AppModel {
@@ -40,14 +41,36 @@ func (m *AppModel) Init() tea.Cmd {
 
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case NavigateToChatMsg:
+		// Create new chat model with selected session
+		m.chat = NewChatModel(m.client, msg.SessionID)
+		m.pushScreen(ScreenChat)
+		return m, m.chat.Init()
+
+	case backToSessionsMsg:
+		// Return to sessions screen
+		m.popScreen()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.sessions.width = msg.Width
 		m.sessions.height = msg.Height
+		if m.chat != nil {
+			m.chat.width = msg.Width
+			m.chat.height = msg.Height
+		}
 		sessionsModel, cmd := m.sessions.Update(msg)
 		m.sessions = sessionsModel.(*SessionsModel)
-		return m, cmd
+
+		var cmds []tea.Cmd
+		cmds = append(cmds, cmd)
+		if m.activeScreen == ScreenChat && m.chat != nil {
+			_, chatCmd := m.chat.Update(msg)
+			cmds = append(cmds, chatCmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
@@ -78,6 +101,11 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sessionsModel, cmd := m.sessions.Update(msg)
 		m.sessions = sessionsModel.(*SessionsModel)
 		cmds = append(cmds, cmd)
+	case ScreenChat:
+		if m.chat != nil {
+			_, cmd := m.chat.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	if len(cmds) > 0 {
@@ -87,26 +115,25 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *AppModel) View() tea.View {
-	var content string
-
 	switch m.activeScreen {
 	case ScreenSessions:
 		return m.sessions.View()
 	case ScreenChat:
-		content = "Chat screen (not yet implemented)"
+		if m.chat != nil {
+			return m.chat.View()
+		}
+		return tea.NewView("Chat screen initializing...")
 	case ScreenTools:
-		content = "Tools screen (not yet implemented)"
+		return tea.NewView("Tools screen (not yet implemented)")
 	case ScreenSecrets:
-		content = "Secrets screen (not yet implemented)"
+		return tea.NewView("Secrets screen (not yet implemented)")
 	case ScreenSchedules:
-		content = "Schedules screen (not yet implemented)"
+		return tea.NewView("Schedules screen (not yet implemented)")
 	case ScreenPrompt:
-		content = "System Prompt screen (not yet implemented)"
+		return tea.NewView("System Prompt screen (not yet implemented)")
 	default:
-		content = "Unknown screen"
+		return tea.NewView("Unknown screen")
 	}
-
-	return tea.NewView(content)
 }
 
 func (m *AppModel) pushScreen(s ScreenType) {
