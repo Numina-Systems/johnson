@@ -111,6 +111,81 @@ func (c *Client) Reset(ctx context.Context) error {
 	return c.Call(ctx, "agent/reset", struct{}{}, &result)
 }
 
+func (c *Client) ListSkills(ctx context.Context) (SkillListResult, error) {
+	var result SkillListResult
+	err := c.Call(ctx, "skill/list", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) GrantSkill(ctx context.Context, rkey string, status string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "skill/grant", SkillGrantParams{
+		Rkey:   rkey,
+		Status: status,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) UpdateSkillSecrets(ctx context.Context, rkey string, secrets []string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "skill/updateSecrets", SkillUpdateSecretsParams{
+		Rkey:    rkey,
+		Secrets: secrets,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) DeleteSkill(ctx context.Context, rkey string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "skill/delete", SkillDeleteParams{
+		Rkey: rkey,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) ListCustomTools(ctx context.Context) (CustomToolListResult, error) {
+	var result CustomToolListResult
+	err := c.Call(ctx, "customTool/list", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) ApproveCustomTool(ctx context.Context, name string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "customTool/approve", CustomToolApproveParams{
+		Name: name,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) RevokeCustomTool(ctx context.Context, name string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "customTool/revoke", CustomToolRevokeParams{
+		Name: name,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) UpdateCustomToolSecrets(ctx context.Context, name string, secrets []string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "customTool/updateSecrets", CustomToolUpdateSecretsParams{
+		Name:    name,
+		Secrets: secrets,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) ListGrants(ctx context.Context) (GrantListResult, error) {
+	var result GrantListResult
+	err := c.Call(ctx, "grant/list", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) ListBuiltins(ctx context.Context) (BuiltinListResult, error) {
+	var result BuiltinListResult
+	err := c.Call(ctx, "builtin/list", struct{}{}, &result)
+	return result, err
+}
+
 func (c *Client) Call(ctx context.Context, method string, params any, result any) error {
 	return c.conn.Call(ctx, method, params, result)
 }
