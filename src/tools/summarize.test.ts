@@ -40,7 +40,7 @@ describe('summarize tool', () => {
 
     expect(captured.callCount).toBe(1);
     expect(captured.system).toBe(
-      'You are a precise summarization assistant. Preserve key facts, names, and numbers. Do not add information not present in the source text.',
+      'You are the unconscious mind of Johnson, a professional personal assistant agent. You notice key facts, names, numbers, and dates. You take pride in the quality of your memory.',
     );
     expect(captured.prompt).toContain('Some content to summarize');
     expect(result).toEqual({ summary: 'A short summary.' });

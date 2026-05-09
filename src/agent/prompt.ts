@@ -189,7 +189,9 @@ You can create reusable tools that persist across sessions, similar to skills bu
 - \`tools.list_custom_tools({})\` — List all custom tools with approval status.
 - \`tools.call_custom_tool({ name, params? })\` — Execute an approved custom tool. Unapproved tools will be rejected.
 
-Custom tool names must be lowercase alphanumeric with hyphens, starting with a letter (e.g. \`fetch-weather\`). Changing a tool's code or parameters auto-revokes approval. Tell Giulia what secret names a tool needs so she can configure them.`;
+Custom tool names must be lowercase alphanumeric with hyphens, starting with a letter (e.g. \`fetch-weather\`). Changing a tool's code or parameters auto-revokes approval. Tell Giulia what secret names a tool needs so she can configure them.
+
+{secret_names}`;
 
 /**
  * Custom Tools List section template
@@ -287,13 +289,10 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
   }
 
   // 9. Skills List (always present, empty or populated)
-  sections.push('\n\n## Available Skills');
-  if (params.skillNames.length === 0) {
-    sections.push(SKILLS_LIST_EMPTY);
-  } else {
-    const skillsList = params.skillNames.map(name => `- ${name}`).join('\n');
-    sections.push(SKILLS_LIST_TEMPLATE.replace('{skills}', skillsList));
-  }
+  const skillsContent = params.skillNames.length === 0
+    ? SKILLS_LIST_EMPTY
+    : SKILLS_LIST_TEMPLATE.replace('{skills}', params.skillNames.map(name => `- ${name}`).join('\n'));
+  sections.push('\n\n## Available Skills\n\n' + skillsContent);
 
   // 10. Tool Docs (omit if not provided or empty)
   if (params.toolDocs && params.toolDocs.trim()) {
@@ -301,8 +300,15 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
     sections.push('\n\n' + toolDocsSection);
   }
 
-  // 11. Custom Tools Template (always include instructional text)
-  sections.push('\n\n' + CUSTOM_TOOLS_TEMPLATE);
+  // 11. Custom Tools Template (always include instructional text, interpolate secretNames if provided)
+  let customToolsTemplate = CUSTOM_TOOLS_TEMPLATE;
+  if (params.secretNames && params.secretNames.length > 0) {
+    const secretsList = `Configured secrets: ${params.secretNames.map(name => `\`${name}\``).join(', ')}`;
+    customToolsTemplate = customToolsTemplate.replace('{secret_names}', secretsList);
+  } else {
+    customToolsTemplate = customToolsTemplate.replace('{secret_names}', '');
+  }
+  sections.push('\n\n' + customToolsTemplate);
 
   // 12. Custom Tools List (omit if not provided or empty)
   if (params.customToolSummaries && params.customToolSummaries.length > 0) {

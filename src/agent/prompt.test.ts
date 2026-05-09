@@ -1,5 +1,3 @@
-// pattern: Imperative Shell (test) — exercises prompt builder with various param combinations
-
 import { describe, expect, test } from 'bun:test';
 import { buildSystemPrompt, type SystemPromptParams } from './prompt.ts';
 import type { RecalledContextEntry } from './types.ts';
@@ -451,6 +449,30 @@ describe('buildSystemPrompt', () => {
       const prompt = buildSystemPrompt(makeParams({ toolDocs }));
       expect(prompt).not.toContain('{tool_docs}');
       expect(prompt).toContain(toolDocs);
+    });
+
+    test('secret_names placeholder replaced when provided', () => {
+      const prompt = buildSystemPrompt(makeParams({
+        secretNames: ['OPENAI_API_KEY', 'DATABASE_URL'],
+      }));
+      expect(prompt).not.toContain('{secret_names}');
+      expect(prompt).toContain('Configured secrets: `OPENAI_API_KEY`, `DATABASE_URL`');
+    });
+
+    test('secret_names placeholder omitted when empty', () => {
+      const prompt = buildSystemPrompt(makeParams({
+        secretNames: [],
+      }));
+      expect(prompt).not.toContain('{secret_names}');
+      expect(prompt).not.toContain('Configured secrets:');
+    });
+
+    test('secret_names placeholder omitted when undefined', () => {
+      const prompt = buildSystemPrompt(makeParams({
+        secretNames: undefined,
+      }));
+      expect(prompt).not.toContain('{secret_names}');
+      expect(prompt).not.toContain('Configured secrets:');
     });
   });
 });
