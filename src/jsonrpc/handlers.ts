@@ -244,7 +244,7 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
 
     handlers['secret/set'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
       const p = params as SecretSetParams | undefined;
-      if (!p?.key || !p?.value) {
+      if (typeof p?.key !== 'string' || typeof p?.value !== 'string') {
         throw new Error('secret/set requires key and value');
       }
       await deps.secrets!.set(p.key, p.value);
@@ -253,7 +253,7 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
 
     handlers['secret/remove'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
       const p = params as SecretRemoveParams | undefined;
-      if (!p?.key) {
+      if (typeof p?.key !== 'string') {
         throw new Error('secret/remove requires key');
       }
       await deps.secrets!.remove(p.key);
@@ -270,10 +270,10 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
 
     handlers['schedule/setEnabled'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
       const p = params as ScheduleSetEnabledParams | undefined;
-      if (!p?.id) {
-        throw new Error('schedule/setEnabled requires id');
+      if (typeof p?.id !== 'string' || typeof p?.enabled !== 'boolean') {
+        throw new Error('schedule/setEnabled requires id and enabled');
       }
-      const ok = deps.scheduler!.setEnabled(p.id, p.enabled ?? false);
+      const ok = deps.scheduler!.setEnabled(p.id, p.enabled);
       return { ok };
     };
   }

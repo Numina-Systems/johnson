@@ -3,6 +3,8 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { createHandlers } from './handlers.ts';
 import type { Store } from '../store/store.ts';
 import type { Agent } from '../agent/types.ts';
+import type { SecretManager } from '../secrets/manager.ts';
+import type { TaskStore } from '../scheduler/types.ts';
 
 // Mock Store implementation
 function createMockStore(): Store {
@@ -81,6 +83,35 @@ function createMockAgent(): Agent {
     }),
     reset: () => {},
   };
+}
+
+// Mock SecretManager implementation
+function createMockSecretManager(): SecretManager {
+  return {
+    listKeys: () => [],
+    set: async () => {},
+    remove: async () => {},
+    get: (key: string) => undefined,
+    resolve: (keys: ReadonlyArray<string>) => ({}),
+  } as unknown as SecretManager;
+}
+
+// Mock TaskStore (Scheduler) implementation
+function createMockScheduler(): TaskStore {
+  return {
+    schedule: async () => undefined,
+    cancel: (id: string) => false,
+    list: () => [],
+    get: (id: string) => undefined,
+    setEnabled: (id: string, enabled: boolean) => false,
+    start: () => {},
+    stop: () => {},
+  } as unknown as TaskStore;
+}
+
+// Mock buildPrompt function
+function createMockBuildPrompt(): () => string {
+  return () => 'System prompt content here';
 }
 
 describe('session handlers', () => {
@@ -915,17 +946,11 @@ describe('builtin handler', () => {
 
 describe('secret handlers', () => {
   let store: Store;
-  let secrets: any;
+  let secrets: SecretManager;
 
   beforeEach(() => {
     store = createMockStore();
-    secrets = {
-      listKeys: () => [],
-      get: (key: string) => undefined,
-      set: async (key: string, value: string) => {},
-      remove: async (key: string) => {},
-      resolve: (keys: ReadonlyArray<string>) => ({}),
-    };
+    secrets = createMockSecretManager();
   });
 
   test('secret/list returns secret keys from SecretManager', async () => {
@@ -987,23 +1012,79 @@ describe('secret handlers', () => {
     expect(result).toEqual({ ok: true });
     expect(removedKey).toBe('API_KEY');
   });
+
+  test('secret/set throws when key or value missing', async () => {
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/set'];
+
+    await expect(handler({})).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ key: 'K' })).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ value: 'V' })).rejects.toThrow('secret/set requires key and value');
+  });
+
+  test('secret/set throws when value is not a string', async () => {
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/set'];
+
+    await expect(handler({ key: 'K', value: null })).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ key: 'K', value: undefined })).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ key: 'K', value: 123 })).rejects.toThrow('secret/set requires key and value');
+  });
+
+  test('secret/set throws when key is not a string', async () => {
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/set'];
+
+    await expect(handler({ key: null, value: 'V' })).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ key: undefined, value: 'V' })).rejects.toThrow('secret/set requires key and value');
+    await expect(handler({ key: 123, value: 'V' })).rejects.toThrow('secret/set requires key and value');
+  });
+
+  test('secret/set accepts empty string values', async () => {
+    let capturedKey: string | undefined;
+    let capturedValue: string | undefined;
+
+    secrets.set = async (key: string, value: string) => {
+      capturedKey = key;
+      capturedValue = value;
+    };
+
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/set'];
+
+    const result = await handler({ key: 'EMPTY_SECRET', value: '' });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedKey).toBe('EMPTY_SECRET');
+    expect(capturedValue).toBe('');
+  });
+
+  test('secret/remove throws when key missing', async () => {
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/remove'];
+
+    await expect(handler({})).rejects.toThrow('secret/remove requires key');
+    await expect(handler({ key: null })).rejects.toThrow('secret/remove requires key');
+    await expect(handler({ key: undefined })).rejects.toThrow('secret/remove requires key');
+  });
+
+  test('secret/remove throws when key is not a string', async () => {
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/remove'];
+
+    await expect(handler({ key: 123 })).rejects.toThrow('secret/remove requires key');
+    await expect(handler({ key: [] })).rejects.toThrow('secret/remove requires key');
+    await expect(handler({ key: {} })).rejects.toThrow('secret/remove requires key');
+  });
 });
 
 describe('schedule handlers', () => {
   let store: Store;
-  let scheduler: any;
+  let scheduler: TaskStore;
 
   beforeEach(() => {
     store = createMockStore();
-    scheduler = {
-      schedule: (task: any) => {},
-      cancel: (id: string) => false,
-      list: () => [],
-      get: (id: string) => undefined,
-      setEnabled: (id: string, enabled: boolean) => false,
-      start: () => {},
-      stop: () => {},
-    };
+    scheduler = createMockScheduler();
   });
 
   test('schedule/list returns task states from scheduler', async () => {
@@ -1090,15 +1171,40 @@ describe('schedule handlers', () => {
 
     expect(result).toEqual({ ok: false });
   });
+
+  test('schedule/setEnabled throws when id missing', async () => {
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/setEnabled'];
+
+    await expect(handler({})).rejects.toThrow('schedule/setEnabled requires id and enabled');
+    await expect(handler({ enabled: true })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+  });
+
+  test('schedule/setEnabled throws when enabled missing', async () => {
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/setEnabled'];
+
+    await expect(handler({ id: 'task-1' })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+    await expect(handler({ id: 'task-1', enabled: null })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+    await expect(handler({ id: 'task-1', enabled: undefined })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+  });
+
+  test('schedule/setEnabled throws when enabled is not a boolean', async () => {
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/setEnabled'];
+
+    await expect(handler({ id: 'task-1', enabled: 'true' })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+    await expect(handler({ id: 'task-1', enabled: 1 })).rejects.toThrow('schedule/setEnabled requires id and enabled');
+  });
 });
 
 describe('prompt handler', () => {
   let store: Store;
-  let buildPrompt: any;
+  let buildPrompt: () => string;
 
   beforeEach(() => {
     store = createMockStore();
-    buildPrompt = () => 'System prompt content here';
+    buildPrompt = createMockBuildPrompt();
   });
 
   test('prompt/get calls buildPrompt closure and returns prompt', async () => {
