@@ -19,6 +19,7 @@ import { createScheduler } from './scheduler/index.ts';
 import { createSecretManager } from './secrets/index.ts';
 import { createCustomToolManager } from './tools/index.ts';
 import { createStore } from './store/store.ts';
+import { seedSelfDoc } from './agent/seed-self-doc.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
 import { createDiscordBot } from './discord/index.ts';
@@ -46,6 +47,9 @@ async function main(): Promise<void> {
 
   // SQLite store — single source of truth for notes, embeddings, sessions, tasks, skills
   const store = createStore(resolve(DATA_DIR, 'constellation.db'));
+
+  // Seed self document with domain knowledge on first run
+  seedSelfDoc(store);
 
   // Secret manager — flat JSON file for secret values (never in the DB)
   const secrets = createSecretManager(SECRETS_PATH);
