@@ -186,6 +186,50 @@ func (c *Client) ListBuiltins(ctx context.Context) (BuiltinListResult, error) {
 	return result, err
 }
 
+func (c *Client) ListSecrets(ctx context.Context) (SecretListResult, error) {
+	var result SecretListResult
+	err := c.Call(ctx, "secret/list", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) SetSecret(ctx context.Context, key string, value string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "secret/set", SecretSetParams{
+		Key:   key,
+		Value: value,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) RemoveSecret(ctx context.Context, key string) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "secret/remove", SecretRemoveParams{
+		Key: key,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) ListSchedules(ctx context.Context) (ScheduleListResult, error) {
+	var result ScheduleListResult
+	err := c.Call(ctx, "schedule/list", struct{}{}, &result)
+	return result, err
+}
+
+func (c *Client) SetScheduleEnabled(ctx context.Context, id string, enabled bool) (OkResult, error) {
+	var result OkResult
+	err := c.Call(ctx, "schedule/setEnabled", ScheduleSetEnabledParams{
+		ID:      id,
+		Enabled: enabled,
+	}, &result)
+	return result, err
+}
+
+func (c *Client) GetPrompt(ctx context.Context) (PromptGetResult, error) {
+	var result PromptGetResult
+	err := c.Call(ctx, "prompt/get", struct{}{}, &result)
+	return result, err
+}
+
 func (c *Client) Call(ctx context.Context, method string, params any, result any) error {
 	return c.conn.Call(ctx, method, params, result)
 }

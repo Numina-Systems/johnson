@@ -166,3 +166,54 @@ type BuiltinToolInfo struct {
 type BuiltinListResult struct {
 	Tools []BuiltinToolInfo `json:"tools"`
 }
+
+// Secrets
+type SecretListResult struct {
+	Keys []string `json:"keys"`
+}
+
+type SecretSetParams struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type SecretRemoveParams struct {
+	Key string `json:"key"`
+}
+
+// Schedules
+type TaskRunInfo struct {
+	TaskID     string `json:"taskId"`
+	StartedAt  string `json:"startedAt"`
+	Output     string `json:"output"`
+	Success    bool   `json:"success"`
+	DurationMs int    `json:"durationMs"`
+}
+
+type TaskStateInfo struct {
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Prompt    string       `json:"prompt"`
+	Schedule  string       `json:"schedule"`
+	DeliverTo string       `json:"deliverTo,omitempty"`
+	Trigger   string       `json:"trigger,omitempty"`
+	Skill     string       `json:"skill,omitempty"`
+	CreatedAt string       `json:"createdAt"`
+	Enabled   bool         `json:"enabled"`
+	LastRun   *TaskRunInfo `json:"lastRun,omitempty"`
+	RunCount  int          `json:"runCount"`
+}
+
+type ScheduleListResult struct {
+	Tasks []TaskStateInfo `json:"tasks"`
+}
+
+type ScheduleSetEnabledParams struct {
+	ID      string `json:"id"`
+	Enabled bool   `json:"enabled"`
+}
+
+// Prompt
+type PromptGetResult struct {
+	Prompt string `json:"prompt"`
+}
