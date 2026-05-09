@@ -912,3 +912,218 @@ describe('builtin handler', () => {
     expect(result).toEqual({ tools: [] });
   });
 });
+
+describe('secret handlers', () => {
+  let store: Store;
+  let secrets: any;
+
+  beforeEach(() => {
+    store = createMockStore();
+    secrets = {
+      listKeys: () => [],
+      get: (key: string) => undefined,
+      set: async (key: string, value: string) => {},
+      remove: async (key: string) => {},
+      resolve: (keys: ReadonlyArray<string>) => ({}),
+    };
+  });
+
+  test('secret/list returns secret keys from SecretManager', async () => {
+    secrets.listKeys = () => ['API_KEY', 'DB_PASSWORD', 'CACHE_SECRET'];
+
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result).toEqual({ keys: ['API_KEY', 'DB_PASSWORD', 'CACHE_SECRET'] });
+  });
+
+  test('secret/list returns empty array when no secrets configured', async () => {
+    secrets.listKeys = () => [];
+
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/list'];
+
+    const result = await handler({});
+
+    expect(result).toEqual({ keys: [] });
+  });
+
+  test('secret/set calls SecretManager.set with key and value', async () => {
+    let capturedKey: string | undefined;
+    let capturedValue: string | undefined;
+
+    secrets.set = async (key: string, value: string) => {
+      capturedKey = key;
+      capturedValue = value;
+    };
+
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/set'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ key: 'NEW_KEY', value: 'secret_value' });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedKey).toBe('NEW_KEY');
+    expect(capturedValue).toBe('secret_value');
+  });
+
+  test('secret/remove calls SecretManager.remove with key', async () => {
+    let removedKey: string | undefined;
+
+    secrets.remove = async (key: string) => {
+      removedKey = key;
+    };
+
+    const handlers = createHandlers({ store, secrets });
+    const handler = handlers['secret/remove'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ key: 'API_KEY' });
+
+    expect(result).toEqual({ ok: true });
+    expect(removedKey).toBe('API_KEY');
+  });
+});
+
+describe('schedule handlers', () => {
+  let store: Store;
+  let scheduler: any;
+
+  beforeEach(() => {
+    store = createMockStore();
+    scheduler = {
+      schedule: (task: any) => {},
+      cancel: (id: string) => false,
+      list: () => [],
+      get: (id: string) => undefined,
+      setEnabled: (id: string, enabled: boolean) => false,
+      start: () => {},
+      stop: () => {},
+    };
+  });
+
+  test('schedule/list returns task states from scheduler', async () => {
+    scheduler.list = () => [
+      {
+        id: 'task-1',
+        name: 'Daily Backup',
+        prompt: 'Backup the database',
+        schedule: '0 2 * * *',
+        createdAt: '2026-05-01T10:00:00Z',
+        enabled: true,
+        lastRun: {
+          taskId: 'task-1',
+          startedAt: '2026-05-09T02:00:00Z',
+          output: 'Backup completed',
+          success: true,
+          durationMs: 5000,
+        },
+        runCount: 42,
+      },
+      {
+        id: 'task-2',
+        name: 'Health Check',
+        prompt: 'Check system health',
+        schedule: '*/15 * * * *',
+        createdAt: '2026-05-02T10:00:00Z',
+        enabled: false,
+        runCount: 100,
+      },
+    ];
+
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/list'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result.tasks).toHaveLength(2);
+    expect(result.tasks[0].id).toBe('task-1');
+    expect(result.tasks[0].enabled).toBe(true);
+    expect(result.tasks[0].lastRun?.success).toBe(true);
+    expect(result.tasks[1].enabled).toBe(false);
+  });
+
+  test('schedule/list returns empty array when no tasks scheduled', async () => {
+    scheduler.list = () => [];
+
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/list'];
+
+    const result = await handler({});
+
+    expect(result).toEqual({ tasks: [] });
+  });
+
+  test('schedule/setEnabled calls scheduler.setEnabled and returns ok', async () => {
+    let capturedId: string | undefined;
+    let capturedEnabled: boolean | undefined;
+
+    scheduler.setEnabled = (id: string, enabled: boolean) => {
+      capturedId = id;
+      capturedEnabled = enabled;
+      return true;
+    };
+
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/setEnabled'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({ id: 'task-1', enabled: false });
+
+    expect(result).toEqual({ ok: true });
+    expect(capturedId).toBe('task-1');
+    expect(capturedEnabled).toBe(false);
+  });
+
+  test('schedule/setEnabled handles setEnabled returning false', async () => {
+    scheduler.setEnabled = (id: string, enabled: boolean) => false;
+
+    const handlers = createHandlers({ store, scheduler });
+    const handler = handlers['schedule/setEnabled'];
+
+    const result = await handler({ id: 'nonexistent', enabled: true });
+
+    expect(result).toEqual({ ok: false });
+  });
+});
+
+describe('prompt handler', () => {
+  let store: Store;
+  let buildPrompt: any;
+
+  beforeEach(() => {
+    store = createMockStore();
+    buildPrompt = () => 'System prompt content here';
+  });
+
+  test('prompt/get calls buildPrompt closure and returns prompt', async () => {
+    const expectedPrompt = 'This is the current system prompt with all sections assembled.';
+    buildPrompt = () => expectedPrompt;
+
+    const handlers = createHandlers({ store, buildPrompt });
+    const handler = handlers['prompt/get'];
+
+    expect(handler).toBeDefined();
+    const result = await handler({});
+
+    expect(result).toEqual({ prompt: expectedPrompt });
+  });
+
+  test('prompt/get handles large prompt content', async () => {
+    const largePrompt = 'x'.repeat(100000); // 100KB prompt
+    buildPrompt = () => largePrompt;
+
+    const handlers = createHandlers({ store, buildPrompt });
+    const handler = handlers['prompt/get'];
+
+    const result = await handler({});
+
+    expect(result.prompt).toBe(largePrompt);
+    expect(result.prompt.length).toBe(100000);
+  });
+});

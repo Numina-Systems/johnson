@@ -19,10 +19,18 @@ import type {
   GrantListResult,
   BuiltinListResult,
   OkResult,
+  SecretListResult,
+  SecretSetParams,
+  SecretRemoveParams,
+  ScheduleListResult,
+  ScheduleSetEnabledParams,
+  PromptGetResult,
 } from './types.ts';
 import type { Store } from '../store/store.ts';
 import type { Agent } from '../agent/types.ts';
 import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
+import type { SecretManager } from '../secrets/manager.ts';
+import type { TaskStore } from '../scheduler/types.ts';
 import { sendAgentEvent, sendAgentResponse } from './notifications.ts';
 
 export type JsonRpcDependencies = {
@@ -30,6 +38,9 @@ export type JsonRpcDependencies = {
   readonly agent?: Agent;
   readonly customTools?: CustomToolManager;
   readonly builtinTools?: ReadonlyArray<{ readonly name: string; readonly description: string }>;
+  readonly secrets?: SecretManager;
+  readonly scheduler?: TaskStore;
+  readonly buildPrompt?: () => string;
   readonly emitter?: {
     onAgentEvent?: (requestId: string, kind: string, data: Record<string, unknown>) => void;
     onAgentResponse?: (requestId: string, text: string, stats: Record<string, unknown>) => void;
@@ -221,6 +232,57 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
   if (deps.builtinTools) {
     handlers['builtin/list'] = async (): Promise<BuiltinListResult> => {
       return { tools: deps.builtinTools! };
+    };
+  }
+
+  // Secrets handlers
+  if (deps.secrets) {
+    handlers['secret/list'] = async (): Promise<SecretListResult> => {
+      const keys = deps.secrets!.listKeys();
+      return { keys };
+    };
+
+    handlers['secret/set'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as SecretSetParams | undefined;
+      if (!p?.key || !p?.value) {
+        throw new Error('secret/set requires key and value');
+      }
+      await deps.secrets!.set(p.key, p.value);
+      return { ok: true };
+    };
+
+    handlers['secret/remove'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as SecretRemoveParams | undefined;
+      if (!p?.key) {
+        throw new Error('secret/remove requires key');
+      }
+      await deps.secrets!.remove(p.key);
+      return { ok: true };
+    };
+  }
+
+  // Schedule handlers
+  if (deps.scheduler) {
+    handlers['schedule/list'] = async (): Promise<ScheduleListResult> => {
+      const tasks = deps.scheduler!.list();
+      return { tasks };
+    };
+
+    handlers['schedule/setEnabled'] = async (params: Record<string, unknown> | undefined): Promise<OkResult> => {
+      const p = params as ScheduleSetEnabledParams | undefined;
+      if (!p?.id) {
+        throw new Error('schedule/setEnabled requires id');
+      }
+      const ok = deps.scheduler!.setEnabled(p.id, p.enabled ?? false);
+      return { ok };
+    };
+  }
+
+  // Prompt handler
+  if (deps.buildPrompt) {
+    handlers['prompt/get'] = async (): Promise<PromptGetResult> => {
+      const prompt = deps.buildPrompt!();
+      return { prompt };
     };
   }
 

@@ -33,6 +33,7 @@ import { enforceStdoutDiscipline } from './jsonrpc/stdout-discipline.ts';
 import { startJsonRpcServer } from './jsonrpc/server.ts';
 import { createHandlers } from './jsonrpc/handlers.ts';
 import type { JsonRpcDependencies } from './jsonrpc/handlers.ts';
+import { buildSystemPrompt } from './agent/prompt.ts';
 
 const CONFIG_PATH = resolve(import.meta.dir, '..', 'config.toml');
 const DATA_DIR = resolve(import.meta.dir, '..', 'data');
@@ -228,11 +229,37 @@ async function main(): Promise<void> {
       name: t.name,
       description: t.definition.description.split('\n')[0] ?? '',
     }));
+    const toolDocs = jsonrpcRegistry.generateToolDocumentation();
+    const nativeToolDefs = jsonrpcRegistry.generateToolDefinitions();
+
+    const buildPrompt = (): string => {
+      const selfDoc = store.docGet('self')?.content?.trim() ?? '';
+      const allDocs = store.docList(500);
+      const skillNames = allDocs.documents
+        .filter(d => d.rkey.startsWith('skill:'))
+        .map(d => d.rkey);
+      const secretNames = secrets?.listKeys() ?? [];
+      const customToolSummaries = customTools?.getApprovedToolSummaries() ?? [];
+      const nativeToolNames = nativeToolDefs.map(t => t.name);
+      return buildSystemPrompt({
+        selfDoc,
+        skillNames,
+        toolDocs,
+        timezone: config.agent?.timezone,
+        secretNames,
+        customToolSummaries,
+        nativeToolNames,
+      });
+    };
+
     const jsonrpcDeps: JsonRpcDependencies = {
       store,
       agent: jsonrpcAgent,
       customTools,
       builtinTools,
+      secrets,
+      scheduler,
+      buildPrompt,
     };
     const handlers = createHandlers(jsonrpcDeps);
     startJsonRpcServer(handlers);
