@@ -56,9 +56,17 @@ export interface Store {
   ensureSession(id: string, title?: string): void;
   getSession(id: string): { id: string; title: string | null; createdAt: string; updatedAt: string } | null;
   listSessions(limit?: number): Array<{ id: string; title: string | null; updatedAt: string }>;
+  listSessionsPaginated(limit?: number, cursor?: string): {
+    sessions: Array<{ id: string; title: string | null; updatedAt: string; messageCount: number }>;
+    cursor?: string;
+  };
   updateSessionTitle(id: string, title: string): void;
   appendMessage(sessionId: string, role: string, content: string): void;
   getMessages(sessionId: string, limit?: number): Array<{ role: string; content: string; createdAt: string }>;
+  getMessagesPaginated(sessionId: string, limit?: number, cursor?: string): {
+    messages: Array<{ id: number; role: string; content: string; createdAt: string }>;
+    cursor?: string;
+  };
   clearMessages(sessionId: string): void;
   deleteSession(id: string): boolean;
   getSessionMessageCount(sessionId: string): number;
@@ -283,6 +291,23 @@ export function createStore(dbPath: string): Store {
   const stmtListSessions = db.prepare(
     `SELECT id, title, updated_at FROM sessions ORDER BY updated_at DESC LIMIT ?`,
   );
+  const stmtListSessionsPaginated = db.prepare(
+    `SELECT s.id, s.title, s.updated_at, COUNT(m.id) as message_count
+     FROM sessions s
+     LEFT JOIN messages m ON m.session_id = s.id
+     WHERE (s.updated_at, s.id) < (?, ?)
+     GROUP BY s.id, s.title, s.updated_at
+     ORDER BY s.updated_at DESC, s.id DESC
+     LIMIT ?`,
+  );
+  const stmtListSessionsPaginatedAll = db.prepare(
+    `SELECT s.id, s.title, s.updated_at, COUNT(m.id) as message_count
+     FROM sessions s
+     LEFT JOIN messages m ON m.session_id = s.id
+     GROUP BY s.id, s.title, s.updated_at
+     ORDER BY s.updated_at DESC, s.id DESC
+     LIMIT ?`,
+  );
   const stmtUpdateTitle = db.prepare(
     `UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?`,
   );
@@ -294,6 +319,18 @@ export function createStore(dbPath: string): Store {
   );
   const stmtGetMessages = db.prepare(
     `SELECT role, content, created_at FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ?`,
+  );
+  const stmtGetMessagesPaginated = db.prepare(
+    `SELECT id, role, content, created_at FROM messages
+     WHERE session_id = ? AND id > ?
+     ORDER BY id ASC
+     LIMIT ?`,
+  );
+  const stmtGetMessagesPaginatedAll = db.prepare(
+    `SELECT id, role, content, created_at FROM messages
+     WHERE session_id = ?
+     ORDER BY id ASC
+     LIMIT ?`,
   );
   const stmtEnsureSession = db.prepare(
     `INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
@@ -442,6 +479,55 @@ export function createStore(dbPath: string): Store {
       return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
     },
 
+    listSessionsPaginated(limit = 50, cursor?: string): {
+      sessions: Array<{ id: string; title: string | null; updatedAt: string; messageCount: number }>;
+      cursor?: string;
+    } {
+      const fetchLimit = Math.max(1, Math.min(limit, 500));
+      let rows: Array<{ id: string; title: string | null; updated_at: string; message_count: number }>;
+
+      if (cursor) {
+        // cursor format: "updated_at|id"
+        const [updatedAt, id] = cursor.split('|');
+        rows = stmtListSessionsPaginated.all(updatedAt, id, fetchLimit + 1) as Array<{
+          id: string;
+          title: string | null;
+          updated_at: string;
+          message_count: number;
+        }>;
+      } else {
+        rows = stmtListSessionsPaginatedAll.all(fetchLimit + 1) as Array<{
+          id: string;
+          title: string | null;
+          updated_at: string;
+          message_count: number;
+        }>;
+      }
+
+      let nextCursor: string | undefined;
+      if (rows.length > fetchLimit) {
+        rows.pop();
+        const lastRow = rows[rows.length - 1];
+        if (lastRow) {
+          nextCursor = `${lastRow.updated_at}|${lastRow.id}`;
+        }
+      }
+
+      const sessions = rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        updatedAt: r.updated_at,
+        messageCount: r.message_count,
+      }));
+
+      const result: {
+        sessions: Array<{ id: string; title: string | null; updatedAt: string; messageCount: number }>;
+        cursor?: string;
+      } = { sessions };
+      if (nextCursor) result.cursor = nextCursor;
+      return result;
+    },
+
     updateSessionTitle(id: string, title: string): void {
       stmtUpdateTitle.run(title, iso(), id);
     },
@@ -455,6 +541,54 @@ export function createStore(dbPath: string): Store {
     getMessages(sessionId: string, limit = 200): Array<{ role: string; content: string; createdAt: string }> {
       const rows = stmtGetMessages.all(sessionId, limit) as Array<{ role: string; content: string; created_at: string }>;
       return rows.map((r) => ({ role: r.role, content: r.content, createdAt: r.created_at }));
+    },
+
+    getMessagesPaginated(sessionId: string, limit = 200, cursor?: string): {
+      messages: Array<{ id: number; role: string; content: string; createdAt: string }>;
+      cursor?: string;
+    } {
+      const fetchLimit = Math.max(1, Math.min(limit, 500));
+      let rows: Array<{ id: number; role: string; content: string; created_at: string }>;
+
+      if (cursor) {
+        const cursorId = parseInt(cursor, 10);
+        rows = stmtGetMessagesPaginated.all(sessionId, cursorId, fetchLimit + 1) as Array<{
+          id: number;
+          role: string;
+          content: string;
+          created_at: string;
+        }>;
+      } else {
+        rows = stmtGetMessagesPaginatedAll.all(sessionId, fetchLimit + 1) as Array<{
+          id: number;
+          role: string;
+          content: string;
+          created_at: string;
+        }>;
+      }
+
+      let nextCursor: string | undefined;
+      if (rows.length > fetchLimit) {
+        rows.pop();
+        const lastRow = rows[rows.length - 1];
+        if (lastRow) {
+          nextCursor = String(lastRow.id);
+        }
+      }
+
+      const messages = rows.map((r) => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        createdAt: r.created_at,
+      }));
+
+      const result: {
+        messages: Array<{ id: number; role: string; content: string; createdAt: string }>;
+        cursor?: string;
+      } = { messages };
+      if (nextCursor) result.cursor = nextCursor;
+      return result;
     },
 
     clearMessages(sessionId: string): void {
