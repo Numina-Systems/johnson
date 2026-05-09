@@ -28,15 +28,49 @@ import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
 import { RecallClient } from './recall/client.ts';
 import { log } from './util/log.ts';
+import { enforceStdoutDiscipline } from './jsonrpc/stdout-discipline.ts';
+import { startJsonRpcServer } from './jsonrpc/server.ts';
+import { createHandlers } from './jsonrpc/handlers.ts';
+import type { JsonRpcDependencies } from './jsonrpc/handlers.ts';
 
 const CONFIG_PATH = resolve(import.meta.dir, '..', 'config.toml');
 const DATA_DIR = resolve(import.meta.dir, '..', 'data');
 const TASKS_PATH = resolve(DATA_DIR, 'tasks.json');
 const SECRETS_PATH = resolve(DATA_DIR, 'secrets.json');
 
+function parseCliArgs(): {interfaceOverride?: string} {
+  const args = process.argv.slice(2);
+  const result: {interfaceOverride?: string} = {};
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--interface' && i + 1 < args.length) {
+      result.interfaceOverride = args[i + 1];
+      i++;
+    }
+  }
+
+  return result;
+}
+
 async function main(): Promise<void> {
+  // Parse CLI arguments
+  const cliArgs = parseCliArgs();
+
   // Load config
-  const config = loadConfig(CONFIG_PATH);
+  let config = loadConfig(CONFIG_PATH);
+
+  // Override interface mode if specified via CLI
+  if (cliArgs.interfaceOverride) {
+    const validModes: ReadonlyArray<string> = ['tui', 'discord', 'both', 'jsonrpc'];
+    if (validModes.includes(cliArgs.interfaceOverride)) {
+      config = {...config, interface: cliArgs.interfaceOverride as typeof config.interface};
+    }
+  }
+
+  // Enforce stdout discipline in jsonrpc mode before anything else writes to stdout
+  if (config.interface === 'jsonrpc') {
+    enforceStdoutDiscipline();
+  }
 
   // Set process-wide timezone from config — affects Date formatting in the host process
   process.env['TZ'] = config.agent.timezone;
@@ -184,6 +218,12 @@ async function main(): Promise<void> {
       // Wire up Discord delivery for the scheduler
       sendDiscord = bot.sendToChannel;
     }
+  }
+
+  if (mode === 'jsonrpc') {
+    const jsonrpcDeps: JsonRpcDependencies = {};
+    const handlers = createHandlers(jsonrpcDeps);
+    startJsonRpcServer(handlers);
   }
 
   // Start the scheduler (rehydrates persisted tasks)
