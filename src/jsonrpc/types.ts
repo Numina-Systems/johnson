@@ -85,3 +85,37 @@ export type SessionMessagesResult = {
   }>;
   readonly cursor?: string;
 };
+
+// Chat types for JSON-RPC handlers
+
+export type AgentChatParams = {
+  readonly message: string;
+  readonly sessionId: string;
+};
+
+export type AgentChatResult = {
+  readonly requestId: string;
+};
+
+export type AgentResetResult = {
+  readonly ok: boolean;
+};
+
+export type AgentEventNotification = {
+  readonly requestId: string;
+  readonly kind: 'llm_start' | 'llm_done' | 'tool_start' | 'tool_done' | 'recall_done';
+  readonly data: Record<string, unknown>;
+};
+
+export type AgentResponseNotification = {
+  readonly requestId: string;
+  readonly text: string;
+  readonly stats: {
+    readonly inputTokens: number;
+    readonly outputTokens: number;
+    readonly contextEstimate: number;
+    readonly contextLimit: number;
+    readonly rounds: number;
+    readonly durationMs: number;
+  };
+};

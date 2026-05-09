@@ -17,3 +17,15 @@ export function sendReady(): void {
     capabilities: ['sessions', 'chat', 'secrets', 'skills', 'customTools', 'schedules', 'prompt'],
   });
 }
+
+export function sendAgentEvent(requestId: string, kind: string, data: Record<string, unknown>): void {
+  sendNotification('agent/event', { requestId, kind, data });
+}
+
+export function sendAgentResponse(
+  requestId: string,
+  text: string,
+  stats: Record<string, unknown>,
+): void {
+  sendNotification('agent/response', { requestId, text, stats });
+}
