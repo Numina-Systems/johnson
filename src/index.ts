@@ -68,11 +68,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Enforce stdout discipline in jsonrpc mode before anything else writes to stdout
-  if (config.interface === 'jsonrpc') {
-    enforceStdoutDiscipline();
-  }
-
   // Set process-wide timezone from config — affects Date formatting in the host process
   process.env['TZ'] = config.agent.timezone;
 
@@ -186,7 +181,7 @@ async function main(): Promise<void> {
   const mode = config.interface;
 
   // Launch interface(s)
-  if (mode === 'tui' || mode === 'both') {
+  if (mode === 'tui') {
     // TUI gets its own agent with in-memory history (no conversationOverride needed)
     const tuiAgent = createAgent({ ...agentDeps, scheduler });
     const tuiRegistry = createAgentTools({ ...agentDeps, scheduler }, {});
@@ -221,7 +216,10 @@ async function main(): Promise<void> {
     }
   }
 
-  if (mode === 'jsonrpc') {
+  if (mode === 'jsonrpc' || mode === 'both') {
+    // Enforce stdout discipline in jsonrpc mode before anything else writes to stdout
+    enforceStdoutDiscipline();
+
     // JSONRPC gets its own agent with in-memory history
     const jsonrpcAgent = createAgent({ ...agentDeps, scheduler });
     const jsonrpcRegistry = createAgentTools({ ...agentDeps, scheduler }, {});

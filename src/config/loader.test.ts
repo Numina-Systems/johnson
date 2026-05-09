@@ -38,6 +38,86 @@ max_tokens = 16384
 api_key = "main-key"
 `;
 
+describe('loadConfig — interface mode parsing', () => {
+  test('parses valid interface mode from config.toml: discord', () => {
+    const path = writeTempConfig(`
+interface = "discord"
+
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+`);
+    try {
+      const cfg = loadConfig(path);
+      expect(cfg.interface).toBe('discord');
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  test('parses valid interface mode from config.toml: both', () => {
+    const path = writeTempConfig(`
+interface = "both"
+
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+`);
+    try {
+      const cfg = loadConfig(path);
+      expect(cfg.interface).toBe('both');
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  test('parses valid interface mode from config.toml: jsonrpc', () => {
+    const path = writeTempConfig(`
+interface = "jsonrpc"
+
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+`);
+    try {
+      const cfg = loadConfig(path);
+      expect(cfg.interface).toBe('jsonrpc');
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  test('defaults to tui when interface is missing from config', () => {
+    const path = writeTempConfig(`
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+`);
+    try {
+      const cfg = loadConfig(path);
+      expect(cfg.interface).toBe('tui');
+    } finally {
+      unlinkSync(path);
+    }
+  });
+
+  test('defaults to tui when interface has invalid value', () => {
+    const path = writeTempConfig(`
+interface = "invalid_mode"
+
+[model]
+provider = "anthropic"
+name = "claude-sonnet-4-20250514"
+`);
+    try {
+      const cfg = loadConfig(path);
+      expect(cfg.interface).toBe('tui');
+    } finally {
+      unlinkSync(path);
+    }
+  });
+});
+
 describe('loadConfig — [sub_model] parsing', () => {
   test('returns undefined subModel when [sub_model] section is absent', () => {
     const path = writeTempConfig(BASE_TOML);
