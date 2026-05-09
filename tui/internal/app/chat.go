@@ -154,6 +154,30 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messageCursor = msg.cursor
 		m.updateViewportContent()
 
+	case loadOlderMsg:
+		oldLineCount := m.viewport.TotalLineCount()
+		oldYOffset := m.viewport.YOffset()
+
+		olderMessages := make([]renderedMessage, 0, len(msg.messages))
+		for _, row := range msg.messages {
+			rendered := ""
+			if row.Role == "user" {
+				rendered = m.renderer.RenderUserMessage(row.Content)
+			} else {
+				rendered = m.renderer.RenderAgentMessage(row.Content)
+			}
+			olderMessages = append(olderMessages, renderedMessage{role: row.Role, rendered: rendered})
+		}
+		m.messages = append(olderMessages, m.messages...)
+		m.messageCursor = msg.cursor
+		m.updateViewportContent()
+
+		newLineCount := m.viewport.TotalLineCount()
+		linesAdded := newLineCount - oldLineCount
+		if linesAdded > 0 {
+			m.viewport.SetYOffset(oldYOffset + linesAdded)
+		}
+
 	case chatStartedMsg:
 		m.chatRequestID = msg.requestID
 		m.status = "Thinking..."
@@ -214,6 +238,17 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return backToSessionsMsg{}
 		}
 
+	case "up", "k", "page up":
+		if m.viewport.YOffset() == 0 && m.messageCursor != "" {
+			return m, m.loadOlderMessages()
+		}
+		m.viewport, _ = m.viewport.Update(msg)
+		return m, nil
+
+	case "down", "j", "page down":
+		m.viewport, _ = m.viewport.Update(msg)
+		return m, nil
+
 	default:
 		m.textarea, _ = m.textarea.Update(msg)
 		return m, nil
@@ -273,6 +308,21 @@ func (m *ChatModel) waitForEvent() tea.Cmd {
 		case resp := <-m.responseCh:
 			return agentResponseMsg{response: resp}
 		}
+	}
+}
+
+func (m *ChatModel) loadOlderMessages() tea.Cmd {
+	return func() tea.Msg {
+		var result protocol.SessionMessagesResult
+		err := m.client.Call(context.Background(), "session/messages", protocol.SessionMessagesParams{
+			SessionID: m.sessionID,
+			Limit:     50,
+			Cursor:    m.messageCursor,
+		}, &result)
+		if err != nil {
+			return loadOlderMsg{messages: []protocol.MessageRow{}, cursor: ""}
+		}
+		return loadOlderMsg{messages: result.Messages, cursor: result.Cursor}
 	}
 }
 
