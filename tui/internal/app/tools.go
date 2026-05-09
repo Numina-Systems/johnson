@@ -116,7 +116,7 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "escape":
 				return m, func() tea.Msg { return backToSessionsMsg{} }
 
-			case "g", "r", "v", "s", "d":
+			case "a", "g", "r", "v", "s", "d":
 				if m.activeTab == 0 { // Skills tab
 					if selected, ok := m.skillList.SelectedItem().(skillItem); ok {
 						switch msg.String() {
@@ -126,6 +126,8 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, revokeSkillCmd(m.client, selected.rkey)
 						case "v":
 							m.mode = toolsModeViewCode
+							// TODO: Implement skill/get or add content field to SkillInfo to fetch actual skill source code.
+							// Currently shows placeholder. This requires backend support to retrieve the skill document content.
 							m.codeViewer.SetContent(fmt.Sprintf("[Code view for skill: %s]\n\n(Feature not yet fully implemented - would fetch from backend)\n\nPress Escape to return to list.", selected.rkey))
 							return m, nil
 						case "s":
@@ -149,6 +151,8 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return m, revokeCustomToolCmd(m.client, selected.name)
 						case "v":
 							m.mode = toolsModeViewCode
+							// TODO: Implement customTool/get or add content field to CustomToolInfo to fetch actual tool source code.
+							// Currently shows placeholder. This requires backend support to retrieve the custom tool document content.
 							m.codeViewer.SetContent(fmt.Sprintf("[Code view for tool: %s]\n\n(Feature not yet fully implemented - would fetch from backend)\n\nPress Escape to return to list.", selected.name))
 							return m, nil
 						case "s":
@@ -271,6 +275,12 @@ func (m *ToolsModel) View() tea.View {
 
 	case toolsModeEditSecrets:
 		view += "Select secrets (Space/Enter to toggle, Escape to save):\n"
+		// Note: Currently only shows assigned secrets. In Phase 5, when secret/listKeys
+		// is available in the backend, this will be updated to show all available
+		// secrets from the vault, allowing users to add new secret assignments.
+		if len(m.secretNames) == 0 {
+			view += "\n(No secrets assigned. Use the Secrets screen (Ctrl+S) to manage secrets.)\n"
+		}
 		for i, name := range m.secretNames {
 			var line string
 			if i == m.secretCursor {

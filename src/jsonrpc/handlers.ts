@@ -141,7 +141,11 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
       if (!p?.rkey || !p?.status) {
         throw new Error('skill/grant requires rkey and status');
       }
-      deps.store.updateGrantStatus(p.rkey, p.status as any);
+      if (p.status !== 'granted' && p.status !== 'revoked') {
+        throw new Error('skill/grant status must be "granted" or "revoked"');
+      }
+      const status = p.status as 'granted' | 'revoked';
+      deps.store.updateGrantStatus(p.rkey, status);
       return { ok: true };
     };
 
