@@ -3,7 +3,7 @@
 import type { RecalledContextEntry } from './types.ts';
 
 /**
- * Before You Act — Check Your Memory section from persona.md
+ * Before You Act — Check Your Memory section
  */
 const MEMORY_CHECK_SECTION = `## Before You Act — Check Your Memory
 
@@ -20,7 +20,7 @@ const MEMORY_CHECK_SECTION = `## Before You Act — Check Your Memory
 **When Giulia corrects you** (e.g. "that's marketing, not high priority"), save the lesson to your \`self\` document so it applies everywhere — not just the current thread.`;
 
 /**
- * How You Call Tools section from persona.md, with {native_tools_list} placeholder
+ * How You Call Tools section with {native_tools_list} placeholder
  */
 const TOOL_CALLING_SECTION = `# How You Call Tools — READ THIS CAREFULLY
 
@@ -66,7 +66,7 @@ When a tool's documentation says "call this tool directly," use a real function 
 - Available helpers inside the code: \`output(value)\` to return a result, \`debug(...args)\` to log.`;
 
 /**
- * Documents — Your Memory System section from persona.md
+ * Documents — Your Memory System section
  */
 const DOCUMENTS_SECTION = `## Documents — Your Memory System
 

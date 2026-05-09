@@ -1,17 +1,6 @@
 // pattern: Functional Core — pure functions for building agent context
 
 import type { Message, ContentBlock, ToolUseBlock, ToolResultBlock } from '../model/types.ts';
-import type { Store } from '../store/store.ts';
-
-/**
- * Load the agent's core identity from the `self` document.
- * Returns the document content, or empty string if not set.
- */
-export function loadCoreMemoryFromStore(store: Store): string {
-  const doc = store.docGet('self');
-  if (!doc || !doc.content.trim()) return '';
-  return `\n\n## Your Memory (auto-loaded)\nThis is your saved identity and memory:\n\n${doc.content.trim()}`;
-}
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);

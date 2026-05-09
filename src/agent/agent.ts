@@ -229,6 +229,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       recalledContext,
       customToolSummaries,
       secretNames,
+      nativeToolNames: nativeTools.map(t => t.name),
     });
 
     // e. Tool loop

@@ -54,6 +54,7 @@ export default function App(deps: AppProps): React.ReactElement {
       timezone: deps.timezone,
       customToolSummaries,
       secretNames,
+      nativeToolNames: deps.builtinTools?.map(t => t.name),
     });
   }, [deps]);
 
