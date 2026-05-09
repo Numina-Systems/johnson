@@ -55,3 +55,33 @@ type SessionMessagesResult struct {
 	Messages []MessageRow `json:"messages"`
 	Cursor   string       `json:"cursor,omitempty"`
 }
+
+type AgentChatParams struct {
+	Message   string `json:"message"`
+	SessionID string `json:"sessionId"`
+}
+
+type AgentChatResult struct {
+	RequestID string `json:"requestId"`
+}
+
+type AgentEventParams struct {
+	RequestID string                 `json:"requestId"`
+	Kind      string                 `json:"kind"`
+	Data      map[string]interface{} `json:"data"`
+}
+
+type AgentResponseParams struct {
+	RequestID string    `json:"requestId"`
+	Text      string    `json:"text"`
+	Stats     ChatStats `json:"stats"`
+}
+
+type ChatStats struct {
+	InputTokens     int `json:"inputTokens"`
+	OutputTokens    int `json:"outputTokens"`
+	ContextEstimate int `json:"contextEstimate"`
+	ContextLimit    int `json:"contextLimit"`
+	Rounds          int `json:"rounds"`
+	DurationMs      int `json:"durationMs"`
+}
