@@ -7,8 +7,11 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"constellation-tui/internal/app"
 	"constellation-tui/internal/protocol"
+	tea "charm.land/bubbletea/v2"
 )
 
 func main() {
@@ -51,9 +54,35 @@ func main() {
 	fmt.Fprintf(os.Stderr, "backend ready: protocol v%s, capabilities: %v\n",
 		ready.ProtocolVersion, ready.Capabilities)
 
+	// Create and run the TUI
+	appModel := app.NewAppModel(client)
+	p := tea.NewProgram(appModel)
+
+	result, err := p.Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if result != nil {
+		fmt.Fprintf(os.Stderr, "TUI exited\n")
+	}
+
+	// Gracefully shut down the backend
 	client.Close()
 
-	if err := backendCmd.Wait(); err != nil {
-		fmt.Fprintf(os.Stderr, "backend exited: %v\n", err)
+	backendCmd.Process.Signal(syscall.SIGTERM)
+
+	// Wait with timeout
+	done := make(chan error, 1)
+	go func() { done <- backendCmd.Wait() }()
+
+	select {
+	case <-done:
+		// Process exited cleanly
+	case <-time.After(5 * time.Second):
+		// Force kill if it doesn't exit in time
+		backendCmd.Process.Kill()
+		<-done
 	}
 }
