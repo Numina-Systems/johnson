@@ -51,10 +51,12 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
     handlers['agent/chat'] = async (params: Record<string, unknown> | undefined) => {
       const p = params as AgentChatParams | undefined;
       if (!p?.message || !p?.sessionId) {
-        return { requestId: crypto.randomUUID() };
+        throw new Error('agent/chat requires message and sessionId');
       }
 
       const requestId = crypto.randomUUID();
+      const emitEvent = deps.emitter?.onAgentEvent ?? ((rid, kind, data) => sendAgentEvent(rid, kind, data));
+      const emitResponse = deps.emitter?.onAgentResponse ?? ((rid, text, stats) => sendAgentResponse(rid, text, stats));
 
       // Fire-and-forget: return requestId immediately, run chat in background
       (async () => {
@@ -62,16 +64,13 @@ export function createHandlers(deps: JsonRpcDependencies): Record<string, Method
           const result = await deps.agent!.chat(p.message, {
             sessionId: p.sessionId,
             onEvent: async (event) => {
-              const emitFn = deps.emitter?.onAgentEvent || ((rid, kind, data) => sendAgentEvent(rid, kind, data));
-              emitFn(requestId, event.kind, event.data);
+              emitEvent(requestId, event.kind, event.data);
             },
           });
 
-          const emitResponse = deps.emitter?.onAgentResponse || ((rid, text, stats) => sendAgentResponse(rid, text, stats));
           emitResponse(requestId, result.text, result.stats);
         } catch (error) {
           const errorText = error instanceof Error ? error.message : String(error);
-          const emitResponse = deps.emitter?.onAgentResponse || ((rid, text, stats) => sendAgentResponse(rid, text, stats));
           emitResponse(requestId, errorText, {
             inputTokens: 0,
             outputTokens: 0,

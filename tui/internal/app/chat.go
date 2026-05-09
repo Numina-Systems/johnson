@@ -1,3 +1,4 @@
+// pattern: Imperative Shell
 package app
 
 import (
@@ -6,6 +7,7 @@ import (
 	"constellation-tui/internal/render"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -89,6 +91,7 @@ func NewChatModel(client *protocol.Client, sessionID string) *ChatModel {
 		select {
 		case m.eventCh <- ev:
 		default:
+			fmt.Fprintf(os.Stderr, "warning: dropped agent event (channel full)\n")
 		}
 	})
 
@@ -96,6 +99,7 @@ func NewChatModel(client *protocol.Client, sessionID string) *ChatModel {
 		select {
 		case m.responseCh <- resp:
 		default:
+			fmt.Fprintf(os.Stderr, "warning: dropped agent response (channel full)\n")
 		}
 	})
 
@@ -256,6 +260,10 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *ChatModel) handleAgentEvent(event protocol.AgentEventParams) {
+	if event.RequestID != m.chatRequestID {
+		return
+	}
+
 	switch event.Kind {
 	case "llm_start":
 		if round, ok := event.Data["round"].(float64); ok {

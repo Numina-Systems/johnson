@@ -86,9 +86,6 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+p":
 			m.pushScreen(ScreenPrompt)
 			return m, nil
-		case "esc":
-			m.popScreen()
-			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		}

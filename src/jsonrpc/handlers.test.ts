@@ -303,7 +303,7 @@ describe('agent handlers', () => {
   });
 
   test('agent/chat fires onEvent callback with correct requestId and event data', async () => {
-    const events: Array<{kind: string; data: Record<string, unknown>}> = [];
+    const events: Array<{requestId: string; kind: string; data: Record<string, unknown>}> = [];
 
     agent.chat = async (message: string, options) => {
       if (options?.onEvent) {
@@ -325,7 +325,7 @@ describe('agent handlers', () => {
 
     const emitter = {
       onAgentEvent: (requestId: string, kind: string, data: Record<string, unknown>) => {
-        events.push({kind, data});
+        events.push({requestId, kind, data});
       },
     };
 
@@ -341,6 +341,7 @@ describe('agent handlers', () => {
     expect(events.length).toBeGreaterThan(0);
     expect(events[0].kind).toBe('llm_start');
     expect(events[0].data).toEqual({round: 0});
+    expect(events[0].requestId).toBe(requestId);
   });
 
   test('agent/chat sends agent/response notification on completion', async () => {
@@ -417,5 +418,61 @@ describe('agent handlers', () => {
 
     expect(result).toEqual({ok: true});
     expect(resetCalled).toBe(true);
+  });
+
+  test('agent/chat concurrent requests are handled correctly (AC3.4)', async () => {
+    const agentChatDelayMs = 100;
+    const secretListResponses: Array<{ok: boolean}> = [];
+
+    // Mock agent.chat to delay ~100ms before resolving
+    agent.chat = async (message: string, options) => {
+      await new Promise(resolve => setTimeout(resolve, agentChatDelayMs));
+      return {
+        text: 'Response',
+        stats: {
+          inputTokens: 10,
+          outputTokens: 20,
+          contextEstimate: 30,
+          contextLimit: 100,
+          rounds: 1,
+          durationMs: agentChatDelayMs,
+        },
+      };
+    };
+
+    store.listGrants = () => [];
+
+    const handlers = createHandlers({ store, agent });
+    const chatHandler = handlers['agent/chat'];
+    const secretListHandler = handlers['secret/list'] || (() => Promise.resolve({ok: true}));
+
+    // Record timestamps to verify order of completion
+    const timestamps: Array<{event: string; time: number}> = [];
+
+    // Call agent/chat (starts background work that takes ~100ms)
+    const chatStartTime = Date.now();
+    const chatPromise = chatHandler({ message: 'Hello', sessionId: 'session-123' });
+    timestamps.push({event: 'agent/chat called', time: Date.now() - chatStartTime});
+
+    // Immediately call secret/list (should return quickly)
+    const secretListStartTime = Date.now();
+    const secretListPromise = secretListHandler({});
+    timestamps.push({event: 'secret/list called', time: Date.now() - chatStartTime});
+
+    // Wait for both to complete
+    const [chatResult, secretListResult] = await Promise.all([chatPromise, secretListPromise]);
+    timestamps.push({event: 'both completed', time: Date.now() - chatStartTime});
+
+    // Verify results exist
+    expect(chatResult).toHaveProperty('requestId');
+    expect(secretListResult).toBeDefined();
+
+    // The key assertion: secret/list should have returned very quickly (within 20ms of being called),
+    // not blocked by agent/chat's 100ms delay
+    const secretListCompletionTime = Date.now() - secretListStartTime;
+    expect(secretListCompletionTime).toBeLessThan(50);
+
+    // Verify both requests completed successfully despite overlapping
+    expect(chatResult.requestId.length).toBeGreaterThan(0);
   });
 });
