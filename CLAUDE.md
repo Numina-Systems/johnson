@@ -18,7 +18,7 @@ constellation-lite is a code-first AI agent. The model's primary tool is `execut
 
 ### Dependency Wiring (`src/index.ts`)
 
-`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), then calls `makeAgent()` per-interface. Discord gets one agent per channel; TUI gets one agent for the session. `workingDir` (from `process.cwd()`) is passed via `AgentDependencies` so tools can resolve workspace-relative paths safely.
+`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), calls `seedSelfDoc(store)` to seed domain knowledge on first run, then calls `makeAgent()` per-interface. Discord gets one agent per channel; TUI gets one agent for the session. `workingDir` (from `process.cwd()`) is passed via `AgentDependencies` so tools can resolve workspace-relative paths safely.
 
 ### Agent Loop (`src/agent/agent.ts`)
 
@@ -27,12 +27,22 @@ Each `Agent` owns its own `history: Message[]`. The `chat()` function:
 2. Collects native tool definitions from the registry (tools with mode `native` or `both`)
 3. Handles context overflow by calling `compactContext()` before the tool loop
 4. Runs reflexive recall (if `recallEnabled`) to retrieve relevant knowledge fragments, emitting `recall_done`
-5. Builds a system prompt via `systemPromptProvider` callback (if set) or inline, injecting recalled context
+5. Builds the system prompt by calling `buildSystemPrompt()` from `src/agent/prompt.ts` directly with a `SystemPromptParams` object (self doc, skill names, tool docs, timezone, recalled context, custom tool summaries, secret names)
 6. Runs a tool loop (up to `maxToolRounds`): model call → dispatch (`execute_code` via sandbox IPC, native tools via registry) → tool result → repeat
 7. Emits lifecycle events (`llm_start`, `llm_done`, `tool_start`, `tool_done`, `recall_done`) via the `onEvent` callback in `ChatOptions`
 8. Propagates `reasoning_content` from model responses onto assistant messages (extended thinking support)
 9. On max-iteration exhaustion, forces a final text-only response (no tools) so the agent always replies
 10. After each chat, fires `maybeGenerateSessionTitle()` (`src/agent/session-title.ts`) to auto-title sessions via the sub-agent
+
+### System Prompt Builder (`src/agent/prompt.ts`)
+
+Functional Core module that assembles the system prompt from template constants and a `SystemPromptParams` input. Replaces the old `buildSystemPrompt()` that lived in `context.ts` and the `systemPromptProvider` callback pattern. The persona content that previously lived in `persona.md` is now split: static instructional sections (tool calling, documents, chaining, error handling) are template constants in this module; domain knowledge (identity, obsidian vault, skills, scheduling) is seeded into the `self` document via `seed-self-doc.ts`.
+
+Exported: `buildSystemPrompt(params: SystemPromptParams) → string` and the `SystemPromptParams` type.
+
+### Self-Doc Seeding (`src/agent/seed-self-doc.ts`)
+
+Imperative Shell module that runs once at startup via `seedSelfDoc(store)`. Checks whether the `self` document already contains a `<!-- seeded-from-persona -->` marker. If not, appends domain knowledge content (identity, obsidian vault conventions, skills, scheduling, file ingestion) to the existing `self` document. This is a one-time migration — subsequent runs are no-ops.
 
 ### Sandbox IPC (`src/runtime/executor.ts`)
 
@@ -76,7 +86,7 @@ The agent's memory is a flat document store: `rkey → content`. Conventional rk
 - `task:<name>` — task state
 - `archive:<timestamp>` — context compaction snapshots
 
-The `self` document is auto-loaded via `loadCoreMemoryFromStore()` in `context.ts`. The `operator` document is intentionally NOT auto-loaded to save tokens.
+The `self` document is auto-loaded each turn: `agent.ts` reads it via `store.docGet('self')` and passes it to `buildSystemPrompt()` as the `selfDoc` parameter. On first run, `seedSelfDoc()` populates it with domain knowledge migrated from the former `persona.md`. The `operator` document is intentionally NOT auto-loaded to save tokens.
 
 Context compaction (`src/agent/compaction.ts`) triggers when token estimates exceed `contextBudget × contextLimit`. It saves the current conversation as an `archive:<timestamp>` document, then rebuilds context from a summary of older context docs + the 3 most recent in full.
 
@@ -98,7 +108,7 @@ In-process cron via `croner`. Accepts cron expressions or human intervals (`6h`,
 
 ### Configuration (`src/config/`)
 
-`config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable. Recall is configured under `[agent]`: `recallEnabled` (default `false`) and `recallTokenBudget` (default `1500`).
+`config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable. Recall is configured under `[agent]`: `recallEnabled` (default `false`) and `recallTokenBudget` (default `1500`). `devMode` (default `false`) auto-approves skills and custom tools with all secrets — intended for development only.
 
 ### Reflexive Recall (`src/recall/`)
 
@@ -108,7 +118,7 @@ Automatic context retrieval pipeline that runs on each `chat()` call (when `reca
 - **Decomposition** (`decompose.ts` + `decompose-message.ts`) — Decomposes user message into semantic queries (1-4) and named entities via SubAgentLLM. Functional Core parses/validates JSON response; Imperative Shell handles LLM call.
 - **Retrieval** (`retrieve.ts`) — Functional Core. Runs semantic queries via `hybridSearch` (up to 5 results per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `archive:`), sorts by score, and trims to token budget. Returns `RecallResult`.
 
-Recalled fragments are injected into the system prompt as a `## Recalled Context` section via `buildSystemPrompt()`. The `systemPromptProvider` callback signature accepts an optional `recalledContext` parameter.
+Recalled fragments are injected into the system prompt as a `## Recalled Context` section via `buildSystemPrompt()` in `src/agent/prompt.ts`, passed as the `recalledContext` field of `SystemPromptParams`.
 
 ### Interfaces
 
