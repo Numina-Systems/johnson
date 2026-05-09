@@ -1,13 +1,29 @@
 # CLAUDE.md
 
+Last verified: 2026-05-09
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Commands
 
 ```bash
-bun start          # Run the agent (TUI by default)
+# Full project (requires just)
+just build         # Build TS backend + Go TUI
+just test          # Run all tests (TS + Go)
+just dev           # Run Go TUI in dev mode (no build)
+just dev-discord   # Run Go TUI + Discord bot
+just discord       # Run Discord-only (no TUI)
+just clean         # Remove dist/ and bin/
+just fmt           # Format Go code
+
+# TypeScript backend only
 bun run build      # Bundle to dist/ targeting Bun
-bun test           # Run tests
+bun test           # Run TS tests
+bun run src/index.ts --interface jsonrpc  # Run backend in JSON-RPC mode
+
+# Go TUI only (from tui/)
+go build -o ../bin/constellation-tui ./cmd/constellation-tui/
+go test ./...
 ```
 
 No linter is configured. TypeScript strict mode is enforced via `tsconfig.json`.
@@ -18,7 +34,9 @@ constellation-lite is a code-first AI agent. The model's primary tool is `execut
 
 ### Dependency Wiring (`src/index.ts`)
 
-`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), calls `seedSelfDoc(store)` to seed domain knowledge on first run, then calls `makeAgent()` per-interface. Discord gets one agent per channel; TUI gets one agent for the session. `workingDir` (from `process.cwd()`) is passed via `AgentDependencies` so tools can resolve workspace-relative paths safely.
+`main()` is the imperative shell that wires everything together. It creates one shared instance of each service (model, runtime, store, embedding, scheduler), calls `seedSelfDoc(store)` to seed domain knowledge on first run, then creates per-interface agents. The `--interface` CLI flag (parsed by `src/config/cli.ts`) selects the mode: `tui` (legacy Ink), `jsonrpc` (Go TUI backend), `discord`, or `both` (jsonrpc + discord). Each interface gets its own `Agent` instance with independent in-memory history. Discord gets one shared agent per channel; JSON-RPC and TUI each get a dedicated agent. `workingDir` (from `process.cwd()`) is passed via `AgentDependencies` so tools can resolve workspace-relative paths safely.
+
+In `jsonrpc` or `both` mode, `enforceStdoutDiscipline()` redirects all `console.log/info/warn/debug` to stderr before any output, reserving stdout exclusively for JSON-RPC messages.
 
 ### Agent Loop (`src/agent/agent.ts`)
 
@@ -77,6 +95,8 @@ Tools are organized into domain-specific modules under `src/tools/`, each export
 
 Single SQLite database at `data/constellation.db` (via `bun:sqlite`). Stores documents (unified notes + skills) with FTS5 full-text search, embeddings (Float32 blobs), sessions/messages, scheduled tasks, and grants. WAL mode is always on.
 
+The store exposes cursor-based pagination for sessions (`listSessionsPaginated`) and messages (`getMessagesPaginated`), used by JSON-RPC handlers. Session cursors encode `updated_at|id` (keyset pagination, DESC order); message cursors encode the last `id` (ASC order). Both fetch `limit + 1` rows to detect whether a next page exists.
+
 ### Documents & Memory
 
 The agent's memory is a flat document store: `rkey → content`. Conventional rkey prefixes provide structure:
@@ -110,6 +130,8 @@ In-process cron via `croner`. Accepts cron expressions or human intervals (`6h`,
 
 `config.toml` is the single config file. `loadConfig()` accepts both `camelCase` and `snake_case` TOML keys (via the `pick()` helper). All API keys and base URLs can be overridden by environment variables. Embedding and Discord are optional — the agent starts normally if they're unavailable. Recall is configured under `[agent]`: `recallEnabled` (default `false`) and `recallTokenBudget` (default `1500`). `devMode` (default `false`) auto-approves skills and custom tools with all secrets — intended for development only.
 
+`InterfaceMode` is `'tui' | 'discord' | 'both' | 'jsonrpc'`. The `--interface <mode>` CLI flag overrides the config file value. `'both'` means `jsonrpc + discord` (the Go TUI spawns the backend in `both` mode via `--with-discord`). The legacy Ink TUI uses `'tui'` mode directly.
+
 ### Reflexive Recall (`src/recall/`)
 
 Automatic context retrieval pipeline that runs on each `chat()` call (when `recallEnabled` is true). Entry point: `performRecall(message, deps) → RecallResult | null`.
@@ -122,14 +144,9 @@ Recalled fragments are injected into the system prompt as a `## Recalled Context
 
 ### Interfaces
 
-- **TUI** (`src/tui/`): Ink/React terminal UI with stack-based navigation. `App.tsx` is the navigation shell routing between 6 screens in `src/tui/screens/`:
-  - **Sessions** — list/create sessions (home screen)
-  - **Chat** — conversation interface
-  - **Tools** — manage skills, custom tools, and built-in tool listings (replaced the old `ReviewPage.tsx`)
-  - **Secrets** — add/remove secrets via `SecretManager`
-  - **Schedules** — view scheduled tasks
-  - **SystemPrompt** — inspect the current system prompt
-  Global navigation keybindings: `t` (tools), `s` (secrets), `c` (schedules), `p` (prompt), `Escape` (back), `q` (quit).
+- **Go TUI** (`tui/`): Bubble Tea terminal UI that communicates with the TS backend over JSON-RPC 2.0 via stdin/stdout. The Go binary spawns the TS backend as a child process (`bun run src/index.ts --interface jsonrpc`), waits for a `ready` notification, then drives all interaction through RPC calls. See `tui/CLAUDE.md` for architecture details. Same 6-screen layout as the legacy TUI: Sessions, Chat, Tools, Secrets, Schedules, SystemPrompt. Global keybindings: `ctrl+t` (tools), `ctrl+s` (secrets), `ctrl+d` (schedules), `ctrl+p` (prompt), `escape` (back), `ctrl+c` (quit). Discord coexistence: `--with-discord` flag spawns the backend in `both` mode.
+- **JSON-RPC Backend** (`src/jsonrpc/`): Line-delimited JSON-RPC 2.0 server on stdin/stdout, used by the Go TUI. Provides 21 handlers across 8 namespaces: session, agent, skill, customTool, grant, builtin, secret, schedule, prompt. See `src/jsonrpc/CLAUDE.md` for the protocol contract.
+- **Legacy TUI** (`src/tui/`): Ink/React terminal UI, still functional via `--interface tui`. Stack-based navigation with 6 screens. Global navigation keybindings: `t` (tools), `s` (secrets), `c` (schedules), `p` (prompt), `Escape` (back), `q` (quit).
 - **Discord** (`src/discord/bot.ts`): Per-channel agent instances. Responds to DMs unconditionally, guilds on mention or prefix. Splits long responses at 2000 chars.
 
 ## Key Patterns
