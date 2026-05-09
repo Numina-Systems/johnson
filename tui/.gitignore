@@ -1,0 +1,3 @@
+# Go build artifacts
+constellation-tui
+*.exe

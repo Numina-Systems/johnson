@@ -6,7 +6,7 @@ import { sendReady } from './notifications.ts';
 
 type JsonRpcResponse = {
   readonly jsonrpc: '2.0';
-  readonly id: number | string;
+  readonly id: number | string | null;
   readonly result?: unknown;
   readonly error?: {
     readonly code: number;
@@ -19,7 +19,7 @@ function sendResponse(response: JsonRpcResponse): void {
   process.stdout.write(JSON.stringify(response) + '\n');
 }
 
-function sendErrorResponse(id: number | string, code: number, message: string): void {
+function sendErrorResponse(id: number | string | null, code: number, message: string): void {
   sendResponse({ jsonrpc: '2.0', id, error: { code, message } });
 }
 
@@ -33,6 +33,10 @@ function isValidRequest(msg: unknown): msg is JsonRpcRequest {
   );
 }
 
+// Note: JSON-RPC notifications (requests without an 'id' field) are intentionally
+// unhandled in this phase. Only requests with an id are processed and responded to.
+// Incoming notifications are silently discarded.
+
 export function startJsonRpcServer(handlers: Record<string, MethodHandler>): void {
   const rl = readline.createInterface({ input: process.stdin });
 
@@ -44,12 +48,12 @@ export function startJsonRpcServer(handlers: Record<string, MethodHandler>): voi
     try {
       parsed = JSON.parse(trimmed);
     } catch {
-      sendErrorResponse(0, -32700, 'Parse error');
+      sendErrorResponse(null, -32700, 'Parse error');
       return;
     }
 
     if (!isValidRequest(parsed)) {
-      sendErrorResponse(0, -32600, 'Invalid Request');
+      sendErrorResponse(null, -32600, 'Invalid Request');
       return;
     }
 

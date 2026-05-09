@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/sourcegraph/jsonrpc2"
 )
 
 type Client struct {
 	conn  *jsonrpc2.Conn
-	mu    sync.Mutex
 	ready chan ReadyParams
 }
 

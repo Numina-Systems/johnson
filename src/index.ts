@@ -8,6 +8,7 @@
 
 import { resolve } from 'path';
 import { loadConfig } from './config/loader.ts';
+import { VALID_INTERFACE_MODES } from './config/types.ts';
 import { createModelProvider } from './model/index.ts';
 import { createSubAgent, wrapMainModel } from './model/sub-agent.ts';
 import type { SubAgentLLM } from './model/sub-agent.ts';
@@ -61,8 +62,7 @@ async function main(): Promise<void> {
 
   // Override interface mode if specified via CLI
   if (cliArgs.interfaceOverride) {
-    const validModes: ReadonlyArray<string> = ['tui', 'discord', 'both', 'jsonrpc'];
-    if (validModes.includes(cliArgs.interfaceOverride)) {
+    if (VALID_INTERFACE_MODES.includes(cliArgs.interfaceOverride as any)) {
       config = {...config, interface: cliArgs.interfaceOverride as typeof config.interface};
     }
   }

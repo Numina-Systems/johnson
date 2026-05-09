@@ -18,4 +18,7 @@ export function enforceStdoutDiscipline(): void {
   console.debug = (...args: ReadonlyArray<unknown>) => {
     stderrWrite(args.map(String).join(' ') + '\n');
   };
+
+  // Note: console.error is intentionally not overridden — Node.js/Bun already write
+  // console.error to stderr natively, so no redirection is needed.
 }

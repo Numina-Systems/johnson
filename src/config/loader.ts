@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import TOML from 'toml';
 import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig, RecallConfig } from './types.ts';
+import { VALID_INTERFACE_MODES } from './types.ts';
 
 type RawConfig = {
   model?: Partial<ModelConfig> & Record<string, unknown>;
@@ -147,9 +148,9 @@ export function loadConfig(configPath: string): AppConfig {
     : undefined;
 
   const rawInterface = raw.interface ?? 'tui';
-  const validModes: ReadonlyArray<string> = ['tui', 'discord', 'both', 'jsonrpc'];
-  const interfaceMode: InterfaceMode =
-    validModes.includes(rawInterface) ? rawInterface as InterfaceMode : 'tui';
+  const interfaceMode: InterfaceMode = VALID_INTERFACE_MODES.includes(rawInterface as InterfaceMode)
+    ? (rawInterface as InterfaceMode)
+    : 'tui';
 
   const recallEndpoint = pick(raw.recall, 'endpoint', '');
   const recall: RecallConfig | undefined = pick(raw.recall, 'enabled', false)

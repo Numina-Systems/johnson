@@ -64,6 +64,13 @@ export type RecallConfig = {
 
 export type InterfaceMode = 'tui' | 'discord' | 'both' | 'jsonrpc';
 
+export const VALID_INTERFACE_MODES: ReadonlyArray<InterfaceMode> = [
+  'tui',
+  'discord',
+  'both',
+  'jsonrpc',
+];
+
 export type AppConfig = {
   readonly model: ModelConfig;
   readonly runtime: RuntimeConfig;
