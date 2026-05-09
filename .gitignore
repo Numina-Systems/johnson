@@ -5,6 +5,7 @@ persona.md
 migrate-to-documents.sql
 /node_modules/
 /dist/
+/bin/
 .claude/
 .worktrees/
 src/runtime/deno/tools.ts
