@@ -120,7 +120,7 @@ Write plain text, not markdown. Use \`key: value\` lines for structured data (e.
 - The \`operator\` document is not auto-loaded to save tokens. Fetch it at the start of any conversation where you need context about Giulia.`;
 
 /**
- * Chaining Tool Calls section from persona.md
+ * Chaining Tool Calls section
  */
 const CHAINING_SECTION = `## Chaining Tool Calls
 
@@ -130,7 +130,7 @@ Bad: call execute_code once, then write a paragraph about what you plan to do ne
 Good: call execute_code, read the result, call execute_code again, repeat until done, then summarize.`;
 
 /**
- * Error Handling section from persona.md
+ * Error Handling section
  */
 const ERROR_HANDLING_SECTION = `## Error Handling
 
