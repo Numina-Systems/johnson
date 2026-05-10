@@ -16,6 +16,8 @@ function optStr(input: Record<string, unknown>, key: string): string | undefined
   return typeof val === 'string' ? val : undefined;
 }
 
+const VALID_FILTERS = new Set(['stale', 'active', 'delete', 'archive']);
+
 export function registerSessionTools(
   registry: ToolRegistry,
   deps: Readonly<AgentDependencies>,
@@ -41,14 +43,12 @@ export function registerSessionTools(
     },
     async (params) => {
       const filter = optStr(params, 'filter');
-      const sessions = deps.store.listSessionsWithCounts();
-      const now = new Date();
-
-      // Validate filter if provided
-      const VALID_FILTERS = new Set(['stale', 'active', 'delete', 'archive']);
       if (filter && !VALID_FILTERS.has(filter)) {
         throw new Error(`invalid filter value: ${filter}. Must be one of: stale, active, delete, archive`);
       }
+
+      const sessions = deps.store.listSessionsWithCounts();
+      const now = new Date();
 
       // Add classification to each session
       const sessionsWithClassification = sessions.map((session) => ({
