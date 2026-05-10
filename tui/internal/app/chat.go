@@ -48,6 +48,10 @@ type messagesLoadedMsg struct {
 	cursor   string
 }
 
+type messagesErrorMsg struct {
+	err error
+}
+
 type chatStartedMsg struct {
 	requestID string
 }
@@ -120,7 +124,7 @@ func (m *ChatModel) Init() tea.Cmd {
 			Limit:     50,
 		}, &result)
 		if err != nil {
-			return messagesLoadedMsg{messages: []protocol.MessageRow{}, cursor: ""}
+			return messagesErrorMsg{err: err}
 		}
 		return messagesLoadedMsg{messages: result.Messages, cursor: result.Cursor}
 	}
@@ -157,6 +161,10 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.messageCursor = msg.cursor
 		m.updateViewportContent()
+
+	case messagesErrorMsg:
+		m.status = fmt.Sprintf("Error: %v", msg.err)
+		m.spinning = false
 
 	case loadOlderMsg:
 		oldLineCount := m.viewport.TotalLineCount()

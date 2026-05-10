@@ -559,6 +559,23 @@ func TestChatModel_View_ShowsThinkingStatus(t *testing.T) {
 	}
 }
 
+func TestChatModel_MessagesErrorSetsStatus(t *testing.T) {
+	client := newChatClient()
+	model := NewChatModel(client, "session-123")
+
+	msg := messagesErrorMsg{err: fmt.Errorf("connection refused")}
+
+	_, _ = model.Update(msg)
+
+	if !strContains(model.status, "Error") {
+		t.Errorf("expected status to contain 'Error', got %q", model.status)
+	}
+
+	if !strContains(model.status, "connection refused") {
+		t.Errorf("expected status to contain error message, got %q", model.status)
+	}
+}
+
 func TestChatModel_Update_KeyPressMsg_Up_NoScroll(t *testing.T) {
 	client := newChatClient()
 	model := NewChatModel(client, "session-123")
