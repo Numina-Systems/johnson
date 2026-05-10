@@ -39,13 +39,20 @@ type ToolsModel struct {
 }
 
 func NewToolsModel(client *protocol.Client) *ToolsModel {
+	skillDelegate := list.NewDefaultDelegate()
+	skillDelegate.SetSpacing(0)
+	customDelegate := list.NewDefaultDelegate()
+	customDelegate.SetSpacing(0)
+	builtinDelegate := list.NewDefaultDelegate()
+	builtinDelegate.SetSpacing(0)
+
 	m := &ToolsModel{
 		client:      client,
 		tabs:        []string{"Skills", "Custom Tools", "Builtins"},
 		activeTab:   0,
-		skillList:   list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20),
-		customList:  list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20),
-		builtinList: list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 20),
+		skillList:   list.New([]list.Item{}, skillDelegate, 80, 20),
+		customList:  list.New([]list.Item{}, customDelegate, 80, 20),
+		builtinList: list.New([]list.Item{}, builtinDelegate, 80, 20),
 		mode:        toolsModeList,
 		codeViewer:  viewport.New(),
 		width:       80,
