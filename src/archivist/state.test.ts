@@ -214,21 +214,21 @@ describe('state module', () => {
   });
 
   describe('createEmptySnapshot', () => {
-    test('creates snapshot with current ISO timestamp', () => {
-      const snapshot = createEmptySnapshot();
+    test('creates snapshot with provided ISO timestamp', () => {
+      const timestamp = '2026-05-10T12:34:56.789Z';
+      const snapshot = createEmptySnapshot(timestamp);
 
-      expect(snapshot.lastRun).toBeTruthy();
-      expect(() => new Date(snapshot.lastRun)).not.toThrow();
+      expect(snapshot.lastRun).toBe(timestamp);
     });
 
     test('creates snapshot with incremental mode', () => {
-      const snapshot = createEmptySnapshot();
+      const snapshot = createEmptySnapshot('2026-05-10T12:34:56.789Z');
 
       expect(snapshot.mode).toBe('incremental');
     });
 
     test('creates snapshot with empty documents', () => {
-      const snapshot = createEmptySnapshot();
+      const snapshot = createEmptySnapshot('2026-05-10T12:34:56.789Z');
 
       expect(snapshot.documents).toEqual({});
     });

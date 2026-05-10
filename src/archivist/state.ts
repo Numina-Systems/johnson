@@ -50,9 +50,9 @@ export function filterMutable(changeSet: ChangeSet): ChangeSet {
   };
 }
 
-export function createEmptySnapshot(): ArchivistSnapshot {
+export function createEmptySnapshot(timestamp: string): ArchivistSnapshot {
   return {
-    lastRun: new Date().toISOString(),
+    lastRun: timestamp,
     mode: 'incremental',
     documents: {},
   };
