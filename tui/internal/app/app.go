@@ -212,23 +212,35 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "sessions":
 			if m.sessions == nil {
 				m.sessions = NewSessionsModel(m.client)
+				m.sessions.width = m.width
+				m.sessions.height = m.height
 			}
 			m.pushScreen(ScreenSessions)
 			return m, m.sessions.Init()
 		case "tools":
 			m.tools = NewToolsModel(m.client)
+			m.tools.width = m.width
+			m.tools.height = m.height
 			m.pushScreen(ScreenTools)
 			return m, m.tools.Init()
 		case "secrets":
 			m.secrets = NewSecretsModel(m.client)
+			m.secrets.width = m.width
+			m.secrets.height = m.height
 			m.pushScreen(ScreenSecrets)
 			return m, m.secrets.Init()
 		case "schedules":
 			m.schedules = NewSchedulesModel(m.client)
+			m.schedules.width = m.width
+			m.schedules.height = m.height
 			m.pushScreen(ScreenSchedules)
 			return m, m.schedules.Init()
 		case "prompt":
 			m.prompt = NewPromptModel(m.client)
+			m.prompt.width = m.width
+			m.prompt.height = m.height
+			m.prompt.viewport.SetWidth(m.width)
+			m.prompt.viewport.SetHeight(m.height - 4)
 			m.pushScreen(ScreenPrompt)
 			return m, m.prompt.Init()
 		case "new":
