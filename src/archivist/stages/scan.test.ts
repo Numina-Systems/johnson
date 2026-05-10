@@ -234,6 +234,70 @@ describe('scan stage', () => {
       expect(result.changeSet.added).not.toContain('skill:test');
       expect(result.changeSet.added).not.toContain('customtool:foo');
     });
+
+    test('filters skill: prefix from modified mutations', () => {
+      const store = createStore(':memory:');
+      store.docUpsert('skill:my-skill', 'new-content');
+      store.docUpsert('knowledge:doc1', 'doc-content');
+
+      // Save snapshot with old skill content and matching doc1
+      const snapshot = createEmptySnapshot('2026-05-10T00:00:00Z');
+      const docHash = createHash('sha256').update('doc-content').digest('hex');
+      saveSnapshot(store, {
+        ...snapshot,
+        documents: { 'skill:my-skill': 'old-skill-hash', 'knowledge:doc1': docHash },
+      });
+
+      const result = scan(store, 'incremental');
+
+      // Skill should NOT appear in modified (filtered out), doc1 unchanged
+      expect(result.changeSet.modified).not.toContain('skill:my-skill');
+      expect(result.changeSet.added).toEqual([]);
+      expect(result.changeSet.deleted).toEqual([]);
+      expect(result.changeSet.unchanged).toContain('knowledge:doc1');
+    });
+
+    test('filters ref: prefix from deleted mutations', () => {
+      const store = createStore(':memory:');
+      store.docUpsert('knowledge:doc1', 'doc-content');
+
+      // Save snapshot with a ref: doc that was removed
+      const snapshot = createEmptySnapshot('2026-05-10T00:00:00Z');
+      const docHash = createHash('sha256').update('doc-content').digest('hex');
+      saveSnapshot(store, {
+        ...snapshot,
+        documents: { 'ref:book': 'ref-hash', 'knowledge:doc1': docHash },
+      });
+
+      const result = scan(store, 'incremental');
+
+      // ref:book should NOT appear in deleted (filtered out)
+      expect(result.changeSet.deleted).not.toContain('ref:book');
+      expect(result.changeSet.added).toEqual([]);
+      expect(result.changeSet.modified).toEqual([]);
+      expect(result.changeSet.unchanged).toContain('knowledge:doc1');
+    });
+
+    test('filters customtool: prefix from deleted mutations', () => {
+      const store = createStore(':memory:');
+      store.docUpsert('knowledge:doc1', 'doc-content');
+
+      // Save snapshot with a customtool: doc that was removed
+      const snapshot = createEmptySnapshot('2026-05-10T00:00:00Z');
+      const docHash = createHash('sha256').update('doc-content').digest('hex');
+      saveSnapshot(store, {
+        ...snapshot,
+        documents: { 'customtool:my-tool': 'tool-hash', 'knowledge:doc1': docHash },
+      });
+
+      const result = scan(store, 'incremental');
+
+      // customtool:my-tool should NOT appear in deleted (filtered out)
+      expect(result.changeSet.deleted).not.toContain('customtool:my-tool');
+      expect(result.changeSet.added).toEqual([]);
+      expect(result.changeSet.modified).toEqual([]);
+      expect(result.changeSet.unchanged).toContain('knowledge:doc1');
+    });
   });
 
   describe('state persistence', () => {

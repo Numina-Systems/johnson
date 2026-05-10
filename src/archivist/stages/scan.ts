@@ -3,15 +3,13 @@
 import { createHash } from 'node:crypto';
 import type { Store } from '@/store/store.ts';
 import type { ChangeSet, PipelineMode, StageResult } from '../types.ts';
-import { computeChangeSet, filterMutable, loadSnapshot } from '../state.ts';
+import { computeChangeSet, filterMutable, loadSnapshot, STATE_RKEY } from '../state.ts';
 
 export type ScanResult = {
   readonly changeSet: ChangeSet;
   readonly currentHashes: Record<string, string>;
   readonly stageResult: StageResult;
 };
-
-const ARCHIVIST_STATE_RKEY = 'archivist:state';
 
 function hashContent(content: string): string {
   return createHash('sha256').update(content).digest('hex');
@@ -25,7 +23,7 @@ export function scan(store: Store, mode: PipelineMode): ScanResult {
     const page = store.docList(500, cursor);
     for (const doc of page.documents) {
       // Skip internal state document
-      if (doc.rkey === ARCHIVIST_STATE_RKEY) continue;
+      if (doc.rkey === STATE_RKEY) continue;
       currentHashes[doc.rkey] = hashContent(doc.content);
     }
     cursor = page.cursor;
