@@ -49,7 +49,7 @@ func TestNewAppModel_InitialState(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	if app.activeScreen != ScreenSessions {
 		t.Errorf("activeScreen: got %v, want ScreenSessions", app.activeScreen)
@@ -71,7 +71,7 @@ func TestNewAppModel_InitialState(t *testing.T) {
 func TestAppModel_SlashToolsPushesScreenTools(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "tools"}
 	_, _ = app.Update(msg)
@@ -92,7 +92,7 @@ func TestAppModel_SlashToolsPushesScreenTools(t *testing.T) {
 func TestAppModel_SlashSecretsPushesScreenSecrets(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "secrets"}
 	_, _ = app.Update(msg)
@@ -113,7 +113,7 @@ func TestAppModel_SlashSecretsPushesScreenSecrets(t *testing.T) {
 func TestAppModel_SlashSchedulesPushesScreenSchedules(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "schedules"}
 	_, _ = app.Update(msg)
@@ -134,7 +134,7 @@ func TestAppModel_SlashSchedulesPushesScreenSchedules(t *testing.T) {
 func TestAppModel_SlashPromptPushesScreenPrompt(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "prompt"}
 	_, _ = app.Update(msg)
@@ -155,7 +155,7 @@ func TestAppModel_SlashPromptPushesScreenPrompt(t *testing.T) {
 func TestAppModel_EscapePopScreen(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	// Push ScreenTools via slash command
 	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
@@ -179,7 +179,7 @@ func TestAppModel_EscapePopScreen(t *testing.T) {
 func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	// Push ScreenTools via slash command
 	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
@@ -223,7 +223,7 @@ func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 func TestAppModel_BackendCrashedSetsFlag(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	testErr := fmt.Errorf("connection refused")
 	msg := backendCrashedMsg{err: testErr}
@@ -241,7 +241,7 @@ func TestAppModel_BackendCrashedSetsFlag(t *testing.T) {
 func TestAppModel_CrashRecoveryViewShowsText(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	testErr := fmt.Errorf("backend error")
 	msg := backendCrashedMsg{err: testErr}
@@ -267,7 +267,7 @@ func TestAppModel_CrashRecoveryViewShowsText(t *testing.T) {
 func TestAppModel_CtrlCQuits(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl})
 	_, cmd := app.Update(msg)
@@ -287,7 +287,7 @@ func TestAppModel_CtrlCQuits(t *testing.T) {
 func TestAppModel_EscapeAtRootDoesNothing(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	// We're already at ScreenSessions (root)
 	if app.activeScreen != ScreenSessions {
@@ -313,7 +313,7 @@ func TestNewAppModel_WithInitialSession(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	if app.activeScreen != ScreenChat {
 		t.Errorf("activeScreen: got %v, want ScreenChat", app.activeScreen)
@@ -339,7 +339,7 @@ func TestNewAppModel_WithInitialSession(t *testing.T) {
 func TestAppModel_SlashSessionsPushesScreenSessions(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	if app.activeScreen != ScreenChat {
 		t.Errorf("setup: activeScreen got %v, want ScreenChat", app.activeScreen)
@@ -364,7 +364,7 @@ func TestAppModel_SlashSessionsPushesScreenSessions(t *testing.T) {
 func TestAppModel_NewSessionReplacesChat(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	initialStackLen := len(app.screenStack)
 
@@ -387,7 +387,7 @@ func TestAppModel_NewSessionReplacesChat(t *testing.T) {
 func TestAppModel_UnknownSlashCommandIgnored(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "foo"}
 	_, cmd := app.Update(msg)
@@ -404,7 +404,7 @@ func TestAppModel_UnknownSlashCommandIgnored(t *testing.T) {
 func TestAppModel_SessionSelectionPopsSessionsScreen(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	// Push sessions
 	msg := SlashCommandMsg{Command: "sessions"}
@@ -434,7 +434,7 @@ func TestAppModel_SessionSelectionPopsSessionsScreen(t *testing.T) {
 func TestAppModel_DeepStackUnwind(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	// Stack: [Chat]
 	if len(app.screenStack) != 1 {
@@ -477,7 +477,7 @@ func TestAppModel_DeepStackUnwind(t *testing.T) {
 func TestAppModel_EscapeOnRootChatDoesNothing(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	if app.activeScreen != ScreenChat {
 		t.Errorf("setup: activeScreen got %v, want ScreenChat", app.activeScreen)
@@ -501,7 +501,7 @@ func TestAppModel_EscapeOnRootChatDoesNothing(t *testing.T) {
 func TestAppModel_WindowSizeMsg_WithInitialSession(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	if app.sessions != nil {
 		t.Errorf("sessions: got initialized, want nil (app started with initial session)")
@@ -538,7 +538,7 @@ func TestAppModel_WindowSizeMsg_WithInitialSession(t *testing.T) {
 func TestAppModel_SlashBackPopsScreen(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "test-session-123")
+	app := NewAppModel(client, backend, "test-session-123", nil)
 
 	// Push a screen (e.g., tools)
 	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
@@ -562,7 +562,7 @@ func TestAppModel_SlashBackPopsScreen(t *testing.T) {
 func TestAppModel_SlashQuitReturnsCmd(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "quit"}
 	_, cmd := app.Update(msg)
@@ -580,7 +580,7 @@ func TestAppModel_SlashQuitReturnsCmd(t *testing.T) {
 func TestAppModel_SlashNewReturnsCmd(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
-	app := NewAppModel(client, backend, "")
+	app := NewAppModel(client, backend, "", nil)
 
 	msg := SlashCommandMsg{Command: "new"}
 	_, cmd := app.Update(msg)

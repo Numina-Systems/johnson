@@ -24,11 +24,12 @@ func main() {
 	defer cancel()
 
 	proc := backend.NewBackendProcess("..", *withDiscord)
-	stdout, stdin, err := proc.Start(ctx)
+	stdout, stdin, stderr, err := proc.Start(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to start backend: %v\n", err)
 		os.Exit(1)
 	}
+	// stderr is passed to AppModel for Bubble Tea-managed rendering
 
 	client, err := protocol.NewClient(ctx, stdout, stdin)
 	if err != nil {
@@ -59,7 +60,7 @@ func main() {
 		initialSessionID = createResult.ID
 	}
 
-	appModel := app.NewAppModel(client, proc, initialSessionID)
+	appModel := app.NewAppModel(client, proc, initialSessionID, stderr)
 	p := tea.NewProgram(appModel)
 
 	if _, err := p.Run(); err != nil {

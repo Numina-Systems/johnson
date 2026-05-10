@@ -2,12 +2,18 @@
 package app
 
 import (
+	"bufio"
 	"constellation-tui/internal/backend"
 	"constellation-tui/internal/protocol"
 	"context"
 	"fmt"
+	"io"
 	tea "charm.land/bubbletea/v2"
 )
+
+type BackendLogMsg struct {
+	Line string
+}
 
 type ScreenType int
 
@@ -23,6 +29,7 @@ const (
 type AppModel struct {
 	client       *protocol.Client
 	backend      *backend.BackendProcess
+	stderrReader io.Reader
 	activeScreen ScreenType
 	screenStack  []ScreenType
 	sessions     *SessionsModel
@@ -57,10 +64,11 @@ type newSessionErrorMsg struct {
 	err error
 }
 
-func NewAppModel(client *protocol.Client, backend *backend.BackendProcess, initialSessionID string) *AppModel {
+func NewAppModel(client *protocol.Client, backend *backend.BackendProcess, initialSessionID string, stderrReader io.Reader) *AppModel {
 	m := &AppModel{
-		client:  client,
-		backend: backend,
+		client:       client,
+		backend:      backend,
+		stderrReader: stderrReader,
 	}
 
 	if initialSessionID != "" {
@@ -78,6 +86,9 @@ func NewAppModel(client *protocol.Client, backend *backend.BackendProcess, initi
 
 func (m *AppModel) Init() tea.Cmd {
 	cmds := []tea.Cmd{watchBackend(m.backend)}
+	if m.stderrReader != nil {
+		cmds = append(cmds, WatchStderr(m.stderrReader))
+	}
 	if m.chat != nil {
 		cmds = append(cmds, m.chat.Init())
 	}
@@ -95,16 +106,27 @@ func watchBackend(proc *backend.BackendProcess) tea.Cmd {
 	}
 }
 
+func WatchStderr(r io.Reader) tea.Cmd {
+	return func() tea.Msg {
+		scanner := bufio.NewScanner(r)
+		if scanner.Scan() {
+			return BackendLogMsg{Line: scanner.Text()}
+		}
+		return nil
+	}
+}
+
 func restartBackend(m *AppModel) tea.Cmd {
 	return func() tea.Msg {
 		// Use context.Background() to ensure restart completes even during shutdown
 		ctx := context.Background()
 
 		// Restart the process
-		stdout, stdin, err := m.backend.Restart(ctx)
+		stdout, stdin, stderr, err := m.backend.Restart(ctx)
 		if err != nil {
 			return backendCrashedMsg{err: fmt.Errorf("failed to restart backend: %w", err)}
 		}
+		m.stderrReader = stderr
 
 		// Create new protocol client
 		newClient, err := protocol.NewClient(ctx, stdout, stdin)
@@ -241,6 +263,13 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.status = fmt.Sprintf("Error: failed to create session: %v", msg.err)
 		}
 		return m, nil
+
+	case BackendLogMsg:
+		if m.chat != nil && !m.chat.spinning {
+			m.chat.status = msg.Line
+			m.chat.statusError = false
+		}
+		return m, WatchStderr(m.stderrReader)
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width

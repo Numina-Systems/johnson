@@ -4,7 +4,6 @@ package backend
 import (
 	"context"
 	"io"
-	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -28,7 +27,7 @@ func NewBackendProcess(workDir string, withDiscord bool) *BackendProcess {
 	}
 }
 
-func (b *BackendProcess) Start(ctx context.Context) (io.ReadCloser, io.WriteCloser, error) {
+func (b *BackendProcess) Start(ctx context.Context) (stdout io.ReadCloser, stdin io.WriteCloser, stderr io.ReadCloser, err error) {
 	// Create a child context with cancel for lifecycle management
 	childCtx, cancel := context.WithCancel(ctx)
 	b.cancel = cancel
@@ -44,32 +43,35 @@ func (b *BackendProcess) Start(ctx context.Context) (io.ReadCloser, io.WriteClos
 	b.cmd.Dir = b.workDir
 
 	// Create pipes for stdin/stdout (JSON-RPC transport)
-	stdin, err := b.cmd.StdinPipe()
+	stdin, err = b.cmd.StdinPipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	stdout, err := b.cmd.StdoutPipe()
+	stdout, err = b.cmd.StdoutPipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	// Pipe stderr to process stderr
-	b.cmd.Stderr = os.Stderr
+	// Capture stderr via pipe (caller reads it to avoid terminal corruption)
+	stderr, err = b.cmd.StderrPipe()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	// Start the process
-	if err := b.cmd.Start(); err != nil {
-		return nil, nil, err
+	if err = b.cmd.Start(); err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Launch goroutine that waits for process exit
 	go func() {
-		err := b.cmd.Wait()
-		b.exited <- err
+		waitErr := b.cmd.Wait()
+		b.exited <- waitErr
 		close(b.done)
 	}()
 
-	return stdout, stdin, nil
+	return stdout, stdin, stderr, nil
 }
 
 func (b *BackendProcess) Shutdown(timeout time.Duration) error {
@@ -99,7 +101,7 @@ func (b *BackendProcess) Done() <-chan struct{} {
 	return b.done
 }
 
-func (b *BackendProcess) Restart(ctx context.Context) (io.ReadCloser, io.WriteCloser, error) {
+func (b *BackendProcess) Restart(ctx context.Context) (io.ReadCloser, io.WriteCloser, io.ReadCloser, error) {
 	// Kill old process if still running
 	if b.cmd != nil && b.cmd.Process != nil {
 		b.cmd.Process.Kill()
