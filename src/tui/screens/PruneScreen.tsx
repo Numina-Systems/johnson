@@ -3,20 +3,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { Store } from '../../store/store.ts';
-import type { SubAgentLLM } from '../../model/sub-agent.ts';
-import type { EmbeddingProvider } from '../../embedding/types.ts';
 import type { SessionWithCounts, SessionClassification, PruneResult } from '../../sessions/types.ts';
 import { classifySession } from '../../sessions/archive.ts';
 import { archiveSession } from '../../sessions/archiver.ts';
 import { formatDate } from '../util.ts';
 import { theme } from '../theme.ts';
 import ScreenLayout from '../ScreenLayout.tsx';
-import StatusBar from '../StatusBar.tsx';
 
 type PruneScreenProps = {
   readonly store: Store;
-  readonly subAgent?: SubAgentLLM;
-  readonly embedding?: EmbeddingProvider;
   readonly onBack: () => void;
   readonly onSubModeChange?: (active: boolean) => void;
 };
@@ -37,8 +32,8 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
   const [result, setResult] = useState<PruneResult | null>(null);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // Load sessions on mount
-  useEffect(() => {
+  // Load sessions from store
+  const loadSessions = useCallback(() => {
     const rows = store.listSessionsWithCounts();
     const enriched: Array<EnrichedSession> = rows.map((s) => ({
       ...s,
@@ -47,6 +42,11 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
     setSessions(enriched);
     setSelectedIdx((idx) => Math.min(idx, Math.max(0, enriched.length - 1)));
   }, [store]);
+
+  // Load sessions on mount
+  useEffect(() => {
+    loadSessions();
+  }, [loadSessions]);
 
   // Notify parent of sub-mode changes
   useEffect(() => {
@@ -74,6 +74,7 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
   }, [sessions]);
 
   const handleExecute = useCallback(async () => {
+    setStatusMsg('');
     setMode('executing');
     const details: Array<{
       id: string;
@@ -84,6 +85,7 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
 
     let deleted = 0;
     let archived = 0;
+    let errors = 0;
 
     for (const sessionId of selected) {
       const session = sessions.find((s) => s.id === sessionId);
@@ -111,6 +113,7 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
           });
         }
       } catch (error) {
+        errors++;
         setStatusMsg(`Error processing ${session.title || 'session'}: ${String(error)}`);
       }
     }
@@ -119,14 +122,17 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
       deleted,
       archived,
       details,
+      errors,
     };
 
     setResult(pruneResult);
     setSelected(new Set());
+    loadSessions();
     setMode('select');
-  }, [selected, sessions, store]);
+  }, [selected, sessions, store, loadSessions]);
 
   const handleConfirm = useCallback(() => {
+    setStatusMsg('');
     const toArchive = sessions.filter((s) => selected.has(s.id) && s.messageCount > 0).length;
     const toDelete = sessions.filter((s) => selected.has(s.id) && s.messageCount === 0).length;
 
@@ -186,11 +192,22 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
   });
 
   if (sessions.length === 0) {
+    const emptyHeader = (
+      <Box paddingX={1}>
+        <Text bold color={theme.heading}>
+          Prune Sessions
+        </Text>
+      </Box>
+    );
     return (
-      <ScreenLayout title="Prune Sessions">
-        <Box flexDirection="column" paddingX={1}>
-          <Text color={theme.dim}>No sessions to prune.</Text>
-        </Box>
+      <ScreenLayout
+        header={emptyHeader}
+        headerHeight={1}
+        statusKeys={[
+          { key: 'esc', label: 'back' },
+        ]}
+      >
+        <Text color={theme.dim}>No sessions to prune.</Text>
       </ScreenLayout>
     );
   }
@@ -199,31 +216,80 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
   const toDelete = sessions.filter((s) => selected.has(s.id) && s.messageCount === 0).length;
 
   if (mode === 'confirm') {
+    const confirmHeader = (
+      <Box paddingX={1}>
+        <Text bold color={theme.heading}>
+          Prune Sessions — Confirm
+        </Text>
+      </Box>
+    );
     return (
-      <ScreenLayout title="Prune Sessions — Confirm">
-        <Box flexDirection="column" paddingX={1}>
-          <Text color={theme.warning}>
-            Archive {toArchive} session{toArchive !== 1 ? 's' : ''}, delete {toDelete} session
-            {toDelete !== 1 ? 's' : ''}. Proceed? (y/n)
-          </Text>
-        </Box>
+      <ScreenLayout
+        header={confirmHeader}
+        headerHeight={1}
+        statusKeys={[
+          { key: 'y', label: 'confirm' },
+          { key: 'n', label: 'cancel' },
+        ]}
+        statusText={`Archive ${toArchive} session${toArchive !== 1 ? 's' : ''}, delete ${toDelete} session${toDelete !== 1 ? 's' : ''}. Proceed? (y/n)`}
+      >
+        <Box />
       </ScreenLayout>
     );
   }
 
   if (mode === 'executing') {
+    const executingHeader = (
+      <Box paddingX={1}>
+        <Text bold color={theme.heading}>
+          Prune Sessions — Executing
+        </Text>
+      </Box>
+    );
     return (
-      <ScreenLayout title="Prune Sessions — Executing">
-        <Box flexDirection="column" paddingX={1}>
-          <Text color={theme.accent}>Processing {selected.size} session(s)…</Text>
-        </Box>
+      <ScreenLayout
+        header={executingHeader}
+        headerHeight={1}
+        statusKeys={[]}
+      >
+        <Text color={theme.accent}>Processing {selected.size} session(s)…</Text>
       </ScreenLayout>
     );
   }
 
   // select mode
+  const selectHeader = (
+    <Box paddingX={1}>
+      <Text bold color={theme.heading}>
+        Prune Sessions
+      </Text>
+    </Box>
+  );
+
+  const resultFooter = result ? (
+    <Box flexDirection="column" paddingX={1} paddingTop={1}>
+      <Text color={theme.success}>
+        ✓ Archived {result.archived}, deleted {result.deleted}
+        {result.errors ? `, ${result.errors} error${result.errors !== 1 ? 's' : ''}` : ''}
+      </Text>
+    </Box>
+  ) : undefined;
+
   return (
-    <ScreenLayout title="Prune Sessions">
+    <ScreenLayout
+      header={selectHeader}
+      headerHeight={1}
+      statusKeys={[
+        { key: 'j/k', label: 'move' },
+        { key: '␣', label: 'toggle' },
+        { key: 'a', label: 'select stale' },
+        { key: '⏎', label: 'execute' },
+        { key: 'esc', label: 'back' },
+      ]}
+      footer={resultFooter}
+      footerHeight={resultFooter ? 2 : 0}
+      statusText={statusMsg || undefined}
+    >
       <Box flexDirection="column" paddingX={1}>
         {sessions.map((session, idx) => {
           const isSelected = selected.has(session.id);
@@ -260,25 +326,6 @@ export default function PruneScreen(props: PruneScreenProps): React.ReactElement
           );
         })}
       </Box>
-
-      {result && (
-        <Box flexDirection="column" paddingX={1} paddingTop={1}>
-          <Text color={theme.success}>
-            ✓ Archived {result.archived}, deleted {result.deleted}
-          </Text>
-        </Box>
-      )}
-
-      <StatusBar
-        keys={[
-          { key: 'j/k', label: 'move' },
-          { key: '␣', label: 'toggle' },
-          { key: 'a', label: 'select stale' },
-          { key: '⏎', label: 'execute' },
-          { key: 'esc', label: 'back' },
-        ]}
-        status={statusMsg || undefined}
-      />
     </ScreenLayout>
   );
 }

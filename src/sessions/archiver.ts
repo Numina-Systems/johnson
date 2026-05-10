@@ -96,34 +96,41 @@ export async function pruneSessions(
 
   let deletedCount = 0;
   let archivedCount = 0;
+  let errorCount = 0;
 
   for (const session of sessions) {
     const classification = classifySession(session.messageCount, session.updatedAt, now_);
 
-    if (classification === 'delete') {
-      store.deleteSession(session.id);
-      deletedCount++;
-      details.push({
-        id: session.id,
-        title: session.title,
-        action: 'deleted',
-      });
-    } else if (classification === 'archive') {
-      const result = await archiveSession(session.id, store, subAgent, embedding, embeddingModel);
-      archivedCount++;
-      details.push({
-        id: session.id,
-        title: session.title,
-        action: 'archived',
-        rkey: result.rkey,
-      });
+    try {
+      if (classification === 'delete') {
+        store.deleteSession(session.id);
+        deletedCount++;
+        details.push({
+          id: session.id,
+          title: session.title,
+          action: 'deleted',
+        });
+      } else if (classification === 'archive') {
+        const result = await archiveSession(session.id, store, subAgent, embedding, embeddingModel);
+        archivedCount++;
+        details.push({
+          id: session.id,
+          title: session.title,
+          action: 'archived',
+          rkey: result.rkey,
+        });
+      }
+      // Skip 'active' sessions
+    } catch (error) {
+      errorCount++;
+      // Continue processing remaining sessions
     }
-    // Skip 'active' sessions
   }
 
   return {
     deleted: deletedCount,
     archived: archivedCount,
+    errors: errorCount,
     details,
   };
 }

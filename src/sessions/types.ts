@@ -18,6 +18,7 @@ export type ArchiveResult = {
 export type PruneResult = {
   readonly deleted: number;
   readonly archived: number;
+  readonly errors: number;
   readonly details: ReadonlyArray<{
     readonly id: string;
     readonly title: string | null;
