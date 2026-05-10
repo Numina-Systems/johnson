@@ -280,9 +280,10 @@ export function createDiscordBot(
         startMessage: msg,
         autoArchiveDuration: 1440, // 24 hours
       });
+      await thread.join();
       managedThreads.add(thread.id);
       store.addManagedThread(thread.id, msg.channelId);
-      log(`Created thread "${thread.name}" (${thread.id})`);
+      log(`Created and joined thread "${thread.name}" (${thread.id})`);
     } catch (err) {
       // Fall back to replying in-channel if thread creation fails
       log(`Failed to create thread, replying in-channel: ${err}`);
@@ -378,6 +379,21 @@ export function createDiscordBot(
       await client.login(config.token);
       log(`Logged in as ${client.user?.tag ?? 'unknown'}`);
       log(`Prefix: "${prefix}", DMs: enabled, channels: ${allowedSet ? [...allowedSet].join(', ') : 'all'}, users: ${allowedUsers ? [...allowedUsers].join(', ') : 'all'}`);
+
+      // Re-join persisted managed threads so we receive messages without being tagged
+      for (const threadId of managedThreads) {
+        try {
+          const channel = await client.channels.fetch(threadId);
+          if (channel && 'join' in channel) {
+            await (channel as ThreadChannel).join();
+          }
+        } catch {
+          log(`Could not rejoin thread ${threadId} (archived or deleted)`);
+          managedThreads.delete(threadId);
+          store.removeManagedThread(threadId);
+        }
+      }
+      log(`Rejoined ${managedThreads.size} managed threads`);
     },
 
     stop(): void {
