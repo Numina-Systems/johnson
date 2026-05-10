@@ -1,6 +1,9 @@
 // pattern: Imperative Shell (test)
 
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'bun:test';
+import { createStore } from '@/store/store.ts';
+import type { SubAgentLLM } from '@/model/sub-agent.ts';
+import type { BudgetTracker } from '../types.ts';
 import {
   extractDate,
   isArchiveRkey,
@@ -9,6 +12,7 @@ import {
   groupArchivesByDate,
   buildConsolidatedRkey,
   buildConsolidationMarker,
+  consolidate,
 } from './consolidate';
 
 describe('consolidate.ts - pure functions', () => {
@@ -207,5 +211,268 @@ describe('consolidate.ts - pure functions', () => {
       const marker = buildConsolidationMarker(2, 5, '2026-05-11');
       expect(marker).toBe('<!-- archivist-consolidated: depth=2, sources=5, date=2026-05-11 -->');
     });
+  });
+});
+
+describe('consolidate() - integration', () => {
+  let mockSubAgent: SubAgentLLM;
+  let mockBudget: BudgetTracker;
+
+  beforeEach(() => {
+    mockSubAgent = {
+      complete: async (prompt: string, system?: string): Promise<string> => {
+        return `Synthesized: ${prompt.substring(0, 50)}...`;
+      },
+    };
+
+    mockBudget = {
+      limit: 10000,
+      consumed: 0,
+      breakdown: {},
+      record: (stage: string, tokens: number) => {
+        mockBudget.consumed += tokens;
+        mockBudget.breakdown[stage] = (mockBudget.breakdown[stage] ?? 0) + tokens;
+      },
+      shouldContinue: () => true,
+    };
+  });
+
+  it('archivist.AC2.3: consolidates two same-day archives into one document with marker', async () => {
+    const store = createStore(':memory:');
+
+    // Insert two archives from same day
+    store.docUpsert('archive:2026-05-10T10-00-00', 'Archive content 1');
+    store.docUpsert('archive:2026-05-10T14-30-00', 'Archive content 2');
+
+    const changeSet = {
+      added: ['archive:2026-05-10T10-00-00', 'archive:2026-05-10T14-30-00'],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    const result = await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    expect(result.stage).toBe('consolidate');
+    expect(result.skipped).toBe(false);
+    expect(result.actions.length).toBeGreaterThan(0);
+
+    // Check that consolidated document exists
+    const consolidatedDocs: Array<{ rkey: string; content: string }> = [];
+    let cursor: string | undefined;
+    do {
+      const page = store.docList(500, cursor);
+      consolidatedDocs.push(...page.documents);
+      cursor = page.cursor;
+    } while (cursor);
+
+    const consolidated = consolidatedDocs.find(d => d.rkey.startsWith('archive:consolidated:'));
+    expect(consolidated).toBeDefined();
+    if (consolidated) {
+      expect(consolidated.content).toContain('archivist-consolidated:');
+      expect(consolidated.content).toContain('depth=1');
+      expect(consolidated.content).toContain('sources=2');
+    }
+  });
+
+  it('archivist.AC2.3: consolidated document contains sub-agent synthesis', async () => {
+    const store = createStore(':memory:');
+
+    store.docUpsert('archive:2026-05-10T10-00-00', 'Archive content 1');
+    store.docUpsert('archive:2026-05-10T14-30-00', 'Archive content 2');
+
+    const changeSet = {
+      added: ['archive:2026-05-10T10-00-00', 'archive:2026-05-10T14-30-00'],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    let cursor: string | undefined;
+    const consolidatedDocs: Array<{ rkey: string; content: string }> = [];
+    do {
+      const page = store.docList(500, cursor);
+      consolidatedDocs.push(...page.documents);
+      cursor = page.cursor;
+    } while (cursor);
+
+    const consolidated = consolidatedDocs.find(d => d.rkey.startsWith('archive:consolidated:'));
+    expect(consolidated).toBeDefined();
+    if (consolidated) {
+      expect(consolidated.content).toContain('Synthesized:');
+    }
+  });
+
+  it('archivist.AC2.3: deletes original source documents after consolidation', async () => {
+    const store = createStore(':memory:');
+
+    const rkey1 = 'archive:2026-05-10T10-00-00';
+    const rkey2 = 'archive:2026-05-10T14-30-00';
+    store.docUpsert(rkey1, 'Archive content 1');
+    store.docUpsert(rkey2, 'Archive content 2');
+
+    const changeSet = {
+      added: [rkey1, rkey2],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    // Original documents should be deleted
+    expect(store.docGet(rkey1)).toBeNull();
+    expect(store.docGet(rkey2)).toBeNull();
+  });
+
+  it('single-archive day: no consolidation occurs', async () => {
+    const store = createStore(':memory:');
+
+    store.docUpsert('archive:2026-05-10T10-00-00', 'Archive content 1');
+
+    const changeSet = {
+      added: ['archive:2026-05-10T10-00-00'],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    const result = await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    // Single archive should not trigger consolidation
+    expect(result.actions.every(a => !a.includes('consolidated'))).toBe(true);
+    expect(store.docGet('archive:2026-05-10T10-00-00')).toBeDefined();
+  });
+
+  it('archivist.AC2.3: progressive compression - depth=1 gets further compressed to depth=2 on full sweep', async () => {
+    const store = createStore(':memory:');
+
+    // Create a depth=1 consolidated document
+    const consolidatedContent =
+      '<!-- archivist-consolidated: depth=1, sources=2, date=2026-05-10 -->\nSynthesized content';
+    store.docUpsert('archive:consolidated:2026-05-10:2026-05-10T10-00-00', consolidatedContent);
+
+    const changeSet = {
+      added: [],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    const result = await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'full',
+    );
+
+    expect(result.skipped).toBe(false);
+
+    // Check that re-compression occurred
+    const doc = store.docGet('archive:consolidated:2026-05-10:2026-05-10T10-00-00');
+    expect(doc).toBeDefined();
+    if (doc) {
+      expect(doc.content).toContain('depth=2');
+    }
+  });
+
+  it('no sub-agent: stage is skipped', async () => {
+    const store = createStore(':memory:');
+
+    store.docUpsert('archive:2026-05-10T10-00-00', 'Archive content 1');
+    store.docUpsert('archive:2026-05-10T14-30-00', 'Archive content 2');
+
+    const changeSet = {
+      added: ['archive:2026-05-10T10-00-00', 'archive:2026-05-10T14-30-00'],
+      modified: [],
+      deleted: [],
+      unchanged: [],
+    };
+
+    const result = await consolidate(
+      {
+        store,
+        subAgent: undefined as any,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    expect(result.skipped).toBe(true);
+  });
+
+  it('incremental mode: skips groups without changed documents', async () => {
+    const store = createStore(':memory:');
+
+    store.docUpsert('archive:2026-05-10T10-00-00', 'Archive content 1');
+    store.docUpsert('archive:2026-05-10T14-30-00', 'Archive content 2');
+
+    const changeSet = {
+      added: [],
+      modified: [],
+      deleted: [],
+      unchanged: [
+        'archive:2026-05-10T10-00-00',
+        'archive:2026-05-10T14-30-00',
+      ],
+    };
+
+    const result = await consolidate(
+      {
+        store,
+        subAgent: mockSubAgent,
+        budget: mockBudget,
+        systemPrompt: 'test',
+      },
+      changeSet,
+      'incremental',
+    );
+
+    // Should skip consolidation for unchanged archives
+    expect(result.actions.every(a => !a.includes('consolidated'))).toBe(true);
   });
 });
