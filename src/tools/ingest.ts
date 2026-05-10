@@ -87,18 +87,18 @@ async function summarizeChunks(
   return { perChunk: perChunkSummaries, rollUp };
 }
 
-function deriveRkeyFromFilename(filepath: string): string {
-  // Extract basename, strip extension, replace spaces with hyphens, lowercase
+function deriveRkey(filepath: string, prefix: string): string {
   const basename = filepath.split('/').pop() ?? 'unknown';
   const nameWithoutExt = basename.replace(/\.[^.]+$/, '');
-  return `knowledge:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
+  return `${prefix}:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
+}
+
+function deriveRkeyFromFilename(filepath: string): string {
+  return deriveRkey(filepath, 'knowledge');
 }
 
 function deriveRefRkey(filepath: string): string {
-  // Extract basename, strip extension, replace spaces with hyphens, lowercase
-  const basename = filepath.split('/').pop() ?? 'unknown';
-  const nameWithoutExt = basename.replace(/\.[^.]+$/, '');
-  return `ref:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
+  return deriveRkey(filepath, 'ref');
 }
 
 function cleanupStaleChunks(
@@ -113,6 +113,89 @@ function cleanupStaleChunks(
     if (!exists) break;
     store.docDelete(chunkRkey);
     i++;
+  }
+}
+
+async function storeDocumentWithChunks(
+  store: Store,
+  rkey: string,
+  summaryContent: string,
+  chunks: ReadonlyArray<Chunk>,
+  deps: Readonly<AgentDependencies>,
+): Promise<void> {
+  // Clean up any stale chunks from previous ingest
+  cleanupStaleChunks(store, rkey, chunks.length);
+
+  // Store summary document
+  store.docUpsert(rkey, summaryContent);
+
+  // Store each chunk document
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkRkey = `${rkey}:chunk:${i}`;
+    store.docUpsert(chunkRkey, chunks[i]!.content);
+  }
+
+  // Fire embedding hook for summary
+  if (deps.embedding) {
+    try {
+      const emb = await deps.embedding.embed(summaryContent);
+      store.saveEmbedding(rkey, emb, 'nomic-embed-text');
+    } catch { /* non-fatal */ }
+  }
+
+  // Fire embedding hooks for chunks
+  if (deps.embedding) {
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const emb = await deps.embedding.embed(chunks[i]!.content);
+        store.saveEmbedding(`${rkey}:chunk:${i}`, emb, 'nomic-embed-text');
+      } catch { /* non-fatal */ }
+    }
+  }
+
+  // Fire recall encoding hook for summary
+  if (deps.recallClient) {
+    deps.recallClient.encode(rkey, summaryContent).catch(() => {
+      // Silently ignore — Recall encoding is best-effort
+    });
+  }
+
+  // Fire recall encoding hooks for chunks
+  if (deps.recallClient) {
+    for (let i = 0; i < chunks.length; i++) {
+      deps.recallClient
+        .encode(`${rkey}:chunk:${i}`, chunks[i]!.content)
+        .catch(() => {
+          // Silently ignore — Recall encoding is best-effort
+        });
+    }
+  }
+}
+
+async function storeDocument(
+  store: Store,
+  rkey: string,
+  content: string,
+  deps: Readonly<AgentDependencies>,
+): Promise<void> {
+  // Clean up any chunks from a previously-large file
+  cleanupStaleChunks(store, rkey, 0);
+
+  store.docUpsert(rkey, content);
+
+  // Fire embedding hook
+  if (deps.embedding) {
+    try {
+      const emb = await deps.embedding.embed(content);
+      store.saveEmbedding(rkey, emb, 'nomic-embed-text');
+    } catch { /* non-fatal */ }
+  }
+
+  // Fire recall encoding hook
+  if (deps.recallClient) {
+    deps.recallClient.encode(rkey, content).catch(() => {
+      // Silently ignore — Recall encoding is best-effort
+    });
   }
 }
 
@@ -296,9 +379,6 @@ Intents:
         if (intent === 'knowledge') {
           const rkey = deriveRkeyFromFilename(rawPath);
 
-          // Clean up any stale chunks from previous ingest
-          cleanupStaleChunks(deps.store, rkey, chunks.length);
-
           // Build summary document with metadata header
           const summaryContent = `<!-- source: ${rawPath} -->
 <!-- chunks: ${chunks.length} -->
@@ -306,50 +386,7 @@ Intents:
 
 ${rollUp}`;
 
-          // Store summary document
-          deps.store.docUpsert(rkey, summaryContent);
-
-          // Store each chunk document
-          for (let i = 0; i < chunks.length; i++) {
-            const chunkRkey = `${rkey}:chunk:${i}`;
-            deps.store.docUpsert(chunkRkey, chunks[i]!.content);
-          }
-
-          // Fire embedding hook for summary
-          if (deps.embedding) {
-            try {
-              const emb = await deps.embedding.embed(summaryContent);
-              deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
-            } catch { /* non-fatal */ }
-          }
-
-          // Fire embedding hooks for chunks
-          if (deps.embedding) {
-            for (let i = 0; i < chunks.length; i++) {
-              try {
-                const emb = await deps.embedding.embed(chunks[i]!.content);
-                deps.store.saveEmbedding(`${rkey}:chunk:${i}`, emb, 'nomic-embed-text');
-              } catch { /* non-fatal */ }
-            }
-          }
-
-          // Fire recall encoding hook for summary
-          if (deps.recallClient) {
-            deps.recallClient.encode(rkey, summaryContent).catch(() => {
-              // Silently ignore — Recall encoding is best-effort
-            });
-          }
-
-          // Fire recall encoding hooks for chunks
-          if (deps.recallClient) {
-            for (let i = 0; i < chunks.length; i++) {
-              deps.recallClient
-                .encode(`${rkey}:chunk:${i}`, chunks[i]!.content)
-                .catch(() => {
-                  // Silently ignore — Recall encoding is best-effort
-                });
-            }
-          }
+          await storeDocumentWithChunks(deps.store, rkey, summaryContent, chunks, deps);
 
           return JSON.stringify({
             content: `Stored as ${rkey}`,
@@ -362,9 +399,6 @@ ${rollUp}`;
         if (intent === 'reference') {
           const rkey = deriveRefRkey(rawPath);
 
-          // Clean up any stale chunks from previous ingest
-          cleanupStaleChunks(deps.store, rkey, chunks.length);
-
           // Build summary document with metadata header
           const summaryContent = `<!-- source: ${rawPath} -->
 <!-- chunks: ${chunks.length} -->
@@ -372,50 +406,7 @@ ${rollUp}`;
 
 ${rollUp}`;
 
-          // Store summary document
-          deps.store.docUpsert(rkey, summaryContent);
-
-          // Store each chunk document
-          for (let i = 0; i < chunks.length; i++) {
-            const chunkRkey = `${rkey}:chunk:${i}`;
-            deps.store.docUpsert(chunkRkey, chunks[i]!.content);
-          }
-
-          // Fire embedding hook for summary
-          if (deps.embedding) {
-            try {
-              const emb = await deps.embedding.embed(summaryContent);
-              deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
-            } catch { /* non-fatal */ }
-          }
-
-          // Fire embedding hooks for chunks
-          if (deps.embedding) {
-            for (let i = 0; i < chunks.length; i++) {
-              try {
-                const emb = await deps.embedding.embed(chunks[i]!.content);
-                deps.store.saveEmbedding(`${rkey}:chunk:${i}`, emb, 'nomic-embed-text');
-              } catch { /* non-fatal */ }
-            }
-          }
-
-          // Fire recall encoding hook for summary
-          if (deps.recallClient) {
-            deps.recallClient.encode(rkey, summaryContent).catch(() => {
-              // Silently ignore — Recall encoding is best-effort
-            });
-          }
-
-          // Fire recall encoding hooks for chunks
-          if (deps.recallClient) {
-            for (let i = 0; i < chunks.length; i++) {
-              deps.recallClient
-                .encode(`${rkey}:chunk:${i}`, chunks[i]!.content)
-                .catch(() => {
-                  // Silently ignore — Recall encoding is best-effort
-                });
-            }
-          }
+          await storeDocumentWithChunks(deps.store, rkey, summaryContent, chunks, deps);
 
           return JSON.stringify({
             content: `Stored as ${rkey}`,
@@ -467,26 +458,7 @@ ${rollUp}`;
 
       if (intent === 'knowledge') {
         const rkey = deriveRkeyFromFilename(rawPath);
-
-        // Clean up any chunks from a previously-large file
-        cleanupStaleChunks(deps.store, rkey, 0);
-
-        deps.store.docUpsert(rkey, content);
-
-        // Fire embedding hook
-        if (deps.embedding) {
-          try {
-            const emb = await deps.embedding.embed(content);
-            deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
-          } catch { /* non-fatal */ }
-        }
-
-        // Fire recall encoding hook
-        if (deps.recallClient) {
-          deps.recallClient.encode(rkey, content).catch(() => {
-            // Silently ignore — Recall encoding is best-effort
-          });
-        }
+        await storeDocument(deps.store, rkey, content, deps);
 
         return JSON.stringify({
           content: `Stored as ${rkey}`,
@@ -498,26 +470,7 @@ ${rollUp}`;
 
       if (intent === 'reference') {
         const rkey = deriveRefRkey(rawPath);
-
-        // Clean up any chunks from a previously-large file
-        cleanupStaleChunks(deps.store, rkey, 0);
-
-        deps.store.docUpsert(rkey, content);
-
-        // Fire embedding hook
-        if (deps.embedding) {
-          try {
-            const emb = await deps.embedding.embed(content);
-            deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
-          } catch { /* non-fatal */ }
-        }
-
-        // Fire recall encoding hook
-        if (deps.recallClient) {
-          deps.recallClient.encode(rkey, content).catch(() => {
-            // Silently ignore — Recall encoding is best-effort
-          });
-        }
+        await storeDocument(deps.store, rkey, content, deps);
 
         return JSON.stringify({
           content: `Stored as ${rkey}`,

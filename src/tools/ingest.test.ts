@@ -1,4 +1,4 @@
-// Unit tests for ingest_file tool — path resolution, security, and file reading
+// pattern: Imperative Shell (test)
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdir, writeFile, rm } from 'node:fs/promises';

@@ -8,6 +8,7 @@ const MIGRATION_RKEY = 'archivist:ref-migration';
 const REF_EXTENSIONS = ['.pdf', '.epub', '.mobi', '.djvu'];
 const MIN_CHUNKS_FOR_REF = 10;
 
+// Intentionally mixes logic and I/O — one-time migration code, not worth separating
 function isReferenceBook(rkey: string, content: string, store: Store): boolean {
   const sourceMatch = /<!-- source: (.+?) -->/.exec(content);
   if (sourceMatch) {
