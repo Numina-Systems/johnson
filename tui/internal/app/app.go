@@ -49,6 +49,14 @@ type backendRestartedMsg struct {
 	client *protocol.Client
 }
 
+type newSessionCreatedMsg struct {
+	sessionID string
+}
+
+type newSessionErrorMsg struct {
+	err error
+}
+
 func NewAppModel(client *protocol.Client, backend *backend.BackendProcess, initialSessionID string) *AppModel {
 	m := &AppModel{
 		client:  client,
@@ -121,6 +129,17 @@ func restartBackend(m *AppModel) tea.Cmd {
 	}
 }
 
+func (m *AppModel) createNewSession() tea.Cmd {
+	return func() tea.Msg {
+		var result protocol.SessionCreateResult
+		err := m.client.Call(context.Background(), "session/create", protocol.SessionCreateParams{}, &result)
+		if err != nil {
+			return newSessionErrorMsg{err: err}
+		}
+		return newSessionCreatedMsg{sessionID: result.ID}
+	}
+}
+
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case backendCrashedMsg:
@@ -166,6 +185,12 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SlashCommandMsg:
 		switch msg.Command {
+		case "sessions":
+			if m.sessions == nil {
+				m.sessions = NewSessionsModel(m.client)
+			}
+			m.pushScreen(ScreenSessions)
+			return m, m.sessions.Init()
 		case "tools":
 			m.tools = NewToolsModel(m.client)
 			m.pushScreen(ScreenTools)
@@ -182,6 +207,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prompt = NewPromptModel(m.client)
 			m.pushScreen(ScreenPrompt)
 			return m, m.prompt.Init()
+		case "new":
+			return m, m.createNewSession()
 		case "back":
 			m.popScreen()
 			return m, nil
@@ -191,13 +218,28 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case NavigateToChatMsg:
-		// Create new chat model with selected session
 		m.chat = NewChatModel(m.client, msg.SessionID)
-		m.pushScreen(ScreenChat)
+		// Reset stack to chat — session selection always returns to a clean chat root
+		m.screenStack = []ScreenType{ScreenChat}
+		m.activeScreen = ScreenChat
 		return m, m.chat.Init()
 
 	case popScreenMsg:
 		m.popScreen()
+		return m, nil
+
+	case newSessionCreatedMsg:
+		m.chat = NewChatModel(m.client, msg.sessionID)
+		if m.activeScreen == ScreenChat {
+			return m, m.chat.Init()
+		}
+		m.pushScreen(ScreenChat)
+		return m, m.chat.Init()
+
+	case newSessionErrorMsg:
+		if m.chat != nil {
+			m.chat.status = fmt.Sprintf("Error: failed to create session: %v", msg.err)
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:

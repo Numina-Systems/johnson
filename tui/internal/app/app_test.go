@@ -336,6 +336,168 @@ func TestNewAppModel_WithInitialSession(t *testing.T) {
 	}
 }
 
+func TestAppModel_SlashSessionsPushesScreenSessions(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	if app.activeScreen != ScreenChat {
+		t.Errorf("setup: activeScreen got %v, want ScreenChat", app.activeScreen)
+	}
+
+	msg := SlashCommandMsg{Command: "sessions"}
+	_, _ = app.Update(msg)
+
+	if app.activeScreen != ScreenSessions {
+		t.Errorf("activeScreen: got %v, want ScreenSessions", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 2 || app.screenStack[1] != ScreenSessions {
+		t.Errorf("screenStack: got %v, want [ScreenChat, ScreenSessions]", app.screenStack)
+	}
+
+	if app.sessions == nil {
+		t.Errorf("sessions: got nil, want initialized SessionsModel")
+	}
+}
+
+func TestAppModel_NewSessionReplacesChat(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	initialStackLen := len(app.screenStack)
+
+	msg := newSessionCreatedMsg{sessionID: "new-session-id"}
+	_, _ = app.Update(msg)
+
+	if app.chat == nil {
+		t.Errorf("chat: got nil, want initialized ChatModel")
+	}
+
+	if app.chat.sessionID != "new-session-id" {
+		t.Errorf("chat.sessionID: got %q, want 'new-session-id'", app.chat.sessionID)
+	}
+
+	if len(app.screenStack) != initialStackLen {
+		t.Errorf("screenStack length: got %d, want %d (should not push)", len(app.screenStack), initialStackLen)
+	}
+}
+
+func TestAppModel_UnknownSlashCommandIgnored(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "")
+
+	msg := SlashCommandMsg{Command: "foo"}
+	_, cmd := app.Update(msg)
+
+	if cmd != nil {
+		t.Errorf("cmd: got non-nil, want nil for unknown command")
+	}
+
+	if app.activeScreen != ScreenSessions {
+		t.Errorf("activeScreen: got %v, want ScreenSessions (unchanged)", app.activeScreen)
+	}
+}
+
+func TestAppModel_SessionSelectionPopsSessionsScreen(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	// Push sessions
+	msg := SlashCommandMsg{Command: "sessions"}
+	_, _ = app.Update(msg)
+
+	if len(app.screenStack) != 2 {
+		t.Errorf("setup: screenStack length got %d, want 2", len(app.screenStack))
+	}
+
+	// Select a session
+	navMsg := NavigateToChatMsg{SessionID: "selected-session-id"}
+	_, _ = app.Update(navMsg)
+
+	if len(app.screenStack) != 1 {
+		t.Errorf("screenStack length: got %d, want 1 (sessions popped)", len(app.screenStack))
+	}
+
+	if app.screenStack[0] != ScreenChat {
+		t.Errorf("screenStack[0]: got %v, want ScreenChat", app.screenStack[0])
+	}
+
+	if app.chat.sessionID != "selected-session-id" {
+		t.Errorf("chat.sessionID: got %q, want 'selected-session-id'", app.chat.sessionID)
+	}
+}
+
+func TestAppModel_DeepStackUnwind(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	// Stack: [Chat]
+	if len(app.screenStack) != 1 {
+		t.Errorf("setup: screenStack length got %d, want 1", len(app.screenStack))
+	}
+
+	// Push sessions: [Chat, Sessions]
+	_, _ = app.Update(SlashCommandMsg{Command: "sessions"})
+	if len(app.screenStack) != 2 {
+		t.Errorf("after sessions: screenStack length got %d, want 2", len(app.screenStack))
+	}
+
+	// Push tools: [Chat, Sessions, Tools]
+	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
+	if len(app.screenStack) != 3 {
+		t.Errorf("after tools: screenStack length got %d, want 3", len(app.screenStack))
+	}
+
+	// Pop (escape): [Chat, Sessions]
+	_, _ = app.Update(popScreenMsg{})
+	if app.activeScreen != ScreenSessions {
+		t.Errorf("after pop 1: activeScreen got %v, want ScreenSessions", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 2 {
+		t.Errorf("after pop 1: screenStack length got %d, want 2", len(app.screenStack))
+	}
+
+	// Pop (escape): [Chat]
+	_, _ = app.Update(popScreenMsg{})
+	if app.activeScreen != ScreenChat {
+		t.Errorf("after pop 2: activeScreen got %v, want ScreenChat", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 1 {
+		t.Errorf("after pop 2: screenStack length got %d, want 1", len(app.screenStack))
+	}
+}
+
+func TestAppModel_EscapeOnRootChatDoesNothing(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	if app.activeScreen != ScreenChat {
+		t.Errorf("setup: activeScreen got %v, want ScreenChat", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 1 {
+		t.Errorf("setup: screenStack length got %d, want 1", len(app.screenStack))
+	}
+
+	_, _ = app.Update(popScreenMsg{})
+
+	if app.activeScreen != ScreenChat {
+		t.Errorf("activeScreen: got %v, want ScreenChat (unchanged)", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 1 {
+		t.Errorf("screenStack length: got %d, want 1 (unchanged)", len(app.screenStack))
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(haystack, needle string) bool {
 	for i := 0; i <= len(haystack)-len(needle); i++ {
