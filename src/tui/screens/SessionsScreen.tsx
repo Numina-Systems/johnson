@@ -107,6 +107,7 @@ export default function SessionsScreen(props: SessionsScreenProps): React.ReactE
         { key: '⏎', label: 'open' },
         { key: 'n', label: 'new' },
         { key: 'd', label: 'delete' },
+        { key: 'r', label: 'prune' },
         { key: 't', label: 'tools' },
         { key: 's', label: 'secrets' },
         { key: 'c', label: 'schedules' },

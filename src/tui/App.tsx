@@ -9,6 +9,7 @@ import ToolsScreen from './screens/ToolsScreen.tsx';
 import SecretsScreen from './screens/SecretsScreen.tsx';
 import SchedulesScreen from './screens/SchedulesScreen.tsx';
 import SystemPromptScreen from './screens/SystemPromptScreen.tsx';
+import PruneScreen from './screens/PruneScreen.tsx';
 import { buildSystemPrompt } from '../agent/prompt.ts';
 import { theme } from './theme.ts';
 import type { Screen, TuiDependencies } from './types.ts';
@@ -88,6 +89,7 @@ export default function App(deps: AppProps): React.ReactElement {
       if (input === 's') push('secrets');
       if (input === 'c') push('schedules');
       if (input === 'p') push('prompt');
+      if (input === 'r') push('prune');
       if (input === 'q') {
         exit();
         process.exit(0);
@@ -164,5 +166,13 @@ export default function App(deps: AppProps): React.ReactElement {
       return <SchedulesScreen scheduler={deps.scheduler} onBack={pop} />;
     case 'prompt':
       return <SystemPromptScreen getSystemPrompt={getSystemPrompt} onBack={pop} />;
+    case 'prune':
+      return (
+        <PruneScreen
+          store={deps.store}
+          onBack={pop}
+          onSubModeChange={setSubModeActive}
+        />
+      );
   }
 }
