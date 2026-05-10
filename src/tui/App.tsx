@@ -1,7 +1,8 @@
 // pattern: UI Shell — navigation shell for the multi-screen TUI
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
+import { onLog } from '../util/log.ts';
 import SessionsScreen from './screens/SessionsScreen.tsx';
 import ChatScreen from './screens/ChatScreen.tsx';
 import ToolsScreen from './screens/ToolsScreen.tsx';
@@ -20,6 +21,16 @@ export default function App(deps: AppProps): React.ReactElement {
   const currentScreen = screenStack[screenStack.length - 1]!;
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [subModeActive, setSubModeActive] = useState(false);
+  const [logLines, setLogLines] = useState<readonly string[]>([]);
+
+  useEffect(() => {
+    return onLog((line) => {
+      setLogLines((prev) => {
+        const next = [...prev, line];
+        return next.length > 200 ? next.slice(-200) : next;
+      });
+    });
+  }, []);
 
   const push = useCallback((screen: Screen) => {
     setScreenStack((prev) => [...prev, screen]);

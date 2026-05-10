@@ -9,6 +9,7 @@ import { parseDescription } from '../util.ts';
 import { theme, separator } from '../theme.ts';
 import ScreenLayout from '../ScreenLayout.tsx';
 import StatusBar from '../StatusBar.tsx';
+import { highlightCode } from '../syntax.ts';
 
 type ToolsScreenProps = {
   readonly store: Store;
@@ -126,7 +127,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   const termHeight = stdout?.rows ?? 24;
   const termWidth = stdout?.columns ?? 80;
 
-  const codeLines = mode === 'view_code' ? codeContent.split('\n') : [];
+  const codeLines = mode === 'view_code' ? highlightCode(codeContent).split('\n') : [];
   const CODE_PAGE_SIZE = Math.max(5, termHeight - 6);
 
   useInput((input, key) => {
@@ -275,7 +276,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
             return (
               <Text key={codeScrollOffset + i}>
                 <Text color={theme.dim}>{String(lineNum).padStart(4, ' ')} │ </Text>
-                <Text color={theme.body}>{line || ' '}</Text>
+                <Text>{line || ' '}</Text>
               </Text>
             );
           })}

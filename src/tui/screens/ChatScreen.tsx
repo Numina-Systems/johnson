@@ -6,10 +6,10 @@ import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import type { Agent } from '../../agent/types.ts';
 import type { Store } from '../../store/store.ts';
-import { onLog } from '../../util/log.ts';
 import { formatStats } from '../../agent/format-stats.ts';
 import { theme, separator } from '../theme.ts';
 import ScreenLayout from '../ScreenLayout.tsx';
+import { highlightMarkdown } from '../syntax.ts';
 
 type DisplayMessage = {
   readonly role: 'user' | 'agent' | 'system';
@@ -41,12 +41,6 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     setMessages(loaded);
   }, [sessionId, store]);
 
-  useEffect(() => {
-    const unsubscribe = onLog((line) => {
-      setMessages((prev) => [...prev, { role: 'system', text: line }]);
-    });
-    return unsubscribe;
-  }, []);
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -186,7 +180,7 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
               <Text color={theme.agentMsg} bold>
                 agent&gt;{' '}
               </Text>
-              <Text color={theme.body}>{msg.text}</Text>
+              <Text>{highlightMarkdown(msg.text)}</Text>
             </Text>
           )}
           {msg.role === 'system' && (
