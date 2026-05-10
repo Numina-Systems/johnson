@@ -36,6 +36,15 @@ export interface GrantRow {
 
 export type GrantStatus = 'pending' | 'granted' | 'revoked';
 
+export interface SessionWithCountsRow {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message_at: string | null;
+}
+
 // ── Store interface ────────────────────────────────────────────────────
 
 export interface Store {
@@ -455,14 +464,7 @@ export function createStore(dbPath: string): Store {
     },
 
     listSessionsWithCounts(limit = 50): Array<SessionWithCounts> {
-      const rows = stmtListSessionsWithCounts.all(limit) as Array<{
-        id: string;
-        title: string | null;
-        created_at: string;
-        updated_at: string;
-        message_count: number;
-        last_message_at: string | null;
-      }>;
+      const rows = stmtListSessionsWithCounts.all(limit) as Array<SessionWithCountsRow>;
       return rows.map((r) => ({
         id: r.id,
         title: r.title,

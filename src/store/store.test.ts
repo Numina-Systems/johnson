@@ -15,7 +15,7 @@ describe('listSessionsWithCounts', () => {
     store.close();
   });
 
-  test('session-mgmt.AC1.1: returns accurate messageCount for sessions with messages', async () => {
+  test('session-mgmt.AC1.1: returns accurate messageCount for sessions with messages', () => {
     // Create a session
     const sessionId = 'test-session-1';
     store.createSession(sessionId, 'Test Session');
@@ -49,7 +49,7 @@ describe('listSessionsWithCounts', () => {
     expect(results[0]!.lastMessageAt).toBeNull();
   });
 
-  test('session-mgmt.AC1.3: results ordered by updatedAt DESC', () => {
+  test('session-mgmt.AC1.3: results ordered by updatedAt DESC', async () => {
     // Create three sessions
     const session1 = 'session-1';
     const session2 = 'session-2';
@@ -59,25 +59,23 @@ describe('listSessionsWithCounts', () => {
     store.createSession(session2, 'Session 2');
     store.createSession(session3, 'Session 3');
 
-    // Add messages at different times (updatedAt increases with appendMessage)
-    // Add small delays to ensure different timestamps
+    // Update sessions with delays to guarantee distinct timestamps
     store.appendMessage(session1, 'user', 'msg');
-    // Ensure timestamp progresses
-    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-    // Note: can't use await in sync test, but timing separation happens naturally
-    // because store operations add slight delays. For determinism, update sessions
-    // in reverse order of expected result ordering.
-    store.appendMessage(session3, 'user', 'msg');
+    await new Promise(r => setTimeout(r, 10));
+
     store.appendMessage(session2, 'user', 'msg');
+    await new Promise(r => setTimeout(r, 10));
+
+    store.appendMessage(session3, 'user', 'msg');
 
     // Call listSessionsWithCounts
     const results = store.listSessionsWithCounts();
 
-    // Assert results ordered by updatedAt DESC (session2 last updated should be first)
+    // Assert results ordered by updatedAt DESC (session3 last updated should be first)
     expect(results).toHaveLength(3);
-    // Verify ordering by checking that each updatedAt is >= the next (ISO timestamps compare correctly as strings)
-    expect(results[0]!.updatedAt >= results[1]!.updatedAt).toBe(true);
-    expect(results[1]!.updatedAt >= results[2]!.updatedAt).toBe(true);
+    expect(results[0]!.id).toBe(session3);
+    expect(results[1]!.id).toBe(session2);
+    expect(results[2]!.id).toBe(session1);
   });
 
   test('session-mgmt.AC1.3: respects limit parameter', () => {
