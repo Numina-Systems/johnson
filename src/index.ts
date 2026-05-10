@@ -23,9 +23,11 @@ import { seedSelfDoc } from './agent/seed-self-doc.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
 import { createDiscordBot } from './discord/index.ts';
+import { createArchivist } from './archivist/index.ts';
 import type { Agent, AgentDependencies } from './agent/types.ts';
 import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
+import type { Archivist } from './archivist/index.ts';
 import { RecallClient } from './recall/client.ts';
 import { log } from './util/log.ts';
 
@@ -76,6 +78,18 @@ async function main(): Promise<void> {
   // Reindex stale embeddings in background
   if (embedding && store) {
     reindexEmbeddings({ store, embedding }, config.embedding!.model).catch(err => log(`Embedding reindex failed: ${err}`));
+  }
+
+  // Archivist (optional — requires sub-agent)
+  let archivist: Archivist | undefined;
+  if (config.archivist) {
+    archivist = createArchivist({
+      store,
+      embedding,
+      subAgent,
+      config: config.archivist,
+      timezone: config.agent.timezone,
+    });
   }
 
   // Recall client (optional — gracefully degrades if server is unavailable)
@@ -189,9 +203,13 @@ async function main(): Promise<void> {
   // Start the scheduler (rehydrates persisted tasks)
   scheduler.start();
 
+  // Start archivist (optional background pipeline)
+  archivist?.start();
+
   // Graceful shutdown
   const shutdown = () => {
     log('Shutting down...');
+    archivist?.stop();
     scheduler.stop();
     store.close();
     if (bot) bot.stop();
