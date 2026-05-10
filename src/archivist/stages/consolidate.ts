@@ -55,8 +55,8 @@ export function groupArchivesByDate(
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function buildConsolidatedRkey(date: string): string {
-  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+export function buildConsolidatedRkey(date: string, now: Date = new Date()): string {
+  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
   return `archive:consolidated:${date}:${ts}`;
 }
 
@@ -140,11 +140,12 @@ export async function consolidate(
       );
       const newDepth = maxSourceDepth + 1;
 
-      // Get prompt for this depth
-      const prompt = getConsolidationPrompt(newDepth);
+      // Get instruction for this depth
+      const instruction = getConsolidationPrompt(newDepth);
 
-      // Send to sub-agent
-      const synthesized = await deps.subAgent.complete(concatenated, prompt);
+      // Send to sub-agent with system prompt and instruction in user prompt
+      const userPrompt = `${instruction}\n\n${concatenated}`;
+      const synthesized = await deps.subAgent.complete(userPrompt, deps.systemPrompt);
       tokensUsed += synthesized.length; // rough estimate
 
       // Build consolidated rkey
@@ -169,10 +170,8 @@ export async function consolidate(
       actions.push(
         `consolidated ${group.documents.length} archives for ${group.date} at depth ${newDepth}`,
       );
-    }
-
-    // For already-consolidated single documents (depth > 0), apply further compression on full sweeps only
-    if (mode === 'full') {
+    } else if (mode === 'full') {
+      // For already-consolidated single documents (depth > 0), apply further compression on full sweeps only
       for (const doc of group.documents) {
         const depth = getCompressionDepth(doc.content);
         if (depth > 0 && !isConsolidatedRkey(doc.rkey)) {
@@ -183,8 +182,9 @@ export async function consolidate(
 
         // For consolidated docs in full mode, compress further
         if (isConsolidatedRkey(doc.rkey) && depth > 0) {
-          const prompt = getConsolidationPrompt(depth + 1);
-          const synthesized = await deps.subAgent.complete(doc.content, prompt);
+          const instruction = getConsolidationPrompt(depth + 1);
+          const userPrompt = `${instruction}\n\n${doc.content}`;
+          const synthesized = await deps.subAgent.complete(userPrompt, deps.systemPrompt);
           tokensUsed += synthesized.length;
 
           const newDepth = depth + 1;
