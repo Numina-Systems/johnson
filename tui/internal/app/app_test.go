@@ -498,6 +498,43 @@ func TestAppModel_EscapeOnRootChatDoesNothing(t *testing.T) {
 	}
 }
 
+func TestAppModel_WindowSizeMsg_WithInitialSession(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	if app.sessions != nil {
+		t.Errorf("sessions: got initialized, want nil (app started with initial session)")
+	}
+
+	if app.chat == nil {
+		t.Errorf("chat: got nil, want initialized ChatModel")
+	}
+
+	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
+	_, _ = app.Update(msg)
+
+	if app.width != 120 {
+		t.Errorf("app.width: got %d, want 120", app.width)
+	}
+
+	if app.height != 40 {
+		t.Errorf("app.height: got %d, want 40", app.height)
+	}
+
+	if app.chat.width != 120 {
+		t.Errorf("chat.width: got %d, want 120", app.chat.width)
+	}
+
+	if app.chat.height != 40 {
+		t.Errorf("chat.height: got %d, want 40", app.chat.height)
+	}
+
+	if app.sessions != nil {
+		t.Errorf("sessions: got initialized, want nil (should remain nil)")
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(haystack, needle string) bool {
 	for i := 0; i <= len(haystack)-len(needle); i++ {

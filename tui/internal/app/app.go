@@ -245,8 +245,10 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.sessions.width = msg.Width
-		m.sessions.height = msg.Height
+		if m.sessions != nil {
+			m.sessions.width = msg.Width
+			m.sessions.height = msg.Height
+		}
 		if m.chat != nil {
 			m.chat.width = msg.Width
 			m.chat.height = msg.Height
@@ -267,11 +269,12 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prompt.width = msg.Width
 			m.prompt.height = msg.Height
 		}
-		sessionsModel, cmd := m.sessions.Update(msg)
-		m.sessions = sessionsModel.(*SessionsModel)
-
 		var cmds []tea.Cmd
-		cmds = append(cmds, cmd)
+		if m.sessions != nil {
+			sessionsModel, cmd := m.sessions.Update(msg)
+			m.sessions = sessionsModel.(*SessionsModel)
+			cmds = append(cmds, cmd)
+		}
 		if m.activeScreen == ScreenChat && m.chat != nil {
 			_, chatCmd := m.chat.Update(msg)
 			cmds = append(cmds, chatCmd)
