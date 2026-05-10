@@ -49,21 +49,34 @@ type backendRestartedMsg struct {
 	client *protocol.Client
 }
 
-func NewAppModel(client *protocol.Client, backend *backend.BackendProcess) *AppModel {
-	return &AppModel{
-		client:       client,
-		backend:      backend,
-		activeScreen: ScreenSessions,
-		screenStack:  []ScreenType{ScreenSessions},
-		sessions:     NewSessionsModel(client),
+func NewAppModel(client *protocol.Client, backend *backend.BackendProcess, initialSessionID string) *AppModel {
+	m := &AppModel{
+		client:  client,
+		backend: backend,
 	}
+
+	if initialSessionID != "" {
+		m.activeScreen = ScreenChat
+		m.screenStack = []ScreenType{ScreenChat}
+		m.chat = NewChatModel(client, initialSessionID)
+	} else {
+		m.activeScreen = ScreenSessions
+		m.screenStack = []ScreenType{ScreenSessions}
+		m.sessions = NewSessionsModel(client)
+	}
+
+	return m
 }
 
 func (m *AppModel) Init() tea.Cmd {
-	return tea.Batch(
-		m.sessions.Init(),
-		watchBackend(m.backend),
-	)
+	cmds := []tea.Cmd{watchBackend(m.backend)}
+	if m.chat != nil {
+		cmds = append(cmds, m.chat.Init())
+	}
+	if m.sessions != nil {
+		cmds = append(cmds, m.sessions.Init())
+	}
+	return tea.Batch(cmds...)
 }
 
 func watchBackend(proc *backend.BackendProcess) tea.Cmd {
