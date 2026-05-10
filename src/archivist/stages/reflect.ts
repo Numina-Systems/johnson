@@ -1,6 +1,12 @@
 // pattern: Functional Core + Imperative Shell
 
 import type { Store } from '@/store/store.ts';
+import type { SubAgentLLM } from '@/model/sub-agent.ts';
+import type { StageResult, BudgetTracker } from '../types.ts';
+import {
+  getArchivistSection,
+  setArchivistSection,
+} from './reflect-sections.ts';
 
 // ── Functional Core: Store summarization ──────────────────────────────────
 
@@ -67,4 +73,102 @@ export function formatStoreSummary(summary: StoreSummary): string {
     }
   }
   return lines.join('\n');
+}
+
+// ── Imperative Shell: Reflect stage execution ──────────────────────────────
+
+type ReflectDeps = {
+  readonly store: Store;
+  readonly subAgent?: SubAgentLLM;
+  readonly budget: BudgetTracker;
+  readonly systemPrompt: string;
+};
+
+export async function reflect(deps: ReflectDeps): Promise<StageResult> {
+  // Skip if no sub-agent available
+  if (!deps.subAgent) {
+    return {
+      stage: 'reflect',
+      tokensUsed: 0,
+      actions: [],
+      skipped: true,
+    };
+  }
+
+  const summary = summarizeStore(deps.store);
+  const formattedSummary = formatStoreSummary(summary);
+
+  const actions: Array<string> = [];
+  let tokensUsed = 0;
+
+  // Generate self observations (knowledge domains)
+  const selfPrompt = `Given this document store state, identify knowledge domains, emerging topics, and stale areas. Write a concise summary (bullet points, max 200 words) suitable for the agent's identity document.
+
+Store summary:
+${formattedSummary}`;
+
+  let selfObservations = '';
+  try {
+    selfObservations = await deps.subAgent.complete(selfPrompt, deps.systemPrompt);
+    tokensUsed += Math.ceil(selfObservations.length / 4); // rough token estimate
+    deps.budget.record('reflect', tokensUsed);
+  } catch (error) {
+    // Continue gracefully if sub-agent fails
+    selfObservations = `Unable to generate observations (${error instanceof Error ? error.message : 'unknown error'})`;
+  }
+
+  // Load self document
+  let selfDoc = deps.store.docGet('self');
+  if (!selfDoc) {
+    // Create self if missing
+    deps.store.docUpsert('self', '');
+    selfDoc = deps.store.docGet('self');
+  }
+
+  // Update knowledge-domains section in self
+  const updatedSelfContent = setArchivistSection(
+    selfDoc!.content,
+    'knowledge-domains',
+    selfObservations
+  );
+  deps.store.docUpsert('self', updatedSelfContent);
+  actions.push('updated-section:self:knowledge-domains');
+
+  // Generate operator observations (user patterns)
+  const operatorPrompt = `Given this document store state, identify cross-session user patterns, focus shifts, and preferences. Write a concise summary (bullet points, max 200 words) suitable for the user context document.
+
+Store summary:
+${formattedSummary}`;
+
+  let operatorObservations = '';
+  try {
+    operatorObservations = await deps.subAgent.complete(operatorPrompt, deps.systemPrompt);
+    tokensUsed += Math.ceil(operatorObservations.length / 4);
+    deps.budget.record('reflect', tokensUsed);
+  } catch (error) {
+    operatorObservations = `Unable to generate observations (${error instanceof Error ? error.message : 'unknown error'})`;
+  }
+
+  // Load or create operator document
+  let operatorDoc = deps.store.docGet('operator');
+  if (!operatorDoc) {
+    deps.store.docUpsert('operator', '');
+    operatorDoc = deps.store.docGet('operator');
+  }
+
+  // Update user-patterns section in operator
+  const updatedOperatorContent = setArchivistSection(
+    operatorDoc!.content,
+    'user-patterns',
+    operatorObservations
+  );
+  deps.store.docUpsert('operator', updatedOperatorContent);
+  actions.push('updated-section:operator:user-patterns');
+
+  return {
+    stage: 'reflect',
+    tokensUsed,
+    actions,
+    skipped: false,
+  };
 }
