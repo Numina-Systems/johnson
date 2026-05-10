@@ -317,6 +317,195 @@ describe('prune stage', () => {
     });
   });
 
+  describe('incremental mode filtering', () => {
+    test('in incremental mode, only considers pairs where at least one side is in changeSet', async () => {
+      const store = createStore(':memory:');
+
+      // Create three documents: two that are similar, one unchanged and unrelated
+      store.docUpsert(
+        'knowledge:comprehensive',
+        'The quick brown fox jumps over the lazy dog. The fox is clever. The dog is lazy.',
+      );
+      store.docUpsert('knowledge:subset', 'The fox is clever.');
+      store.docUpsert('knowledge:unrelated', 'Something completely different');
+
+      // Save embeddings
+      store.saveEmbedding('knowledge:comprehensive', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:subset', [0.94, 0.11, 0.05], 'test');
+      store.saveEmbedding('knowledge:unrelated', [0.1, 0.95, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ subset: true, superset: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where neither comprehensive nor subset changed (both unchanged)
+      const result = await prune(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.92,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: ['knowledge:unrelated'],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should not process the pair because neither side is in changeSet (only unrelated was added)
+      expect(result.actions.filter(a => a.includes('removed')).length).toBe(0);
+
+      // Both documents should still exist
+      expect(store.docGet('knowledge:comprehensive')).not.toBeNull();
+      expect(store.docGet('knowledge:subset')).not.toBeNull();
+    });
+
+    test('in incremental mode, processes pair when both sides are in changeSet', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert(
+        'knowledge:comprehensive',
+        'The quick brown fox jumps over the lazy dog. The fox is clever. The dog is lazy.',
+      );
+      store.docUpsert('knowledge:subset', 'The fox is clever.');
+
+      store.saveEmbedding('knowledge:comprehensive', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:subset', [0.94, 0.11, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ subset: true, superset: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where both changed
+      const result = await prune(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.92,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: ['knowledge:comprehensive', 'knowledge:subset'],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should process the pair
+      expect(result.actions.filter(a => a.includes('removed')).length).toBeGreaterThan(0);
+
+      // Subset should be deleted
+      expect(store.docGet('knowledge:subset')).toBeNull();
+      expect(store.docGet('knowledge:comprehensive')).not.toBeNull();
+    });
+
+    test('in incremental mode, processes pair when one side is modified', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert(
+        'knowledge:comprehensive',
+        'The quick brown fox jumps over the lazy dog. The fox is clever. The dog is lazy.',
+      );
+      store.docUpsert('knowledge:subset', 'The fox is clever.');
+
+      store.saveEmbedding('knowledge:comprehensive', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:subset', [0.94, 0.11, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ subset: true, superset: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where comprehensive is modified
+      const result = await prune(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.92,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: [],
+          modified: ['knowledge:comprehensive'],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should process the pair (at least one side changed)
+      expect(result.actions.filter(a => a.includes('removed')).length).toBeGreaterThan(0);
+    });
+
+    test('in full mode, processes all similar pairs regardless of changeSet', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert(
+        'knowledge:comprehensive',
+        'The quick brown fox jumps over the lazy dog. The fox is clever. The dog is lazy.',
+      );
+      store.docUpsert('knowledge:subset', 'The fox is clever.');
+
+      store.saveEmbedding('knowledge:comprehensive', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:subset', [0.94, 0.11, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ subset: true, superset: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with full mode, but changeSet is empty
+      const result = await prune(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.92,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: [],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'full',
+      );
+
+      // Should still process the pair in full mode
+      expect(result.actions.filter(a => a.includes('removed')).length).toBeGreaterThan(0);
+
+      // Subset should be deleted
+      expect(store.docGet('knowledge:subset')).toBeNull();
+    });
+  });
+
   describe('graceful degradation', () => {
     test('skips redundancy detection when no embedding provider but cleans orphans', async () => {
       const store = createStore(':memory:');

@@ -390,6 +390,186 @@ describe('dedup stage', () => {
     });
   });
 
+  describe('incremental mode filtering', () => {
+    test('in incremental mode, only considers pairs where at least one side is in changeSet', async () => {
+      const store = createStore(':memory:');
+
+      // Create three documents: two similar, one unrelated
+      store.docUpsert('knowledge:doc1', 'The quick brown fox');
+      store.docUpsert('knowledge:doc2', 'The quick brown fox');
+      store.docUpsert('knowledge:doc3', 'Completely different content');
+
+      // Save identical embeddings for doc1 and doc2
+      store.saveEmbedding('knowledge:doc1', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:doc2', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:doc3', [0.1, 0.95, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ duplicate: true, keep: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where only doc3 changed (neither doc1 nor doc2 in changeSet)
+      const result = await dedup(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.88,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: ['knowledge:doc3'],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should not process the pair because neither doc1 nor doc2 is in changeSet
+      expect(result.actions.length).toBe(0);
+
+      // Both documents should still exist
+      expect(store.docGet('knowledge:doc1')).not.toBeNull();
+      expect(store.docGet('knowledge:doc2')).not.toBeNull();
+    });
+
+    test('in incremental mode, processes pairs where both sides are in changeSet', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert('knowledge:doc1', 'The quick brown fox');
+      store.docUpsert('knowledge:doc2', 'The quick brown fox');
+
+      // Save identical embeddings
+      store.saveEmbedding('knowledge:doc1', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:doc2', [0.95, 0.1, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ duplicate: true, keep: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where both changed
+      const result = await dedup(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.88,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: ['knowledge:doc1', 'knowledge:doc2'],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should process the pair
+      expect(result.actions.length).toBeGreaterThan(0);
+
+      // doc2 should be deleted (it's the loser)
+      expect(store.docGet('knowledge:doc1')).not.toBeNull();
+      expect(store.docGet('knowledge:doc2')).toBeNull();
+    });
+
+    test('in incremental mode, processes pair when one side is modified', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert('knowledge:doc1', 'The quick brown fox');
+      store.docUpsert('knowledge:doc2', 'The quick brown fox');
+
+      // Save identical embeddings
+      store.saveEmbedding('knowledge:doc1', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:doc2', [0.95, 0.1, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ duplicate: true, keep: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with incremental mode where doc1 is added and doc2 is modified
+      const result = await dedup(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.88,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: ['knowledge:doc1'],
+          modified: ['knowledge:doc2'],
+          deleted: [],
+          unchanged: [],
+        },
+        'incremental',
+      );
+
+      // Should process the pair (at least one side changed)
+      expect(result.actions.length).toBeGreaterThan(0);
+    });
+
+    test('in full mode, processes all similar pairs regardless of changeSet', async () => {
+      const store = createStore(':memory:');
+
+      store.docUpsert('knowledge:doc1', 'The quick brown fox');
+      store.docUpsert('knowledge:doc2', 'The quick brown fox');
+
+      // Save identical embeddings
+      store.saveEmbedding('knowledge:doc1', [0.95, 0.1, 0.05], 'test');
+      store.saveEmbedding('knowledge:doc2', [0.95, 0.1, 0.05], 'test');
+
+      const mockSubAgentConfirming: SubAgentLLM = {
+        async complete(): Promise<string> {
+          return JSON.stringify({ duplicate: true, keep: 'a' });
+        },
+      };
+
+      const budget = createBudgetTracker(10000);
+
+      // Run with full mode, but changeSet is empty
+      const result = await dedup(
+        {
+          store,
+          embedding: mockEmbedding,
+          subAgent: mockSubAgentConfirming,
+          threshold: 0.88,
+          budget,
+          systemPrompt: 'test',
+        },
+        {
+          added: [],
+          modified: [],
+          deleted: [],
+          unchanged: [],
+        },
+        'full',
+      );
+
+      // Should still process the pair in full mode
+      expect(result.actions.length).toBeGreaterThan(0);
+
+      // doc2 should be deleted
+      expect(store.docGet('knowledge:doc2')).toBeNull();
+    });
+  });
+
   describe('graceful degradation', () => {
     test('skips stage when no embedding provider', async () => {
       const store = createStore(':memory:');

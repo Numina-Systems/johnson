@@ -47,8 +47,8 @@ function cleanupOrphanedChunks(store: Store): number {
 
 export async function prune(
   deps: PruneDeps,
-  _changeSet: ChangeSet,
-  _mode: 'incremental' | 'full',
+  changeSet: ChangeSet,
+  mode: 'incremental' | 'full',
 ): Promise<StageResult> {
   const actions: Array<string> = [];
 
@@ -80,7 +80,13 @@ export async function prune(
     }));
 
     // Find similar pairs, excluding immutable documents
-    const similarPairs = findSimilarPairs(embeddingPairs, deps.threshold, immutableRkeys);
+    let similarPairs = findSimilarPairs(embeddingPairs, deps.threshold, immutableRkeys);
+
+    // In incremental mode, filter to only pairs where at least one side changed
+    if (mode === 'incremental') {
+      const changedSet = new Set([...changeSet.added, ...changeSet.modified]);
+      similarPairs = similarPairs.filter(p => changedSet.has(p.a) || changedSet.has(p.b));
+    }
 
     // Process each similar pair
     for (const pair of similarPairs) {
@@ -111,8 +117,9 @@ Respond with JSON: {"subset": true, "superset": "a" | "b"} or {"subset": false}`
       try {
         const response = await deps.subAgent.complete(prompt, deps.systemPrompt);
         confirmation = JSON.parse(response) as SubsetConfirmation;
-        tokensUsed += 100; // Estimate sub-agent tokens
-      } catch (e) {
+        // Estimate tokens based on document content length (~4 chars per token)
+        tokensUsed += Math.ceil((docA.content.length + docB.content.length) / 4);
+      } catch {
         // Failed to parse, treat as not subset
         continue;
       }

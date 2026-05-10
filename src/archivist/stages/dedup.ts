@@ -39,7 +39,7 @@ type DedupConfirmation = {
 export async function dedup(
   deps: DedupDeps,
   changeSet: ChangeSet,
-  _mode: 'incremental' | 'full',
+  mode: 'incremental' | 'full',
 ): Promise<StageResult> {
   const actions: Array<string> = [];
 
@@ -76,7 +76,13 @@ export async function dedup(
   }));
 
   // Find similar pairs, excluding immutable documents
-  const similarPairs = findSimilarPairs(embeddingPairs, deps.threshold, immutableRkeys);
+  let similarPairs = findSimilarPairs(embeddingPairs, deps.threshold, immutableRkeys);
+
+  // In incremental mode, filter to only pairs where at least one side changed
+  if (mode === 'incremental') {
+    const changedSet = new Set([...changeSet.added, ...changeSet.modified]);
+    similarPairs = similarPairs.filter(p => changedSet.has(p.a) || changedSet.has(p.b));
+  }
 
   // If no similar pairs found, return early
   if (similarPairs.length === 0) {
@@ -119,8 +125,9 @@ Respond with JSON: {"duplicate": true, "keep": "a" | "b"} or {"duplicate": false
     try {
       const response = await deps.subAgent.complete(prompt, deps.systemPrompt);
       confirmation = JSON.parse(response) as DedupConfirmation;
-      tokensUsed += 100; // Estimate sub-agent tokens
-    } catch (e) {
+      // Estimate tokens based on document content length (~4 chars per token)
+      tokensUsed += Math.ceil((docA.content.length + docB.content.length) / 4);
+    } catch {
       // Failed to parse, treat as not duplicate
       continue;
     }
@@ -131,14 +138,13 @@ Respond with JSON: {"duplicate": true, "keep": "a" | "b"} or {"duplicate": false
     }
 
     // Determine winner and loser
-    const [winner, loser, keepKey] = confirmation.keep === 'a'
-      ? [docA, docB, pair.a]
-      : [docB, docA, pair.b];
+    const keepKey = confirmation.keep === 'a' ? pair.a : pair.b;
     const loserKey = confirmation.keep === 'a' ? pair.b : pair.a;
+    const winnerDoc = confirmation.keep === 'a' ? docA : docB;
 
     // Merge: append marker to winner
     const timestamp = new Date().toISOString();
-    const mergedContent = `${winner.content}\n<!-- merged-from: ${loserKey}, ${timestamp} -->`;
+    const mergedContent = `${winnerDoc.content}\n<!-- merged-from: ${loserKey}, ${timestamp} -->`;
 
     deps.store.docUpsert(keepKey, mergedContent);
 
