@@ -236,6 +236,25 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "quit":
 			return m, tea.Quit
+		case "help":
+			if m.chat != nil {
+				helpText := "" +
+					"/sessions  — browse and switch sessions\n" +
+					"/new       — start a new chat session\n" +
+					"/tools     — manage skills and custom tools\n" +
+					"/secrets   — manage API keys and credentials\n" +
+					"/schedules — view scheduled tasks\n" +
+					"/prompt    — view system prompt\n" +
+					"/back      — go to previous screen\n" +
+					"/quit      — exit the TUI\n" +
+					"/help      — show this help"
+				m.chat.messages = append(m.chat.messages, renderedMessage{
+					role:     "system",
+					rendered: helpText,
+				})
+				m.chat.updateViewportContent()
+			}
+			return m, nil
 		}
 		return m, nil
 
