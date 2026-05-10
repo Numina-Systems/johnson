@@ -4,13 +4,14 @@ import { Cron } from 'croner';
 import type { ArchivistDependencies, Archivist } from './types.ts';
 import { runPipeline } from './pipeline.ts';
 import { appendRunLog } from './logging.ts';
+import { loadArchivistIdentity } from './seed.ts';
 
 export function createArchivist(deps: ArchivistDependencies): Archivist {
   let daytimeCron: Cron | undefined;
   let nighttimeCron: Cron | undefined;
   let running = false;
 
-  const systemPrompt = ''; // Will be loaded from archivist:identity in Phase 8
+  const systemPrompt = loadArchivistIdentity(deps.store);
 
   async function run(mode: 'incremental' | 'full'): Promise<void> {
     if (running) {
@@ -84,3 +85,4 @@ export { prune } from './stages/prune.ts';
 export { scan } from './stages/scan.ts';
 export { runPipeline } from './pipeline.ts';
 export { appendRunLog } from './logging.ts';
+export { seedArchivistIdentity, loadArchivistIdentity } from './seed.ts';

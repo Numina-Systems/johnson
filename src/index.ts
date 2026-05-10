@@ -23,7 +23,7 @@ import { seedSelfDoc } from './agent/seed-self-doc.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
 import { createDiscordBot } from './discord/index.ts';
-import { createArchivist } from './archivist/index.ts';
+import { createArchivist, seedArchivistIdentity } from './archivist/index.ts';
 import type { Agent, AgentDependencies } from './agent/types.ts';
 import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
@@ -52,6 +52,11 @@ async function main(): Promise<void> {
 
   // Seed self document with domain knowledge on first run
   seedSelfDoc(store);
+
+  // Seed archivist identity on first run
+  if (config.archivist?.enabled) {
+    seedArchivistIdentity(store);
+  }
 
   // Secret manager — flat JSON file for secret values (never in the DB)
   const secrets = createSecretManager(SECRETS_PATH);
