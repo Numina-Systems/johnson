@@ -5,6 +5,7 @@ import (
 	"constellation-tui/internal/protocol"
 	"context"
 	"fmt"
+	"strings"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
@@ -16,18 +17,30 @@ const (
 	secretsModeList secretsMode = iota
 	secretsModeAddName
 	secretsModeAddValue
+	secretsModeAssign
 )
 
+type assignableEntry struct {
+	name       string
+	isCustom   bool
+	hasSecret  bool
+	allSecrets []string
+}
+
 type SecretsModel struct {
-	client     *protocol.Client
-	keys       []string
-	cursor     int
-	mode       secretsMode
-	nameInput  textinput.Model
-	valueInput textinput.Model
-	width      int
-	height     int
-	errorMsg   string
+	client       *protocol.Client
+	keys         []string
+	cursor       int
+	mode         secretsMode
+	nameInput    textinput.Model
+	valueInput   textinput.Model
+	width        int
+	height       int
+	errorMsg     string
+	statusMsg    string
+	assignSecret string
+	assignables  []assignableEntry
+	assignCursor int
 }
 
 func NewSecretsModel(client *protocol.Client) *SecretsModel {
@@ -75,6 +88,17 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errorMsg = msg.err.Error()
 		return m, nil
 
+	case secretsAssignablesLoadedMsg:
+		m.assignables = msg.entries
+		m.assignCursor = 0
+		m.mode = secretsModeAssign
+		return m, nil
+
+	case secretsAssignSavedMsg:
+		m.mode = secretsModeList
+		m.statusMsg = fmt.Sprintf("Updated assignments for %s", msg.secret)
+		return m, loadSecretsCmd(m.client)
+
 	case tea.KeyPressMsg:
 		switch m.mode {
 		case secretsModeList:
@@ -104,6 +128,39 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor < len(m.keys) {
 					selectedKey := m.keys[m.cursor]
 					return m, removeSecretCmd(m.client, selectedKey)
+				}
+				return m, nil
+
+			case "s":
+				if m.cursor < len(m.keys) {
+					selectedKey := m.keys[m.cursor]
+					m.assignSecret = selectedKey
+					m.statusMsg = ""
+					return m, loadAssignablesCmd(m.client, selectedKey)
+				}
+				return m, nil
+			}
+
+		case secretsModeAssign:
+			switch msg.String() {
+			case "esc":
+				return m, m.saveAssignments()
+
+			case "j", "down":
+				if m.assignCursor < len(m.assignables)-1 {
+					m.assignCursor++
+				}
+				return m, nil
+
+			case "k", "up":
+				if m.assignCursor > 0 {
+					m.assignCursor--
+				}
+				return m, nil
+
+			case " ", "enter":
+				if m.assignCursor < len(m.assignables) {
+					m.assignables[m.assignCursor].hasSecret = !m.assignables[m.assignCursor].hasSecret
 				}
 				return m, nil
 			}
@@ -157,6 +214,53 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *SecretsModel) saveAssignments() tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		for _, entry := range m.assignables {
+			had := containsSecret(entry.allSecrets, m.assignSecret)
+			wants := entry.hasSecret
+			if had == wants {
+				continue
+			}
+
+			var newSecrets []string
+			if wants {
+				newSecrets = append(entry.allSecrets, m.assignSecret)
+			} else {
+				for _, s := range entry.allSecrets {
+					if s != m.assignSecret {
+						newSecrets = append(newSecrets, s)
+					}
+				}
+			}
+
+			if entry.isCustom {
+				name := strings.TrimPrefix(entry.name, "customtool:")
+				_, err := m.client.UpdateCustomToolSecrets(ctx, name, newSecrets)
+				if err != nil {
+					return secretsErrorMsg{err}
+				}
+			} else {
+				_, err := m.client.UpdateSkillSecrets(ctx, entry.name, newSecrets)
+				if err != nil {
+					return secretsErrorMsg{err}
+				}
+			}
+		}
+		return secretsAssignSavedMsg{secret: m.assignSecret}
+	}
+}
+
+func containsSecret(secrets []string, target string) bool {
+	for _, s := range secrets {
+		if s == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *SecretsModel) View() tea.View {
 	var view string
 
@@ -188,9 +292,43 @@ func (m *SecretsModel) View() tea.View {
 			}
 		}
 
+		hint := "a/n: add  d: delete  s: assign tools  Escape: back"
+		if m.statusMsg != "" {
+			hint = m.statusMsg
+		}
 		view += "\n" + lipgloss.NewStyle().
 			Foreground(lipgloss.Color("8")).
-			Render("a/n: add  d: delete  Escape: back")
+			Render(hint)
+
+	case secretsModeAssign:
+		view += fmt.Sprintf("Assign %s to tools/skills\n", m.assignSecret)
+		view += lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Render("─────────────────\n")
+
+		if len(m.assignables) == 0 {
+			view += "(No skills or tools to assign)\n"
+		} else {
+			for i, entry := range m.assignables {
+				check := "[ ]"
+				if entry.hasSecret {
+					check = "[✓]"
+				}
+				line := fmt.Sprintf("%s %s", check, entry.name)
+				if i == m.assignCursor {
+					view += lipgloss.NewStyle().
+						Background(lipgloss.Color("4")).
+						Foreground(lipgloss.Color("15")).
+						Render("▸ "+line) + "\n"
+				} else {
+					view += fmt.Sprintf("  %s\n", line)
+				}
+			}
+		}
+
+		view += "\n" + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8")).
+			Render("Space/Enter: toggle  Escape: save & back")
 
 	case secretsModeAddName:
 		view += "Add Secret\n"
@@ -229,6 +367,14 @@ type secretsErrorMsg struct {
 	err error
 }
 
+type secretsAssignablesLoadedMsg struct {
+	entries []assignableEntry
+}
+
+type secretsAssignSavedMsg struct {
+	secret string
+}
+
 // Commands
 
 func loadSecretsCmd(client *protocol.Client) tea.Cmd {
@@ -239,6 +385,41 @@ func loadSecretsCmd(client *protocol.Client) tea.Cmd {
 			return secretsErrorMsg{err}
 		}
 		return secretsLoadedMsg{keys: result.Keys}
+	}
+}
+
+func loadAssignablesCmd(client *protocol.Client, secretKey string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		var entries []assignableEntry
+
+		grants, err := client.ListGrants(ctx)
+		if err != nil {
+			return secretsErrorMsg{err}
+		}
+		for _, g := range grants.Grants {
+			entries = append(entries, assignableEntry{
+				name:       g.SkillName,
+				isCustom:   false,
+				hasSecret:  containsSecret(g.Secrets, secretKey),
+				allSecrets: g.Secrets,
+			})
+		}
+
+		tools, err := client.ListCustomTools(ctx)
+		if err != nil {
+			return secretsErrorMsg{err}
+		}
+		for _, t := range tools.Tools {
+			entries = append(entries, assignableEntry{
+				name:       "customtool:" + t.Name,
+				isCustom:   true,
+				hasSecret:  containsSecret(t.Secrets, secretKey),
+				allSecrets: t.Secrets,
+			})
+		}
+
+		return secretsAssignablesLoadedMsg{entries: entries}
 	}
 }
 
