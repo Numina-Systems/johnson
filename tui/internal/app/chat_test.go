@@ -567,8 +567,8 @@ func TestChatModel_MessagesErrorSetsStatusAndErrorFlag(t *testing.T) {
 
 	_, _ = model.Update(msg)
 
-	if !strContains(model.status, "Error") {
-		t.Errorf("expected status to contain 'Error', got %q", model.status)
+	if !strings.HasPrefix(model.status, "Error:") {
+		t.Errorf("expected status to start with 'Error:', got %q", model.status)
 	}
 
 	if !strContains(model.status, "connection refused") {
@@ -577,6 +577,10 @@ func TestChatModel_MessagesErrorSetsStatusAndErrorFlag(t *testing.T) {
 
 	if !model.statusError {
 		t.Error("expected statusError to be true after messagesErrorMsg")
+	}
+
+	if model.spinning {
+		t.Error("expected spinning to be false after error")
 	}
 }
 

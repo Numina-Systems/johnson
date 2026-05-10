@@ -535,6 +535,61 @@ func TestAppModel_WindowSizeMsg_WithInitialSession(t *testing.T) {
 	}
 }
 
+func TestAppModel_SlashBackPopsScreen(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "test-session-123")
+
+	// Push a screen (e.g., tools)
+	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
+
+	if app.activeScreen != ScreenTools {
+		t.Errorf("setup: activeScreen got %v, want ScreenTools", app.activeScreen)
+	}
+
+	// Send /back slash command
+	_, _ = app.Update(SlashCommandMsg{Command: "back"})
+
+	if app.activeScreen != ScreenChat {
+		t.Errorf("activeScreen: got %v, want ScreenChat", app.activeScreen)
+	}
+
+	if len(app.screenStack) != 1 {
+		t.Errorf("screenStack length: got %d, want 1", len(app.screenStack))
+	}
+}
+
+func TestAppModel_SlashQuitReturnsCmd(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "")
+
+	msg := SlashCommandMsg{Command: "quit"}
+	_, cmd := app.Update(msg)
+
+	if cmd == nil {
+		t.Errorf("cmd: got nil, want tea.Quit")
+	}
+
+	result := cmd()
+	if _, ok := result.(tea.QuitMsg); !ok {
+		t.Errorf("cmd result: got %T, want tea.QuitMsg", result)
+	}
+}
+
+func TestAppModel_SlashNewReturnsCmd(t *testing.T) {
+	client := newMockClient()
+	backend := newMockBackendProcess()
+	app := NewAppModel(client, backend, "")
+
+	msg := SlashCommandMsg{Command: "new"}
+	_, cmd := app.Update(msg)
+
+	if cmd == nil {
+		t.Errorf("cmd: got nil, want async RPC trigger command")
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(haystack, needle string) bool {
 	for i := 0; i <= len(haystack)-len(needle); i++ {
