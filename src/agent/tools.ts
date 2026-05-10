@@ -11,6 +11,7 @@ import type { GrantStatus } from '../store/store.ts';
 import { registerNotifyTools } from '../tools/notify.ts';
 import { registerSummarizeTools } from '../tools/summarize.ts';
 import { registerIngestTools } from '../tools/ingest.ts';
+import { registerSessionTools } from '../tools/sessions.ts';
 import type { AppConfig } from '../config/types.ts';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -412,6 +413,9 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
   if (deps.workingDir) {
     registerIngestTools(registry, deps);
   }
+
+  // Session management tools
+  registerSessionTools(registry, deps);
 
   return registry;
 }
