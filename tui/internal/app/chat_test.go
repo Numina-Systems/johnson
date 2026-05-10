@@ -559,7 +559,7 @@ func TestChatModel_View_ShowsThinkingStatus(t *testing.T) {
 	}
 }
 
-func TestChatModel_MessagesErrorSetsStatus(t *testing.T) {
+func TestChatModel_MessagesErrorSetsStatusAndErrorFlag(t *testing.T) {
 	client := newChatClient()
 	model := NewChatModel(client, "session-123")
 
@@ -574,18 +574,45 @@ func TestChatModel_MessagesErrorSetsStatus(t *testing.T) {
 	if !strContains(model.status, "connection refused") {
 		t.Errorf("expected status to contain error message, got %q", model.status)
 	}
-}
-
-func TestChatModel_MessagesErrorSetsErrorFlag(t *testing.T) {
-	client := newChatClient()
-	model := NewChatModel(client, "session-123")
-
-	msg := messagesErrorMsg{err: fmt.Errorf("connection refused")}
-
-	_, _ = model.Update(msg)
 
 	if !model.statusError {
 		t.Error("expected statusError to be true after messagesErrorMsg")
+	}
+}
+
+func TestChatModel_StatusErrorClearsOnSuccess(t *testing.T) {
+	client := newChatClient()
+	model := NewChatModel(client, "session-123")
+
+	// Set error state
+	errorMsg := messagesErrorMsg{err: fmt.Errorf("connection refused")}
+	_, _ = model.Update(errorMsg)
+
+	if !model.statusError {
+		t.Fatal("expected statusError to be true after error message")
+	}
+
+	// Send successful message load
+	successMsg := messagesLoadedMsg{
+		messages: []protocol.MessageRow{
+			{
+				ID:        1,
+				Role:      "user",
+				Content:   "hello",
+				CreatedAt: "2026-05-09T12:00:00Z",
+			},
+		},
+		cursor: "cursor-abc",
+	}
+	_, _ = model.Update(successMsg)
+
+	// Verify statusError is cleared
+	if model.statusError {
+		t.Error("expected statusError to be false after successful message load")
+	}
+
+	if len(model.messages) != 1 {
+		t.Errorf("expected 1 message after successful load, got %d", len(model.messages))
 	}
 }
 
