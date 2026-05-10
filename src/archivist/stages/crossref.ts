@@ -1,4 +1,4 @@
-// pattern: Imperative Shell
+// pattern: Functional Core + Imperative Shell
 
 import { createHash } from 'node:crypto';
 import type { Store } from '@/store/store.ts';
@@ -61,22 +61,18 @@ export async function crossref(
   // Get all embeddings
   const allEmbeddings = deps.store.getAllEmbeddings();
 
-  // Build set of immutable rkeys to exclude from marker additions
-  const immutableRkeys = new Set<string>();
-  const documentsToProcess = mode === 'full' ? Object.keys(Object.fromEntries(
-    allEmbeddings.map(e => [e.rkey, true])
-  )) : [...changeSet.added, ...changeSet.modified];
+  const documentsToProcess = mode === 'full' ? [...new Set(allEmbeddings.map(e => e.rkey))] : [...changeSet.added, ...changeSet.modified];
 
   // Filter out immutable documents from processing
   const mutableToProcess = documentsToProcess.filter(rkey => !isImmutable(rkey));
 
   // Find similar pairs
-  const embeddings = allEmbeddings.map(e => ({
+  const embeddings = allEmbeddings.map((e): EmbeddingPair => ({
     rkey: e.rkey,
-    embedding: e.embedding,
-  } as EmbeddingPair));
+    embedding: [...e.embedding],
+  }));
 
-  const pairs = findSimilarPairs(embeddings, deps.threshold, immutableRkeys);
+  const pairs = findSimilarPairs(embeddings, deps.threshold, new Set()); // Empty: immutable docs must participate in similarity to appear as targets in mutable docs' markers
 
   // Build adjacency map: rkey -> related rkeys
   const adjacencyMap = new Map<string, Set<string>>();
@@ -182,6 +178,8 @@ async function buildIndexDocument(
     const prompt = `Analyze these related documents and generate:
 1. A concise topic name (2-4 words)
 2. A 2-3 sentence summary of the common theme
+
+Respond in JSON format: {"topicName": "...", "summary": "..."}
 
 Documents:${docs}`;
 

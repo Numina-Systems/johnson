@@ -419,7 +419,7 @@ describe('crossref: integration tests', () => {
           threshold: 0.9,
           budget,
           systemPrompt: 'test',
-        } as any,
+        } as any, // simulate undefined embedding provider
         {
           added: ['knowledge:doc1', 'knowledge:doc2'],
           modified: [],
