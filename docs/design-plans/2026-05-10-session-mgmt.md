@@ -98,7 +98,7 @@ TUI or sandbox tool
     → store.getSession(id) + store.getMessages(id)
     → archive.classifySession(messageCount, updatedAt, now)
     → if messageCount > 5 && subAgent: subAgent.complete(transcript) → summary
-    → archive.formatArchiveDocument(meta, messages, summary?)
+    → archive.formatArchiveDocument(meta, messages, archivedAt, summary?)
     → archive.buildArchiveRkey(title, updatedAt) → "archive:session:<slug>:<datetime>"
     → store.docUpsert(rkey, document)
     → if embedding: embed(summary ?? document) → store.saveEmbedding(rkey, emb, model)
@@ -187,6 +187,7 @@ function classifySession(messageCount: number, updatedAt: string, now: Date): Se
 function formatArchiveDocument(
   meta: SessionWithCounts,
   messages: ReadonlyArray<Message>,
+  archivedAt: string,
   summary?: string,
 ): string;
 ```

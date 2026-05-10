@@ -9,6 +9,7 @@ import SecretsScreen from './screens/SecretsScreen.tsx';
 import SchedulesScreen from './screens/SchedulesScreen.tsx';
 import SystemPromptScreen from './screens/SystemPromptScreen.tsx';
 import { buildSystemPrompt } from '../agent/prompt.ts';
+import { theme } from './theme.ts';
 import type { Screen, TuiDependencies } from './types.ts';
 
 export type AppProps = TuiDependencies;
@@ -134,8 +135,8 @@ export default function App(deps: AppProps): React.ReactElement {
       if (!deps.secrets) {
         return (
           <Box flexDirection="column" padding={1}>
-            <Text color="yellow">Secret management not available.</Text>
-            <Text dimColor>Press Escape to go back.</Text>
+            <Text color={theme.warning}>Secret management not available.</Text>
+            <Text color={theme.dim}>Press Escape to go back.</Text>
           </Box>
         );
       }
@@ -144,8 +145,8 @@ export default function App(deps: AppProps): React.ReactElement {
       if (!deps.scheduler) {
         return (
           <Box flexDirection="column" padding={1}>
-            <Text color="yellow">Scheduler not available.</Text>
-            <Text dimColor>Press Escape to go back.</Text>
+            <Text color={theme.warning}>Scheduler not available.</Text>
+            <Text color={theme.dim}>Press Escape to go back.</Text>
           </Box>
         );
       }

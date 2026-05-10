@@ -1,6 +1,7 @@
 // pattern: Imperative Shell
 
 import { OpenRouter } from '@openrouter/sdk';
+import { log } from '../util/log.ts';
 import type {
   ChatMessages,
   ChatAssistantMessage,
@@ -226,7 +227,7 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
           throw new Error('OpenRouter API returned no choices');
         }
 
-        process.stderr.write(`[openrouter] finish_reason=${choice.finishReason} tool_calls=${choice.message.toolCalls?.length ?? 0} content_len=${typeof choice.message.content === 'string' ? choice.message.content.length : 0}\n`);
+        log(`[openrouter] finish_reason=${choice.finishReason} tool_calls=${choice.message.toolCalls?.length ?? 0} content_len=${typeof choice.message.content === 'string' ? choice.message.content.length : 0}`);
 
         const reasoning_content = typeof choice.message.reasoning === 'string' && choice.message.reasoning.length > 0
           ? choice.message.reasoning

@@ -1,7 +1,9 @@
 // pattern: UI Shell — read-only scrollable system prompt viewer
 
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput, useWindowSize } from 'ink';
+import { theme } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
 
 type SystemPromptScreenProps = {
   readonly getSystemPrompt: () => Promise<string>;
@@ -14,8 +16,10 @@ export default function SystemPromptScreen(props: SystemPromptScreenProps): Reac
   const [prompt, setPrompt] = useState<string>('Loading...');
   const [scrollOffset, setScrollOffset] = useState(0);
 
-  const { stdout } = useStdout();
-  const visibleHeight = Math.max(5, (stdout?.rows ?? 24) - 6);
+  const { rows } = useWindowSize();
+  const headerRows = 1;
+  const statusBarRows = 3;
+  const visibleHeight = Math.max(5, rows - headerRows - statusBarRows);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,29 +64,31 @@ export default function SystemPromptScreen(props: SystemPromptScreenProps): Reac
   const visible = lines.slice(scrollOffset, scrollOffset + visibleHeight);
   const lineEnd = Math.min(scrollOffset + visibleHeight, totalLines);
 
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
+  const headerContent = (
+    <Box paddingX={1}>
+      <Text bold color={theme.heading}>
         System Prompt
       </Text>
-      <Box>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box flexDirection="column">
-        {visible.map((line, i) => (
-          <Text key={`${scrollOffset}-${i}`} dimColor>
-            {line || ' '}
-          </Text>
-        ))}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box>
-        <Text color="gray">
-          Lines {scrollOffset + 1}-{lineEnd} of {totalLines} | j/k=scroll PgUp/PgDn g/G=top/bottom Esc=back
-        </Text>
-      </Box>
     </Box>
+  );
+
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={headerRows}
+      statusKeys={[
+        { key: 'j/k', label: 'scroll' },
+        { key: 'PgUp/Dn', label: 'page' },
+        { key: 'g/G', label: 'top/bottom' },
+        { key: 'Esc', label: 'back' },
+      ]}
+      statusText={`Lines ${scrollOffset + 1}–${lineEnd} of ${totalLines}`}
+    >
+      {visible.map((line, i) => (
+        <Text key={`${scrollOffset}-${i}`} color={theme.muted}>
+          {line || ' '}
+        </Text>
+      ))}
+    </ScreenLayout>
   );
 }

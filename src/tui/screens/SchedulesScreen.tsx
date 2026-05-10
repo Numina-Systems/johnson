@@ -4,6 +4,8 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { TaskStore, TaskState } from '../../scheduler/types.ts';
 import { formatDate } from '../util.ts';
+import { theme } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
 
 type SchedulesScreenProps = {
   readonly scheduler: TaskStore;
@@ -49,42 +51,49 @@ export default function SchedulesScreen(props: SchedulesScreenProps): React.Reac
     return `${formatDate(task.lastRun.startedAt)} ${status} (${dur}s)`;
   };
 
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
+  const headerContent = (
+    <Box paddingX={1}>
+      <Text bold color={theme.heading}>
         Schedules
       </Text>
-      <Box>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box flexDirection="column" marginTop={1}>
-        {tasks.length === 0 ? (
-          <Text dimColor>(No scheduled tasks. The agent creates tasks via the schedule_task tool.)</Text>
-        ) : (
-          tasks.map((task, i) => {
-            const cursor = i === selectedIdx ? '>' : ' ';
-            const icon = task.enabled ? 'ON ' : 'OFF';
-            return (
-              <Box key={task.id} flexDirection="column" marginBottom={1}>
-                <Text>
-                  {cursor} {icon} {task.name}
-                </Text>
-                <Text color="gray">     Schedule: {task.schedule}</Text>
-                <Text color="gray">
-                  {'     '}Runs: {task.runCount} | Last: {renderLastRun(task)}
-                </Text>
-                {!task.enabled && <Text color="yellow">     [DISABLED]</Text>}
-              </Box>
-            );
-          })
-        )}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box>
-        <Text color="gray">e=toggle enabled Esc=back</Text>
-      </Box>
     </Box>
+  );
+
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={1}
+      statusKeys={[
+        { key: 'j/k', label: 'move' },
+        { key: 'e', label: 'toggle' },
+        { key: 'Esc', label: 'back' },
+      ]}
+    >
+      {tasks.length === 0 ? (
+        <Text color={theme.dim}>(No scheduled tasks. The agent creates tasks via the schedule_task tool.)</Text>
+      ) : (
+        tasks.map((task, i) => {
+          const isSelected = i === selectedIdx;
+          const iconColor = task.enabled ? theme.taskOn : theme.taskOff;
+          const icon = task.enabled ? '●' : '○';
+          return (
+            <Box key={task.id} flexDirection="column" marginBottom={1}>
+              <Text>
+                <Text color={isSelected ? theme.selected : theme.body}>
+                  {isSelected ? '▸' : ' '}{' '}
+                </Text>
+                <Text color={iconColor}>{icon} </Text>
+                <Text color={isSelected ? theme.selected : theme.body}>{task.name}</Text>
+              </Text>
+              <Text color={theme.muted}>     Schedule: {task.schedule}</Text>
+              <Text color={theme.muted}>
+                {'     '}Runs: {task.runCount} | Last: {renderLastRun(task)}
+              </Text>
+              {!task.enabled && <Text color={theme.warning}>     [DISABLED]</Text>}
+            </Box>
+          );
+        })
+      )}
+    </ScreenLayout>
   );
 }

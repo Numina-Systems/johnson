@@ -7,6 +7,8 @@ import type { SecretManager } from '../../secrets/manager.ts';
 import type { TaskStore } from '../../scheduler/types.ts';
 import type { TuiDependencies } from '../types.ts';
 import { formatDate } from '../util.ts';
+import { theme, separator } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
 
 type SessionsScreenProps = {
   readonly store: Store;
@@ -76,53 +78,60 @@ export default function SessionsScreen(props: SessionsScreenProps): React.ReactE
   const approvedToolCount = tools.filter((t) => t.approved).length;
   const totalToolCount = tools.length;
 
-  return (
-    <Box flexDirection="column" height="100%">
+  const headerContent = (
+    <>
       <Box paddingX={1}>
-        <Text bold color="white">
+        <Text bold color={theme.accent}>
           constellation-lite
         </Text>
-        <Text color="gray"> — </Text>
-        <Text bold color="yellow">
+        <Text color={theme.dim}> — </Text>
+        <Text bold color={theme.warning}>
           {modelName}
         </Text>
-        <Text color="gray">
+        <Text color={theme.muted}>
           {'  '}secrets:{secretCount} schedules:{scheduleCount} tools:{approvedToolCount}/{totalToolCount}
         </Text>
       </Box>
       <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
+        <Text color={theme.separator}>{separator(60)}</Text>
       </Box>
+    </>
+  );
 
-      <Box flexDirection="column" flexGrow={1} paddingX={1}>
-        <Text bold>Sessions</Text>
-        {sessions.length === 0 ? (
-          <Box marginTop={1}>
-            <Text dimColor>No sessions yet. Press n to start a new conversation.</Text>
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={2}
+      statusKeys={[
+        { key: 'j/k', label: 'move' },
+        { key: '⏎', label: 'open' },
+        { key: 'n', label: 'new' },
+        { key: 'd', label: 'delete' },
+        { key: 't', label: 'tools' },
+        { key: 's', label: 'secrets' },
+        { key: 'c', label: 'schedules' },
+        { key: 'p', label: 'prompt' },
+        { key: 'q', label: 'quit' },
+      ]}
+    >
+      <Text bold color={theme.body}>Sessions</Text>
+      {sessions.length === 0 ? (
+        <Box marginTop={1}>
+          <Text color={theme.dim}>No sessions yet. Press n to start a new conversation.</Text>
+        </Box>
+      ) : (
+        sessions.map((session, idx) => (
+          <Box key={session.id}>
+            <Text color={idx === selectedIdx ? theme.selected : theme.body}>
+              {idx === selectedIdx ? '▸ ' : '  '}
+              {session.title ?? 'Untitled session'}
+            </Text>
+            <Text color={theme.muted}>
+              {'  '}({session.messageCount} msgs, {formatDate(session.updatedAt)})
+            </Text>
           </Box>
-        ) : (
-          sessions.map((session, idx) => (
-            <Box key={session.id}>
-              <Text color={idx === selectedIdx ? 'cyan' : undefined}>
-                {idx === selectedIdx ? '> ' : '  '}
-                {session.title ?? 'Untitled session'}
-              </Text>
-              <Text color="gray">
-                {'  '}({session.messageCount} msgs, {formatDate(session.updatedAt)})
-              </Text>
-            </Box>
-          ))
-        )}
-      </Box>
-
-      <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box paddingX={1}>
-        <Text color="gray">
-          j/k=move Enter=open n=new d=delete | t=tools s=secrets c=schedules p=prompt q=quit
-        </Text>
-      </Box>
-    </Box>
+        ))
+      )}
+    </ScreenLayout>
   );
 }

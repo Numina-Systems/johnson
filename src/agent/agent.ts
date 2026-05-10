@@ -11,6 +11,7 @@ import type {
 } from '../model/types.ts';
 import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
 import { estimateTokens, repairConversation, trimOldToolResults } from './context.ts';
+import { log } from '../util/log.ts';
 import { buildSystemPrompt } from './prompt.ts';
 import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
@@ -120,7 +121,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       try {
         await options.onEvent({ kind, data });
       } catch (err) {
-        process.stderr.write(`[agent] event callback error (${kind}): ${err}\n`);
+        log(`[agent] event callback error (${kind}): ${err}`);
       }
     };
     currentContext = options?.context ?? {};
@@ -166,7 +167,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // d.1 Repair any orphaned tool_use blocks from previous crashes
     const repairedCount = repairConversation(history);
     if (repairedCount > 0) {
-      process.stderr.write(`[agent] Repaired ${repairedCount} orphaned tool_use block(s)\n`);
+      log(`[agent] Repaired ${repairedCount} orphaned tool_use block(s)`);
     }
 
     // d.2 Trim verbose tool results in older messages
@@ -263,7 +264,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       const toolBlocks = response.content.filter(b => b.type === 'tool_use').length;
       const textBlocks = response.content.filter(b => b.type === 'text').length;
-      process.stderr.write(`[agent] round=${round} stop_reason=${response.stop_reason} content_blocks=${response.content.length} tool_use=${toolBlocks} text=${textBlocks}\n`);
+      log(`[agent] round=${round} stop_reason=${response.stop_reason} content_blocks=${response.content.length} tool_use=${toolBlocks} text=${textBlocks}`);
 
       // Append assistant response
       const assistantMessage: Message = { role: 'assistant', content: response.content };
@@ -274,7 +275,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
-        process.stderr.write(`[agent] loop exiting: ${response.stop_reason}\n`);
+        log(`[agent] loop exiting: ${response.stop_reason}`);
         exitedNormally = true;
         break;
       }
@@ -338,7 +339,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     // g. Handle max-iteration exhaustion — force a text-only wrap-up
     if (!exitedNormally) {
-      process.stderr.write(`[agent] max tool rounds (${deps.config.maxToolRounds}) exhausted, forcing final response\n`);
+      log(`[agent] max tool rounds (${deps.config.maxToolRounds}) exhausted, forcing final response`);
 
       history.push({
         role: 'user',

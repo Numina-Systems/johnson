@@ -8,6 +8,8 @@ import type { Agent } from '../../agent/types.ts';
 import type { Store } from '../../store/store.ts';
 import { onLog } from '../../util/log.ts';
 import { formatStats } from '../../agent/format-stats.ts';
+import { theme, separator } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
 
 type DisplayMessage = {
   readonly role: 'user' | 'agent' | 'system';
@@ -30,7 +32,6 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
   const [status, setStatus] = useState('Ready');
   const [inputValue, setInputValue] = useState('');
 
-  // Load existing messages from the store on mount
   useEffect(() => {
     const stored = store.getMessages(sessionId, 200);
     const loaded: DisplayMessage[] = stored.map((m) => ({
@@ -40,7 +41,6 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     setMessages(loaded);
   }, [sessionId, store]);
 
-  // Subscribe to background logs (scheduler, discord, etc.)
   useEffect(() => {
     const unsubscribe = onLog((line) => {
       setMessages((prev) => [...prev, { role: 'system', text: line }]);
@@ -75,7 +75,7 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
           ...prev,
           {
             role: 'system',
-            text: 'Commands: /reset /help /quit | Esc=back to Sessions (for screen navigation: tools, secrets, schedules, prompt)',
+            text: 'Commands: /reset /help /quit | Esc=back to Sessions',
           },
         ]);
         return;
@@ -127,7 +127,6 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     [agent, isThinking, exit, store, sessionId],
   );
 
-  // Ctrl+C and Escape handling
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       exit();
@@ -138,69 +137,74 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     }
   });
 
-  return (
-    <Box flexDirection="column" height="100%">
-      <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-
-      <Box flexDirection="column" flexGrow={1} overflow="hidden" paddingX={1}>
-        {messages.map((msg, i) => (
-          <Box key={i} marginBottom={0}>
-            {msg.role === 'user' && (
-              <Text wrap="wrap">
-                <Text color="cyan" bold>
-                  you&gt;{' '}
-                </Text>
-                <Text>{msg.text}</Text>
-              </Text>
-            )}
-            {msg.role === 'agent' && (
-              <Text wrap="wrap">
-                <Text color="green" bold>
-                  agent&gt;{' '}
-                </Text>
-                <Text>{msg.text}</Text>
-              </Text>
-            )}
-            {msg.role === 'system' && (
-              <Text wrap="wrap" color="yellow">
-                {msg.text}
-              </Text>
-            )}
-          </Box>
-        ))}
-
-        {isThinking && (
-          <Box>
-            <Text color="magenta">
-              <Spinner type="dots" />{' '}
-            </Text>
-            <Text color="magenta">{status}</Text>
-          </Box>
-        )}
-      </Box>
-
-      <Box paddingX={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box paddingX={1}>
-        <Text color="gray">
-          [{status}] /reset /help /quit | Esc=back
-        </Text>
-      </Box>
-
-      <Box paddingX={1}>
-        <Text color="cyan" bold>
-          {'> '}
-        </Text>
-        <TextInput
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleSubmit}
-          placeholder={isThinking ? 'waiting...' : 'Type a message...'}
-        />
-      </Box>
+  const headerContent = (
+    <Box paddingX={1}>
+      <Text color={theme.separator}>{separator(60)}</Text>
     </Box>
+  );
+
+  const footerContent = (
+    <Box paddingX={1}>
+      <Text color={theme.prompt} bold>
+        {'▸ '}
+      </Text>
+      <TextInput
+        value={inputValue}
+        onChange={setInputValue}
+        onSubmit={handleSubmit}
+        placeholder={isThinking ? 'waiting...' : 'Type a message...'}
+      />
+    </Box>
+  );
+
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={1}
+      footer={footerContent}
+      footerHeight={1}
+      statusKeys={[
+        { key: '/reset', label: '' },
+        { key: '/help', label: '' },
+        { key: '/quit', label: '' },
+        { key: 'Esc', label: 'back' },
+      ]}
+      statusText={status}
+    >
+      {messages.map((msg, i) => (
+        <Box key={i} marginBottom={0}>
+          {msg.role === 'user' && (
+            <Text wrap="wrap">
+              <Text color={theme.userMsg} bold>
+                you&gt;{' '}
+              </Text>
+              <Text color={theme.body}>{msg.text}</Text>
+            </Text>
+          )}
+          {msg.role === 'agent' && (
+            <Text wrap="wrap">
+              <Text color={theme.agentMsg} bold>
+                agent&gt;{' '}
+              </Text>
+              <Text color={theme.body}>{msg.text}</Text>
+            </Text>
+          )}
+          {msg.role === 'system' && (
+            <Text wrap="wrap" color={theme.systemMsg}>
+              {msg.text}
+            </Text>
+          )}
+        </Box>
+      ))}
+
+      {isThinking && (
+        <Box>
+          <Text color={theme.spinner}>
+            <Spinner type="dots" />{' '}
+          </Text>
+          <Text color={theme.spinner}>{status}</Text>
+        </Box>
+      )}
+    </ScreenLayout>
   );
 }

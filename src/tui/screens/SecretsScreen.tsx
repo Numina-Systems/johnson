@@ -6,6 +6,8 @@ import TextInput from 'ink-text-input';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { Store } from '../../store/store.ts';
 import type { CustomToolManager } from '../../tools/custom-tool-manager.ts';
+import { theme, separator } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
 
 type SecretsScreenProps = {
   readonly secrets: SecretManager;
@@ -35,15 +37,15 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
 
   const assignableNames = useMemo(() => {
     const result = store.docList(500);
-    const skills = result.documents
+    const skillNames = result.documents
       .filter((d) => d.rkey.startsWith('skill:'))
       .map((d) => d.rkey);
-    const tools = (customTools?.listTools() ?? []).map((t) => `customtool:${t.name}`);
-    return [...skills, ...tools];
+    const toolNames = (customTools?.listTools() ?? []).map((t) => `customtool:${t.name}`);
+    return [...skillNames, ...toolNames];
   }, [store, customTools, refreshTick]);
 
   const secretUsers = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, Array<string>>();
     const grants = store.listGrants();
     for (const grant of grants) {
       for (const secretKey of grant.secrets) {
@@ -167,11 +169,11 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   if (mode === 'add_name') {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="cyan">
+        <Text bold color={theme.heading}>
           Add Secret
         </Text>
         <Box marginTop={1}>
-          <Text>Secret name: </Text>
+          <Text color={theme.body}>Secret name: </Text>
           <TextInput
             value={newSecretName}
             onChange={setNewSecretName}
@@ -186,7 +188,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
             }}
           />
         </Box>
-        <Text dimColor>Enter to confirm, empty to cancel</Text>
+        <Text color={theme.muted}>Enter to confirm, empty to cancel</Text>
       </Box>
     );
   }
@@ -195,11 +197,12 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   if (mode === 'add_value') {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="cyan">
+        <Text bold color={theme.heading}>
           Add Secret
         </Text>
         <Box marginTop={1}>
-          <Text>{newSecretName} = </Text>
+          <Text color={theme.accentAlt}>{newSecretName}</Text>
+          <Text color={theme.body}> = </Text>
           <TextInput
             value={newSecretValue}
             onChange={setNewSecretValue}
@@ -221,7 +224,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
             }}
           />
         </Box>
-        <Text dimColor>Enter to confirm, empty to cancel</Text>
+        <Text color={theme.muted}>Enter to confirm, empty to cancel</Text>
       </Box>
     );
   }
@@ -230,20 +233,22 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   if (mode === 'edit_skills') {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="cyan">
-          Assign tools for: {editSkillsSecret}
+        <Text bold color={theme.heading}>
+          Assign tools for: <Text color={theme.accentAlt}>{editSkillsSecret}</Text>
         </Text>
-        <Text dimColor>Space/Enter to toggle, Esc to save & go back</Text>
+        <Text color={theme.muted}>Space/Enter to toggle, Esc to save & go back</Text>
         <Box marginTop={1} flexDirection="column">
           {assignableNames.length === 0 ? (
-            <Text dimColor>(no skills or tools — create one first)</Text>
+            <Text color={theme.dim}>(no skills or tools — create one first)</Text>
           ) : (
             assignableNames.map((name, i) => {
               const checked = editSkillsChecked.has(name);
-              const cursor = i === editSkillsIdx ? '>' : ' ';
+              const isSelected = i === editSkillsIdx;
               return (
                 <Text key={name}>
-                  {cursor} [{checked ? 'x' : ' '}] {name}
+                  <Text color={isSelected ? theme.selected : theme.body}>
+                    {isSelected ? '▸' : ' '} [{checked ? '✓' : ' '}] {name}
+                  </Text>
                 </Text>
               );
             })
@@ -254,40 +259,46 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   }
 
   // ── List Mode ──
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
+  const headerContent = (
+    <Box paddingX={1}>
+      <Text bold color={theme.heading}>
         Secrets
       </Text>
-      {statusMsg && <Text color="yellow">{statusMsg}</Text>}
-      <Box flexDirection="column" marginTop={1}>
-        {keys.length === 0 ? (
-          <Text dimColor>(No secrets configured. Press 'a' to add one.)</Text>
-        ) : (
-          keys.map((k, i) => {
-            const cursor = i === selectedIdx ? '>' : ' ';
-            const users = secretUsers.get(k) ?? [];
-            const usedBy = users.length > 0 ? `used by: ${users.join(', ')}` : '(not referenced)';
-            return (
-              <Box key={k}>
-                <Text>
-                  {cursor} {k}
-                </Text>
-                <Text color="gray">
-                  {'  '}
-                  {usedBy}
-                </Text>
-              </Box>
-            );
-          })
-        )}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box>
-        <Text color="gray">a=add d=delete s=assign tools Esc=back</Text>
-      </Box>
     </Box>
+  );
+
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={1}
+      statusKeys={[
+        { key: 'a', label: 'add' },
+        { key: 'd', label: 'delete' },
+        { key: 's', label: 'assign tools' },
+        { key: 'Esc', label: 'back' },
+      ]}
+    >
+      {statusMsg && <Text color={theme.warning}>{statusMsg}</Text>}
+      {keys.length === 0 ? (
+        <Text color={theme.dim}>(No secrets configured. Press 'a' to add one.)</Text>
+      ) : (
+        keys.map((k, i) => {
+          const isSelected = i === selectedIdx;
+          const users = secretUsers.get(k) ?? [];
+          const usedBy = users.length > 0 ? `used by: ${users.join(', ')}` : '(not referenced)';
+          return (
+            <Box key={k}>
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {isSelected ? '▸' : ' '} {k}
+              </Text>
+              <Text color={theme.muted}>
+                {'  '}
+                {usedBy}
+              </Text>
+            </Box>
+          );
+        })
+      )}
+    </ScreenLayout>
   );
 }

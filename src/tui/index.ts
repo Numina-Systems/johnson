@@ -13,5 +13,5 @@ export { App };
  * Call this from the imperative shell (src/index.ts).
  */
 export function startTUI(props: TuiDependencies): void {
-  render(React.createElement(App, props));
+  render(React.createElement(App, props), { alternateScreen: true });
 }

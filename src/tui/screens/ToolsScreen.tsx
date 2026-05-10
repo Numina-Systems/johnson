@@ -6,6 +6,9 @@ import type { Store, GrantStatus } from '../../store/store.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { TuiDependencies } from '../types.ts';
 import { parseDescription } from '../util.ts';
+import { theme, separator } from '../theme.ts';
+import ScreenLayout from '../ScreenLayout.tsx';
+import StatusBar from '../StatusBar.tsx';
 
 type ToolsScreenProps = {
   readonly store: Store;
@@ -28,6 +31,28 @@ type SkillEntry = {
 };
 
 const SECTIONS: ReadonlyArray<Section> = ['custom', 'builtin', 'skills'];
+
+function grantColor(status: GrantStatus): string {
+  switch (status) {
+    case 'granted':
+      return theme.grantOk;
+    case 'revoked':
+      return theme.grantRevoked;
+    default:
+      return theme.grantPending;
+  }
+}
+
+function grantIcon(status: GrantStatus): string {
+  switch (status) {
+    case 'granted':
+      return '✓';
+    case 'revoked':
+      return '✗';
+    default:
+      return '○';
+  }
+}
 
 export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement {
   const { store, secrets, customTools, builtinTools, onSubModeChange } = props;
@@ -52,7 +77,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   const refreshSkills = useCallback(() => {
     const result = store.docList(500);
     const skillDocs = result.documents.filter((d) => d.rkey.startsWith('skill:'));
-    const entries: SkillEntry[] = skillDocs.map((doc) => {
+    const entries: Array<SkillEntry> = skillDocs.map((doc) => {
       const grant = store.getGrant(doc.rkey);
       return {
         rkey: doc.rkey,
@@ -83,7 +108,6 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     }
   })();
 
-  // Reset selection when section changes
   useEffect(() => {
     setSelectedIdx(0);
   }, [section]);
@@ -239,27 +263,32 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     const separatorWidth = Math.max(20, termWidth - 4);
     return (
       <Box flexDirection="column" padding={1} width={termWidth}>
-        <Text bold color="cyan">
+        <Text bold color={theme.heading}>
           Skill Code
         </Text>
         <Box>
-          <Text dimColor>{'─'.repeat(separatorWidth)}</Text>
+          <Text color={theme.separator}>{separator(separatorWidth)}</Text>
         </Box>
         <Box flexDirection="column">
-          {visibleLines.map((line, i) => (
-            <Text key={codeScrollOffset + i} dimColor>
-              {line || ' '}
-            </Text>
-          ))}
+          {visibleLines.map((line, i) => {
+            const lineNum = codeScrollOffset + i + 1;
+            return (
+              <Text key={codeScrollOffset + i}>
+                <Text color={theme.dim}>{String(lineNum).padStart(4, ' ')} │ </Text>
+                <Text color={theme.body}>{line || ' '}</Text>
+              </Text>
+            );
+          })}
         </Box>
-        <Box marginTop={1}>
-          <Text dimColor>{'─'.repeat(separatorWidth)}</Text>
-        </Box>
-        <Box>
-          <Text color="gray">
-            Lines {codeScrollOffset + 1}–{lineEnd} of {codeLines.length} | j/k=scroll Ctrl-d/u=page g/G=top/bottom Esc=back
-          </Text>
-        </Box>
+        <StatusBar
+          keys={[
+            { key: 'j/k', label: 'scroll' },
+            { key: 'C-d/u', label: 'page' },
+            { key: 'g/G', label: 'top/bottom' },
+            { key: 'Esc', label: 'back' },
+          ]}
+          status={`Lines ${codeScrollOffset + 1}–${lineEnd} of ${codeLines.length}`}
+        />
       </Box>
     );
   }
@@ -268,20 +297,22 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   if (mode === 'edit_secrets') {
     return (
       <Box flexDirection="column" padding={1}>
-        <Text bold color="cyan">
-          Secrets for: {editSecretTarget.name}
+        <Text bold color={theme.heading}>
+          Secrets for: <Text color={theme.accentAlt}>{editSecretTarget.name}</Text>
         </Text>
-        <Text dimColor>Space/Enter to toggle, Esc to save & go back</Text>
+        <Text color={theme.muted}>Space/Enter to toggle, Esc to save & go back</Text>
         <Box marginTop={1} flexDirection="column">
           {allSecretKeys.length === 0 ? (
-            <Text dimColor>(no secrets in vault — add via the Secrets screen)</Text>
+            <Text color={theme.dim}>(no secrets in vault — add via the Secrets screen)</Text>
           ) : (
             allSecretKeys.map((k, i) => {
               const checked = editSecretChecked.has(k);
-              const cursor = i === editSecretIdx ? '>' : ' ';
+              const isSelected = i === editSecretIdx;
               return (
                 <Text key={k}>
-                  {cursor} [{checked ? 'x' : ' '}] {k}
+                  <Text color={isSelected ? theme.selected : theme.body}>
+                    {isSelected ? '▸' : ' '} [{checked ? '✓' : ' '}] {k}
+                  </Text>
                 </Text>
               );
             })
@@ -292,38 +323,47 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   }
 
   // ── List Mode ──
-  const statusIcon = (status: GrantStatus): string =>
-    status === 'granted' ? 'OK ' : status === 'revoked' ? 'REV' : 'PEN';
-
   const renderTabs = (): React.ReactElement => (
     <Box>
-      {SECTIONS.map((s) => (
-        <Box key={s} marginRight={2}>
-          <Text bold color={s === section ? 'cyan' : 'gray'}>
-            [{s === 'custom' ? 'Custom' : s === 'builtin' ? 'Built-in' : 'Skills'}]
-          </Text>
-        </Box>
-      ))}
+      {SECTIONS.map((s) => {
+        const label = s === 'custom' ? 'Custom' : s === 'builtin' ? 'Built-in' : 'Skills';
+        const isActive = s === section;
+        return (
+          <Box key={s} marginRight={2}>
+            <Text bold color={isActive ? theme.tabActive : theme.tabInactive}>
+              {isActive ? '▸ ' : '  '}{label}
+            </Text>
+          </Box>
+        );
+      })}
     </Box>
   );
 
   const renderCustomSection = (): React.ReactElement => {
     if (!customTools) {
-      return <Text dimColor>(Custom tools not available — feature #10 not enabled)</Text>;
+      return <Text color={theme.dim}>(Custom tools not available)</Text>;
     }
     if (customToolList.length === 0) {
-      return <Text dimColor>(no custom tools)</Text>;
+      return <Text color={theme.dim}>(no custom tools)</Text>;
     }
     return (
       <>
         {customToolList.map((tool, i) => {
-          const cursor = i === selectedIdx ? '>' : ' ';
-          const icon = tool.approved ? 'OK ' : 'PEN';
+          const isSelected = i === selectedIdx;
+          const statusColor = tool.approved ? theme.grantOk : theme.grantPending;
+          const icon = tool.approved ? '✓' : '○';
           const secretCount = tool.secrets.length;
           const secretSuffix = secretCount > 0 ? ` [${secretCount} secret${secretCount > 1 ? 's' : ''}]` : '';
           return (
             <Text key={tool.name}>
-              {cursor} {icon} {tool.name} — {tool.description}{secretSuffix}
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {isSelected ? '▸' : ' '}{' '}
+              </Text>
+              <Text color={statusColor}>{icon} </Text>
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {tool.name}
+              </Text>
+              <Text color={theme.muted}> — {tool.description}{secretSuffix}</Text>
             </Text>
           );
         })}
@@ -333,15 +373,18 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
   const renderBuiltinSection = (): React.ReactElement => {
     if (builtinTools.length === 0) {
-      return <Text dimColor>(no built-in tools)</Text>;
+      return <Text color={theme.dim}>(no built-in tools)</Text>;
     }
     return (
       <>
         {builtinTools.map((tool, i) => {
-          const cursor = i === selectedIdx ? '>' : ' ';
+          const isSelected = i === selectedIdx;
           return (
             <Text key={tool.name}>
-              {cursor} {tool.name} — {tool.description}
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {isSelected ? '▸' : ' '} {tool.name}
+              </Text>
+              <Text color={theme.muted}> — {tool.description}</Text>
             </Text>
           );
         })}
@@ -351,20 +394,28 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
 
   const renderSkillsSection = (): React.ReactElement => {
     if (skills.length === 0) {
-      return <Text dimColor>(no skills)</Text>;
+      return <Text color={theme.dim}>(no skills)</Text>;
     }
     return (
       <>
         {skills.map((skill, i) => {
-          const cursor = i === selectedIdx ? '>' : ' ';
+          const isSelected = i === selectedIdx;
           const desc = skill.description ? ` — ${skill.description}` : '';
           const secretCount = skill.secrets.length;
           const secretSuffix = secretCount > 0 ? ` [${secretCount} secret${secretCount > 1 ? 's' : ''}]` : '';
           return (
             <Text key={skill.rkey}>
-              {cursor} {statusIcon(skill.grantStatus)} {skill.rkey}
-              {desc}
-              {secretSuffix}
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {isSelected ? '▸' : ' '}{' '}
+              </Text>
+              <Text color={grantColor(skill.grantStatus)}>{grantIcon(skill.grantStatus)} </Text>
+              <Text color={isSelected ? theme.selected : theme.body}>
+                {skill.rkey}
+              </Text>
+              <Text color={theme.muted}>
+                {desc}
+                {secretSuffix}
+              </Text>
             </Text>
           );
         })}
@@ -372,40 +423,59 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
     );
   };
 
-  const sectionFooter = (() => {
+  const sectionKeys = ((): ReadonlyArray<{ key: string; label: string }> => {
     switch (section) {
       case 'custom':
-        return 'a=approve r=revoke v=view s=secrets';
+        return [
+          { key: 'a', label: 'approve' },
+          { key: 'r', label: 'revoke' },
+          { key: 'v', label: 'view' },
+          { key: 's', label: 'secrets' },
+        ];
       case 'builtin':
-        return '(read-only)';
+        return [];
       case 'skills':
-        return 'g=grant r=revoke v=view s=secrets d=delete';
+        return [
+          { key: 'g', label: 'grant' },
+          { key: 'r', label: 'revoke' },
+          { key: 'v', label: 'view' },
+          { key: 's', label: 'secrets' },
+          { key: 'd', label: 'delete' },
+        ];
     }
   })();
 
-  return (
-    <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
-        Tools
-      </Text>
-      {renderTabs()}
-      <Box>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      {statusMsg && <Text color="yellow">{statusMsg}</Text>}
-      <Box flexDirection="column" marginTop={1}>
-        {section === 'custom' && renderCustomSection()}
-        {section === 'builtin' && renderBuiltinSection()}
-        {section === 'skills' && renderSkillsSection()}
-      </Box>
-      <Box marginTop={1}>
-        <Text dimColor>{'─'.repeat(60)}</Text>
-      </Box>
-      <Box>
-        <Text color="gray">
-          Tab=section j/k=move {sectionFooter} Esc=back
+  const headerContent = (
+    <>
+      <Box paddingX={1}>
+        <Text bold color={theme.heading}>
+          Tools
         </Text>
       </Box>
-    </Box>
+      <Box paddingX={1}>
+        {renderTabs()}
+      </Box>
+      <Box paddingX={1}>
+        <Text color={theme.separator}>{separator(60)}</Text>
+      </Box>
+    </>
+  );
+
+  return (
+    <ScreenLayout
+      header={headerContent}
+      headerHeight={3}
+      statusKeys={[
+        { key: 'Tab', label: 'section' },
+        { key: 'j/k', label: 'move' },
+        ...sectionKeys,
+        { key: 'Esc', label: 'back' },
+      ]}
+    >
+      {statusMsg && <Text color={theme.warning}>{statusMsg}</Text>}
+      {section === 'custom' && renderCustomSection()}
+      {section === 'builtin' && renderBuiltinSection()}
+      {section === 'skills' && renderSkillsSection()}
+    </ScreenLayout>
   );
 }
