@@ -1,6 +1,6 @@
 // pattern: Imperative Shell (test)
 
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect } from 'bun:test';
 import { createToolRegistry } from '../runtime/tool-registry.ts';
 import { registerSessionTools } from './sessions.ts';
 import type { AgentDependencies } from '../agent/types.ts';
@@ -50,10 +50,12 @@ function createNoopStore(): Store {
   };
 }
 
-interface MockStoreTest extends Store {
+type MockStoreTest = Store & {
   docUpsertCalls: Array<{ rkey: string; content: string }>;
   deleteSessionCalls: string[];
-}
+};
+
+type ClassifiedSession = SessionWithCounts & { classification: string };
 
 function createMockStore(options: {
   sessions: SessionWithCounts[];
@@ -112,8 +114,6 @@ function createMockDeps(overrides: {
 }
 
 describe('Session management tools', () => {
-  let registry: ReturnType<typeof createToolRegistry>;
-
   describe('list_sessions', () => {
     test('AC4.1: returns all sessions with metadata and classification', async () => {
       const now = new Date();
@@ -149,11 +149,11 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
-      const result = (await registry.execute('list_sessions', {})) as Array<any>;
+      const result = (await registry.execute('list_sessions', {})) as Array<ClassifiedSession>;
 
       expect(result).toHaveLength(3);
 
@@ -164,6 +164,10 @@ describe('Session management tools', () => {
       expect(activeResult).toBeDefined();
       expect(archiveResult).toBeDefined();
       expect(deleteResult).toBeDefined();
+
+      if (!activeResult || !archiveResult || !deleteResult) {
+        throw new Error('Results should be defined');
+      }
 
       expect(activeResult.classification).toBe('active');
       expect(archiveResult.classification).toBe('archive');
@@ -209,13 +213,13 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
       const result = (await registry.execute('list_sessions', {
         filter: 'stale',
-      })) as Array<any>;
+      })) as Array<ClassifiedSession>;
 
       expect(result).toHaveLength(2);
       const titles = result.map((s) => s.title).sort();
@@ -247,17 +251,21 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
       const result = (await registry.execute('list_sessions', {
         filter: 'active',
-      })) as Array<any>;
+      })) as Array<ClassifiedSession>;
 
       expect(result).toHaveLength(1);
-      expect(result[0].title).toBe('Active 1');
-      expect(result[0].classification).toBe('active');
+
+      const session = result[0];
+      if (!session) throw new Error('Session should be defined');
+
+      expect(session.title).toBe('Active 1');
+      expect(session.classification).toBe('active');
     });
 
     test('filter "delete" returns only delete-classified sessions', async () => {
@@ -285,17 +293,21 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
       const result = (await registry.execute('list_sessions', {
         filter: 'delete',
-      })) as Array<any>;
+      })) as Array<ClassifiedSession>;
 
       expect(result).toHaveLength(1);
-      expect(result[0].title).toBe('Delete');
-      expect(result[0].classification).toBe('delete');
+
+      const session = result[0];
+      if (!session) throw new Error('Session should be defined');
+
+      expect(session.title).toBe('Delete');
+      expect(session.classification).toBe('delete');
     });
 
     test('filter "archive" returns only archive-classified sessions', async () => {
@@ -323,17 +335,38 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
       const result = (await registry.execute('list_sessions', {
         filter: 'archive',
-      })) as Array<any>;
+      })) as Array<ClassifiedSession>;
 
       expect(result).toHaveLength(1);
-      expect(result[0].title).toBe('Archive');
-      expect(result[0].classification).toBe('archive');
+
+      const session = result[0];
+      if (!session) throw new Error('Session should be defined');
+
+      expect(session.title).toBe('Archive');
+      expect(session.classification).toBe('archive');
+    });
+
+    test('throws error for invalid filter value', async () => {
+      const store = createMockStore({ sessions: [] });
+      const registry = createToolRegistry();
+      const deps = createMockDeps({ store });
+      registerSessionTools(registry, deps);
+
+      try {
+        await registry.execute('list_sessions', {
+          filter: 'bogus',
+        });
+        expect.unreachable('Should have thrown');
+      } catch (e: any) {
+        expect(e.message).toContain('invalid filter value');
+        expect(e.message).toContain('bogus');
+      }
     });
   });
 
@@ -351,8 +384,8 @@ describe('Session management tools', () => {
         },
       ];
 
-      const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const store = createMockStore({ sessions }) as MockStoreTest;
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
@@ -362,11 +395,13 @@ describe('Session management tools', () => {
 
       expect(result).toContain('Archived session as');
       expect(result).toContain('archive:session:');
+      expect(store.docUpsertCalls.length).toBeGreaterThan(0);
+      expect(store.deleteSessionCalls).toContain('test-session-id');
     });
 
     test('throws error if session not found', async () => {
       const store = createMockStore({ sessions: [] });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
@@ -397,7 +432,7 @@ describe('Session management tools', () => {
       ];
 
       const store = createMockStore({ sessions });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
@@ -411,7 +446,7 @@ describe('Session management tools', () => {
 
     test('throws error if session not found', async () => {
       const store = createMockStore({ sessions: [] });
-      registry = createToolRegistry();
+      const registry = createToolRegistry();
       const deps = createMockDeps({ store });
       registerSessionTools(registry, deps);
 
