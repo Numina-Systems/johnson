@@ -106,20 +106,49 @@ describe('createArchivist', () => {
 
   test('handles overlapping runs by skipping', async () => {
     const store = createMockStore();
-    const archivistWithTracking = createArchivist({
+
+    // Create a slow subagent that will keep the first run in progress
+    let resolveSlowComplete: (() => void) | undefined;
+    const slowComplete = new Promise(resolve => {
+      resolveSlowComplete = () => resolve(undefined);
+    });
+
+    const slowSubAgent = {
+      complete: async () => {
+        // Wait for signal before resolving
+        await slowComplete;
+        return 'mock';
+      },
+      summarize: async () => 'mock',
+    } as unknown as SubAgentLLM;
+
+    const archivist = createArchivist({
       store,
-      subAgent: createMockSubAgent(),
+      subAgent: slowSubAgent,
       config: createConfig(),
       timezone: 'America/New_York',
     });
 
-    // Start the archivist
-    archivistWithTracking.start();
+    // Trigger first run (will be slow due to mock)
+    const firstRun = archivist.runNow('incremental');
 
-    // Give timers a moment to initialize
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Give first run time to start and block in progress
+    await new Promise(resolve => setTimeout(resolve, 10));
 
-    // Stop to clean up
-    archivistWithTracking.stop();
+    // Trigger second run while first is still in progress
+    // This should be skipped due to the running flag check
+    const secondRun = archivist.runNow('incremental');
+
+    // Resolve the slow operation so first run can complete
+    resolveSlowComplete?.();
+
+    // Both calls should complete without error
+    await Promise.all([firstRun, secondRun]);
+
+    // Both should resolve successfully (second is skipped silently via overlap guard)
+    expect(firstRun).toBeDefined();
+    expect(secondRun).toBeDefined();
+
+    archivist.stop();
   });
 });

@@ -46,6 +46,7 @@ export type PipelineResult = {
 export type Archivist = {
   start(): void;
   stop(): void;
+  runNow(mode: PipelineMode): Promise<void>;
 };
 
 export type BudgetTracker = {

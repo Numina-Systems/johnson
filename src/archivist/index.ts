@@ -57,6 +57,10 @@ export function createArchivist(deps: ArchivistDependencies): Archivist {
       nighttimeCron = undefined;
       console.log('[archivist] stopped');
     },
+
+    async runNow(mode: 'incremental' | 'full'): Promise<void> {
+      await run(mode);
+    },
   };
 }
 

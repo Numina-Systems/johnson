@@ -82,7 +82,7 @@ async function main(): Promise<void> {
 
   // Archivist (optional — requires sub-agent)
   let archivist: Archivist | undefined;
-  if (config.archivist) {
+  if (config.archivist?.enabled) {
     archivist = createArchivist({
       store,
       embedding,

@@ -3,7 +3,7 @@
 import type { Store } from '@/store/store.ts';
 import type { EmbeddingProvider } from '@/embedding/types.ts';
 import type { SubAgentLLM } from '@/model/sub-agent.ts';
-import type { ArchivistConfig, PipelineMode, PipelineResult, StageResult, BudgetTracker } from './types.ts';
+import type { ArchivistConfig, PipelineMode, PipelineResult, StageResult } from './types.ts';
 import { createBudgetTracker } from './budget.ts';
 import { scan } from './stages/scan.ts';
 import { dedup } from './stages/dedup.ts';
