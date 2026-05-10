@@ -576,6 +576,46 @@ func TestChatModel_MessagesErrorSetsStatus(t *testing.T) {
 	}
 }
 
+func TestChatModel_MessagesErrorSetsErrorFlag(t *testing.T) {
+	client := newChatClient()
+	model := NewChatModel(client, "session-123")
+
+	msg := messagesErrorMsg{err: fmt.Errorf("connection refused")}
+
+	_, _ = model.Update(msg)
+
+	if !model.statusError {
+		t.Error("expected statusError to be true after messagesErrorMsg")
+	}
+}
+
+func TestChatModel_CanStillTypeAfterError(t *testing.T) {
+	client := newChatClient()
+	model := NewChatModel(client, "session-123")
+
+	// Simulate error state
+	msg := messagesErrorMsg{err: fmt.Errorf("connection refused")}
+	_, _ = model.Update(msg)
+
+	if !model.statusError {
+		t.Fatal("expected statusError to be true")
+	}
+
+	// Set textarea value and send enter
+	model.textarea.SetValue("hello world")
+
+	keyMsg := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
+	_, cmd := model.handleKeyPress(keyMsg)
+
+	if cmd == nil {
+		t.Error("expected command to be returned, but user can still chat after error")
+	}
+
+	if len(model.messages) != 1 {
+		t.Errorf("expected 1 message in model, got %d", len(model.messages))
+	}
+}
+
 func TestChatModel_Update_KeyPressMsg_Up_NoScroll(t *testing.T) {
 	client := newChatClient()
 	model := NewChatModel(client, "session-123")

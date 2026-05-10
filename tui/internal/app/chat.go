@@ -25,6 +25,7 @@ type ChatModel struct {
 	textarea textarea.Model
 	status   string
 	spinning bool
+	statusError bool
 
 	messages      []renderedMessage
 	chatRequestID string
@@ -161,9 +162,11 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.messageCursor = msg.cursor
 		m.updateViewportContent()
+		m.statusError = false
 
 	case messagesErrorMsg:
 		m.status = fmt.Sprintf("Error: %v", msg.err)
+		m.statusError = true
 		m.spinning = false
 
 	case loadOlderMsg:
@@ -183,6 +186,7 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.messages = append(olderMessages, m.messages...)
 		m.messageCursor = msg.cursor
 		m.updateViewportContent()
+		m.statusError = false
 
 		newLineCount := m.viewport.TotalLineCount()
 		linesAdded := newLineCount - oldLineCount
@@ -194,13 +198,16 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chatRequestID = msg.requestID
 		m.status = "Thinking..."
 		m.spinning = true
+		m.statusError = false
 		return m, m.waitForEvent()
 
 	case agentEventMsg:
+		m.statusError = false
 		m.handleAgentEvent(msg.event)
 		return m, m.waitForEvent()
 
 	case agentResponseMsg:
+		m.statusError = false
 		m.handleAgentResponse(msg.response)
 
 	case tea.KeyPressMsg:
@@ -371,11 +378,14 @@ func (m *ChatModel) View() tea.View {
 	if statusText == "" {
 		statusText = "Ready"
 	}
-	statusPane := lipgloss.NewStyle().
+	statusStyle := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder(), true, false, false, false).
 		Padding(0, 1).
-		Height(chatLayout.StatusHeight).
-		Render(statusText)
+		Height(chatLayout.StatusHeight)
+	if m.statusError {
+		statusStyle = statusStyle.Foreground(lipgloss.Color("1"))
+	}
+	statusPane := statusStyle.Render(statusText)
 
 	var view strings.Builder
 	view.WriteString(lipgloss.NewStyle().Height(chatLayout.HeaderHeight).Render(header))
