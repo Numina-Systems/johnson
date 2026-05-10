@@ -274,14 +274,14 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return popScreenMsg{}
 		}
 
-	case "up", "k", "page up":
+	case "up", "pgup":
 		if m.viewport.YOffset() == 0 && m.messageCursor != "" {
 			return m, m.loadOlderMessages()
 		}
 		m.viewport, _ = m.viewport.Update(msg)
 		return m, nil
 
-	case "down", "j", "page down":
+	case "down", "pgdown":
 		m.viewport, _ = m.viewport.Update(msg)
 		return m, nil
 
