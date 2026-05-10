@@ -94,9 +94,19 @@ The agent's memory is a flat document store: `rkey → content`. Conventional rk
 - `self` — agent identity (auto-loaded into system prompt every turn)
 - `operator` — user preferences/context (fetched on demand)
 - `skill:<name>` — reusable TypeScript skills
+- `customtool:<name>` — user-created custom tools (hash-based approval)
 - `task:<name>` — task state
 - `archive:<timestamp>` — context compaction snapshots
 - `archive:session:<slug>:<datetime>` — archived conversation sessions (from session management)
+- `ref:<name>` — reference documents (books, PDFs, etc.; migrated from `knowledge:*` and immutable)
+- `ref:<name>:chunk:<i>` — chunked reference documents
+- `knowledge:<name>` — semantic knowledge documents (user-ingested, mutable)
+- `knowledge:<name>:chunk:<i>` — chunked knowledge documents
+- `archivist:identity` — archivist identity document (seeded once on startup)
+- `archivist:state` — archivist snapshot state (internal)
+- `archivist:log` — append-only archivist run log
+- `archivist:ref-migration` — marker for ref migration idempotency
+- `index:*` — semantic indices (future)
 
 The `self` document is auto-loaded each turn: `agent.ts` reads it via `store.docGet('self')` and passes it to `buildSystemPrompt()` as the `selfDoc` parameter. On first run, `seedSelfDoc()` populates it with domain knowledge migrated from the former `persona.md`. The `operator` document is intentionally NOT auto-loaded to save tokens.
 
@@ -117,6 +127,55 @@ Skills (`skill:*` documents) require human review before they can run with secre
 ### Scheduler (`src/scheduler/scheduler.ts`)
 
 In-process cron via `croner`. Accepts cron expressions or human intervals (`6h`, `30m`, `1d`). Tasks persist to `data/tasks.json` and rehydrate on restart. When a task fires, a fresh agent session runs the prompt and delivers the response. Optional trigger guards (TypeScript code) run first — if they produce output, the prompt fires; if silent, the prompt is skipped.
+
+### Archivist (`src/archivist/`)
+
+Autonomous background knowledge maintenance subsystem that runs on a dual-schedule: daytime incremental cleanup (fast, targeted) and overnight full sweeps (comprehensive). The archivist deduplicates documents, resolves conflicts, and maintains coherence across the document store.
+
+**Module Layout:**
+- `index.ts` — Imperative Shell. Wires scheduler, manages daytime/nighttime cron jobs, calls `runPipeline()` and logs results.
+- `types.ts` — Shared types: `Archivist`, `ArchivistDependencies`, `ArchivistSnapshot`, `ChangeSet`, `PipelineResult`, `BudgetTracker`, `PipelineMode`.
+- `pipeline.ts` — Imperative Shell. Orchestrates the six-stage pipeline: scan → dedup → consolidate → crossref → prune → reflect. Each stage is wrapped via dependency injection. Enforces budget constraints and graceful degradation.
+- `stages/` — Pipeline stages as Functional Core modules (`scan.ts`, `dedup.ts`, `consolidate.ts`, `crossref.ts`, `prune.ts`, `reflect.ts`). Pure functions that compute mutations given deps and snapshot state.
+- `state.ts` — Functional Core. Manages snapshot checkpointing: `ArchivistSnapshot` (observations about docs) and `ChangeSet` (pending mutations). Computes mutations, filters mutable documents, and enforces immutability boundaries.
+- `budget.ts` — Functional Core. Token budget tracking for embeddings and sub-agent calls. Prevents runaway costs.
+- `seed.ts` — Imperative Shell. Marker-based idempotent seeding of `archivist:identity` document on first run. Called from `main()` before pipeline starts.
+- `migration.ts` — Imperative Shell. Marker-based idempotent migration of reference books from `knowledge:*` to `ref:*` on first run. Called from `main()` after seed.
+- `logging.ts` — Imperative Shell. Append-only run logs to `archivist:log` document.
+- `similarity.ts` — Functional Core. Cosine similarity for deduplication. Vectorized via embeddings.
+
+**Dual-Schedule System:**
+- Daytime (configurable, e.g., `"0 9,12,15,18 * * *"`): Incremental mode. Scans recent modifications, deduplicates and consolidates changed documents, skips expensive crossref stage. Fast feedback loop.
+- Nighttime (configurable, e.g., `"0 2 * * *"`): Full mode. Scans all documents, runs all six stages including crossref and reflection. Comprehensive cleanup.
+
+**Six Pipeline Stages (in order):**
+1. **Scan** — Enumerate documents from store, filter by mutable prefixes, build `ArchivistSnapshot` (hash, embedding, metadata for each).
+2. **Dedup** — Find duplicate or near-duplicate documents via cosine similarity (requires embedding provider; skipped if unavailable). Return mutation set.
+3. **Consolidate** — Merge redundant documents, preserve unique knowledge. Group by semantic similarity, compute summaries via sub-agent, create merged documents. Skipped if no sub-agent.
+4. **Crossref** — Find related documents and inject cross-references. Expensive stage, runs only on full sweeps. Requires embedding and sub-agent.
+5. **Prune** — Remove documents marked for deletion (e.g., empty, outdated, migrated). Apply all mutations.
+6. **Reflect** — Introspective update to `self` and `operator` documents. Archivist notes patterns, archival counts, and memory health. Requires sub-agent. Skipped if unavailable.
+
+**New rkey Prefixes:**
+- `archivist:state` — Snapshot state during last run (for incremental detection).
+- `archivist:identity` — Archivist identity document, seeded once, used as system prompt for all sub-agent calls.
+- `archivist:log` — Append-only run log with statistics (token usage, duration, mutations applied).
+- `archivist:ref-migration` — Marker document indicating ref migration has run (one-time idempotency).
+- `index:*` — Future: semantic indices built by archivist (e.g., `index:by-topic`, `index:by-timeline`).
+- `ref:*` — Reference documents (PDFs, books, etc.) migrated from `knowledge:*`. Immutable — archivist never modifies.
+
+**Immutability Boundaries:**
+The archivist respects three immutable prefixes and never modifies documents within them:
+- `ref:*` — Reference materials (books, PDFs). Migrated once, updated only by ingest tool with `reference` intent.
+- `skill:*` — Reusable skills. User-controlled, require grants.
+- `customtool:*` — Custom tools. User-controlled, require hash-based approval.
+
+All archivist mutations are marked with `<!-- archivist-managed -->` for identification.
+
+**Graceful Degradation:**
+- No embedding provider → Skip dedup and crossref stages, continue with scan/consolidate/prune/reflect.
+- No sub-agent → Skip consolidate, reflect (requires summarization). Dedup, crossref (embedding-only) continue.
+- Budget exhausted → Stop stage, move to next (don't fail the run).
 
 ### Configuration (`src/config/`)
 
