@@ -22,7 +22,7 @@ type SessionsModel struct {
 func NewSessionsModel(client *protocol.Client) *SessionsModel {
 	// Initial dimensions are defaults (80x24), overridden by WindowSizeMsg on first render
 	return &SessionsModel{
-		list:   list.New([]list.Item{}, list.NewDefaultDelegate(), 80, 24),
+		list:   list.New([]list.Item{}, newSessionDelegate(), 80, 24),
 		client: client,
 		width:  80,
 		height: 24,
@@ -114,14 +114,17 @@ func (s sessionItem) FilterValue() string {
 	if s.title != nil {
 		return *s.title
 	}
-	return "Untitled session"
+	return "session " + s.id
 }
 
 func (s sessionItem) Title() string {
 	if s.title != nil {
 		return *s.title
 	}
-	return "Untitled session"
+	if len(s.id) > 6 {
+		return "session " + s.id[:6] + "..."
+	}
+	return "session " + s.id
 }
 
 func (s sessionItem) Description() string {

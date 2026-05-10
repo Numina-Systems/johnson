@@ -6,9 +6,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/bubbles/v2/list"
 )
 
 func newSessionsClient() *protocol.Client {
@@ -271,8 +273,10 @@ func TestSessionsModel_SessionItem_TitleWithNilShowsUntitled(t *testing.T) {
 		messageCount: 0,
 	}
 
-	if item.Title() != "Untitled session" {
-		t.Errorf("expected 'Untitled session', got %q", item.Title())
+	// Per AC4.3, untitled sessions display truncated session ID
+	expected := "session sess-1"
+	if item.Title() != expected {
+		t.Errorf("expected %q, got %q", expected, item.Title())
 	}
 }
 
@@ -288,5 +292,130 @@ func TestSessionsModel_SessionItem_DescriptionFormats(t *testing.T) {
 	desc := item.Description()
 	if desc != "5 messages · 2026-05-09T12:00:00Z" {
 		t.Errorf("expected specific description format, got %q", desc)
+	}
+}
+
+// Tests for session delegate
+
+func TestSessionDelegate_Height_ReturnsOne(t *testing.T) {
+	delegate := newSessionDelegate()
+	if delegate.Height() != 1 {
+		t.Errorf("expected height 1, got %d", delegate.Height())
+	}
+}
+
+func TestSessionDelegate_Spacing_ReturnsZero(t *testing.T) {
+	delegate := newSessionDelegate()
+	if delegate.Spacing() != 0 {
+		t.Errorf("expected spacing 0, got %d", delegate.Spacing())
+	}
+}
+
+func TestSessionDelegate_Render_SelectedItem_HasCaretPrefix(t *testing.T) {
+	delegate := newSessionDelegate()
+	title := "Test Session"
+	item := sessionItem{
+		id:           "sess-123",
+		title:        &title,
+		updatedAt:    "10 min ago",
+		messageCount: 5,
+	}
+
+	var buf strings.Builder
+	m := list.New([]list.Item{item}, delegate, 80, 24)
+	m.Select(0) // Select first item
+
+	delegate.Render(&buf, m, 0, item)
+	output := buf.String()
+
+	if !strings.Contains(output, "▸") {
+		t.Errorf("expected caret prefix for selected item, got: %q", output)
+	}
+
+	if !strings.Contains(output, "5 msgs") {
+		t.Errorf("expected message count in output, got: %q", output)
+	}
+}
+
+func TestSessionDelegate_Render_UnselectedItem_HasSpacePrefix(t *testing.T) {
+	delegate := newSessionDelegate()
+	title1 := "Test Session 1"
+	title2 := "Test Session 2"
+	item1 := sessionItem{
+		id:           "sess-123",
+		title:        &title1,
+		updatedAt:    "10 min ago",
+		messageCount: 5,
+	}
+	item2 := sessionItem{
+		id:           "sess-456",
+		title:        &title2,
+		updatedAt:    "20 min ago",
+		messageCount: 3,
+	}
+
+	var buf strings.Builder
+	m := list.New([]list.Item{item1, item2}, delegate, 80, 24)
+	m.Select(0) // Select first item
+
+	delegate.Render(&buf, m, 1, item2) // Render second item (not selected)
+	output := buf.String()
+
+	if strings.HasPrefix(output, "▸") {
+		t.Errorf("expected space prefix for unselected item, got: %q", output)
+	}
+
+	if !strings.Contains(output, "3 msgs") {
+		t.Errorf("expected message count in output, got: %q", output)
+	}
+}
+
+func TestSessionItem_Title_UntitledWithLongID(t *testing.T) {
+	item := sessionItem{
+		id:    "sess-1234567890abcdef",
+		title: nil,
+	}
+
+	title := item.Title()
+	if title != "session sess-1..." {
+		t.Errorf("expected 'session sess-1...', got %q", title)
+	}
+}
+
+func TestSessionItem_Title_UntitledWithShortID(t *testing.T) {
+	item := sessionItem{
+		id:    "abc",
+		title: nil,
+	}
+
+	title := item.Title()
+	if title != "session abc" {
+		t.Errorf("expected 'session abc', got %q", title)
+	}
+}
+
+func TestSessionItem_FilterValue_UsesFullIDWhenUntitled(t *testing.T) {
+	fullID := "sess-1234567890abcdef"
+	item := sessionItem{
+		id:    fullID,
+		title: nil,
+	}
+
+	filterValue := item.FilterValue()
+	if filterValue != "session "+fullID {
+		t.Errorf("expected 'session %s', got %q", fullID, filterValue)
+	}
+}
+
+func TestSessionItem_FilterValue_UsesTitleWhenPresent(t *testing.T) {
+	title := "My Important Session"
+	item := sessionItem{
+		id:    "sess-123",
+		title: &title,
+	}
+
+	filterValue := item.FilterValue()
+	if filterValue != "My Important Session" {
+		t.Errorf("expected 'My Important Session', got %q", filterValue)
 	}
 }
