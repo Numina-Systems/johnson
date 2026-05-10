@@ -1,8 +1,10 @@
 // pattern: Functional Core
 
 import type { ArchivistSnapshot, ChangeSet } from './types.ts';
+import type { Store } from '@/store/store.ts';
 
 const IMMUTABLE_PREFIXES = ['ref:', 'skill:', 'customtool:'] as const;
+const STATE_RKEY = 'archivist:state';
 
 export function isImmutable(rkey: string): boolean {
   return IMMUTABLE_PREFIXES.some(prefix => rkey.startsWith(prefix));
@@ -56,4 +58,16 @@ export function createEmptySnapshot(timestamp: string): ArchivistSnapshot {
     mode: 'incremental',
     documents: {},
   };
+}
+
+// ── Imperative Shell ────────────────────────────────────────────────────────
+
+export function loadSnapshot(store: Store): ArchivistSnapshot | null {
+  const doc = store.docGet(STATE_RKEY);
+  if (!doc) return null;
+  return JSON.parse(doc.content) as ArchivistSnapshot;
+}
+
+export function saveSnapshot(store: Store, snapshot: ArchivistSnapshot): void {
+  store.docUpsert(STATE_RKEY, JSON.stringify(snapshot));
 }

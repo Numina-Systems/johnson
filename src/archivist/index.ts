@@ -25,4 +25,4 @@ export type {
   PipelineMode,
 } from './types.ts';
 export { createBudgetTracker } from './budget.ts';
-export { computeChangeSet, filterMutable, isImmutable, createEmptySnapshot } from './state.ts';
+export { computeChangeSet, filterMutable, isImmutable, createEmptySnapshot, loadSnapshot, saveSnapshot } from './state.ts';
