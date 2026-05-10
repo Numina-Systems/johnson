@@ -164,7 +164,7 @@ func TestAppModel_EscapePopScreen(t *testing.T) {
 		t.Errorf("before escape: activeScreen got %v, want ScreenTools", app.activeScreen)
 	}
 
-	escapeMsg := backToSessionsMsg{}
+	escapeMsg := popScreenMsg{}
 	_, _ = app.Update(escapeMsg)
 
 	if app.activeScreen != ScreenSessions {
@@ -198,7 +198,7 @@ func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 		}
 	}
 
-	escapeMsg := backToSessionsMsg{}
+	escapeMsg := popScreenMsg{}
 	_, _ = app.Update(escapeMsg)
 
 	if app.activeScreen != ScreenTools {
@@ -294,8 +294,8 @@ func TestAppModel_EscapeAtRootDoesNothing(t *testing.T) {
 		t.Errorf("setup: activeScreen got %v, want ScreenSessions", app.activeScreen)
 	}
 
-	// Send backToSessionsMsg at root (popScreen prevents popping below ScreenSessions)
-	escapeMsg := backToSessionsMsg{}
+	// Send popScreenMsg at root (popScreen prevents popping below ScreenSessions)
+	escapeMsg := popScreenMsg{}
 	_, _ = app.Update(escapeMsg)
 
 	// Should still be at ScreenSessions

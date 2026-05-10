@@ -114,7 +114,7 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "escape":
-				return m, func() tea.Msg { return backToSessionsMsg{} }
+				return m, func() tea.Msg { return popScreenMsg{} }
 
 			case "a", "g", "r", "v", "s", "d":
 				if m.activeTab == 0 { // Skills tab

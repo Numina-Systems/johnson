@@ -59,6 +59,11 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
+		case "escape":
+			if m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied {
+				break // let list handle escape during filtering
+			}
+			return m, func() tea.Msg { return popScreenMsg{} }
 		case "enter":
 			if selected, ok := m.list.SelectedItem().(sessionItem); ok {
 				return m, func() tea.Msg {

@@ -80,7 +80,7 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case secretsModeList:
 			switch msg.String() {
 			case "escape":
-				return m, func() tea.Msg { return backToSessionsMsg{} }
+				return m, func() tea.Msg { return popScreenMsg{} }
 
 			case "j", "down":
 				if m.cursor < len(m.keys)-1 {

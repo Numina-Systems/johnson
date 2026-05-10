@@ -54,7 +54,7 @@ func (m *SchedulesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "escape":
-			return m, func() tea.Msg { return backToSessionsMsg{} }
+			return m, func() tea.Msg { return popScreenMsg{} }
 
 		case "j", "down":
 			if m.cursor < len(m.tasks)-1 {

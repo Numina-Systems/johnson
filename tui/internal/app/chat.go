@@ -65,7 +65,7 @@ type loadOlderMsg struct {
 	cursor   string
 }
 
-type backToSessionsMsg struct {}
+type popScreenMsg struct{}
 
 func NewChatModel(client *protocol.Client, sessionID string) *ChatModel {
 	m := &ChatModel{
@@ -247,7 +247,7 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case "escape":
 		return m, func() tea.Msg {
-			return backToSessionsMsg{}
+			return popScreenMsg{}
 		}
 
 	case "up", "k", "page up":

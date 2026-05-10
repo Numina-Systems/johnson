@@ -158,13 +158,13 @@ func TestChatModel_HandleKeyPress_Escape_ReturnsBackMsg(t *testing.T) {
 	model := NewChatModel(client, "session-123")
 
 	// Rather than trying to construct a KeyPressMsg with the right string representation,
-	// we directly test the Update path with backToSessionsMsg
-	_, cmd := model.Update(backToSessionsMsg{})
+	// we directly test the Update path with popScreenMsg
+	_, cmd := model.Update(popScreenMsg{})
 
 	// The default case in Update should return the model
-	// backToSessionsMsg is meant to be handled by the parent navigation layer
+	// popScreenMsg is meant to be handled by the parent navigation layer
 	if cmd != nil {
-		t.Error("expected no command for backToSessionsMsg at ChatModel level")
+		t.Error("expected no command for popScreenMsg at ChatModel level")
 	}
 }
 

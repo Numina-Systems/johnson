@@ -171,8 +171,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pushScreen(ScreenChat)
 		return m, m.chat.Init()
 
-	case backToSessionsMsg:
-		// Return to sessions screen
+	case popScreenMsg:
 		m.popScreen()
 		return m, nil
 
