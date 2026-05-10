@@ -200,6 +200,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeScreen = ScreenChat
 		m.screenStack = []ScreenType{ScreenChat}
 		m.chat = NewChatModel(m.client, createResult.ID)
+		m.chat.width = m.width
+		m.chat.height = m.height
 		return m, tea.Batch(
 			m.chat.Init(),
 			watchBackend(m.backend),
@@ -260,6 +262,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case NavigateToChatMsg:
 		m.chat = NewChatModel(m.client, msg.SessionID)
+		m.chat.width = m.width
+		m.chat.height = m.height
 		// Reset stack to chat — session selection always returns to a clean chat root
 		m.screenStack = []ScreenType{ScreenChat}
 		m.activeScreen = ScreenChat
@@ -271,6 +275,8 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case newSessionCreatedMsg:
 		m.chat = NewChatModel(m.client, msg.sessionID)
+		m.chat.width = m.width
+		m.chat.height = m.height
 		if m.activeScreen == ScreenChat {
 			return m, m.chat.Init()
 		}
