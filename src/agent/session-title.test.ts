@@ -26,6 +26,7 @@ function makeStore(overrides: StoreOverrides = {}): Store {
     ensureSession: () => {},
     getSession: overrides.getSession ?? (() => null),
     listSessions: () => [],
+    listSessionsWithCounts: () => [],
     updateSessionTitle: overrides.updateSessionTitle ?? (() => {}),
     appendMessage: () => {},
     getMessages: () => [],
@@ -43,6 +44,9 @@ function makeStore(overrides: StoreOverrides = {}): Store {
     updateGrantStatus: () => {},
     updateGrantSecrets: () => {},
     deleteGrant: () => false,
+    addManagedThread: () => {},
+    removeManagedThread: () => false,
+    getManagedThreadIds: () => new Set(),
     close: () => {},
   };
 }

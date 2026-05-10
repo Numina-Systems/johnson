@@ -62,6 +62,7 @@ function makeMockStore(documents: Array<{ rkey: string; content: string }>): {
     ensureSession: () => {},
     getSession: () => null,
     listSessions: () => [],
+    listSessionsWithCounts: () => [],
     updateSessionTitle: () => {},
     appendMessage: () => {},
     getMessages: () => [],
@@ -79,6 +80,9 @@ function makeMockStore(documents: Array<{ rkey: string; content: string }>): {
     updateGrantStatus: () => {},
     updateGrantSecrets: () => {},
     deleteGrant: () => false,
+    addManagedThread: () => {},
+    removeManagedThread: () => false,
+    getManagedThreadIds: () => new Set(),
     close: () => {},
   } as unknown as Store;
   return { store, upserts };

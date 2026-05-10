@@ -35,6 +35,7 @@ function createNoopStore(): Store {
     ensureSession: () => {},
     getSession: () => null,
     listSessions: () => [],
+    listSessionsWithCounts: () => [],
     updateSessionTitle: () => {},
     appendMessage: () => {},
     getMessages: () => [],

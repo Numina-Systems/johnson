@@ -277,6 +277,7 @@ describe('retrieveContext', () => {
       ensureSession: () => {},
       getSession: () => null,
       listSessions: () => [],
+      listSessionsWithCounts: () => [],
       updateSessionTitle: () => {},
       appendMessage: () => {},
       getMessages: () => [],

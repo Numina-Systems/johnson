@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import type { SessionWithCounts } from '../sessions/types.ts';
 
 // ── Row types ──────────────────────────────────────────────────────────
 
@@ -56,6 +57,7 @@ export interface Store {
   ensureSession(id: string, title?: string): void;
   getSession(id: string): { id: string; title: string | null; createdAt: string; updatedAt: string } | null;
   listSessions(limit?: number): Array<{ id: string; title: string | null; updatedAt: string }>;
+  listSessionsWithCounts(limit?: number): Array<SessionWithCounts>;
   updateSessionTitle(id: string, title: string): void;
   appendMessage(sessionId: string, role: string, content: string): void;
   getMessages(sessionId: string, limit?: number): Array<{ role: string; content: string; createdAt: string }>;
@@ -307,6 +309,16 @@ export function createStore(dbPath: string): Store {
   const stmtSessionMessageCount = db.prepare(
     `SELECT COUNT(*) as count FROM messages WHERE session_id = ?`,
   );
+  const stmtListSessionsWithCounts = db.prepare(
+    `SELECT s.id, s.title, s.created_at, s.updated_at,
+            COUNT(m.id) AS message_count,
+            MAX(m.created_at) AS last_message_at
+     FROM sessions s
+     LEFT JOIN messages m ON m.session_id = s.id
+     GROUP BY s.id
+     ORDER BY s.updated_at DESC
+     LIMIT ?`,
+  );
 
   // Tasks
   const stmtSaveTask = db.prepare(
@@ -440,6 +452,25 @@ export function createStore(dbPath: string): Store {
     listSessions(limit = 50): Array<{ id: string; title: string | null; updatedAt: string }> {
       const rows = stmtListSessions.all(limit) as Array<{ id: string; title: string | null; updated_at: string }>;
       return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
+    },
+
+    listSessionsWithCounts(limit = 50): Array<SessionWithCounts> {
+      const rows = stmtListSessionsWithCounts.all(limit) as Array<{
+        id: string;
+        title: string | null;
+        created_at: string;
+        updated_at: string;
+        message_count: number;
+        last_message_at: string | null;
+      }>;
+      return rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        messageCount: r.message_count,
+        lastMessageAt: r.last_message_at,
+      }));
     },
 
     updateSessionTitle(id: string, title: string): void {
