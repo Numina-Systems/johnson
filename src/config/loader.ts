@@ -173,8 +173,8 @@ export function loadConfig(configPath: string): AppConfig {
       : (() => { throw new Error('[recall] enabled=true requires endpoint (e.g. "http://localhost:8420")'); })()
     : undefined;
 
-  const archivistEnabled = pick(raw.archivist, 'enabled', DEFAULT_ARCHIVIST.enabled);
-  const archivist: ArchivistConfig | undefined = archivistEnabled
+  const archivistEnabled = pick(raw.archivist, 'enabled', undefined);
+  const archivist: ArchivistConfig | undefined = archivistEnabled === true
     ? {
         enabled: true,
         daytimeSchedule: pick(raw.archivist, 'daytimeSchedule', DEFAULT_ARCHIVIST.daytimeSchedule),
