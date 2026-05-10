@@ -1,8 +1,7 @@
 // pattern: Functional Core
 
 import type { Message } from '../model/types.ts';
-import type { SessionWithCounts } from './types.ts';
-import type { SessionClassification } from './types.ts';
+import type { SessionWithCounts, SessionClassification } from './types.ts';
 import { formatConversation } from '../agent/compaction.ts';
 
 /**
@@ -12,17 +11,20 @@ import { formatConversation } from '../agent/compaction.ts';
  * - Replaces non-alphanumeric characters with hyphens
  * - Collapses consecutive hyphens into one
  * - Trims leading/trailing hyphens
+ * - Returns "untitled" if the result is empty after transformation
  */
 export function slugify(title: string | null): string {
   if (!title || !title.trim()) {
     return 'untitled';
   }
 
-  return title
+  const result = title
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
+
+  return result || 'untitled';
 }
 
 /**

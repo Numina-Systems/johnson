@@ -7,7 +7,7 @@ import {
   classifySession,
   formatArchiveDocument,
 } from './archive.ts';
-import type { SessionWithCounts, SessionClassification } from './types.ts';
+import type { SessionWithCounts } from './types.ts';
 import type { Message } from '../model/types.ts';
 
 describe('slugify', () => {
@@ -48,6 +48,16 @@ describe('slugify', () => {
 
   test('handles whitespace-only input as untitled', () => {
     const result = slugify('   ');
+    expect(result).toBe('untitled');
+  });
+
+  test('session-mgmt.AC2.3: returns "untitled" for all-special-character input', () => {
+    const result = slugify('!@#$%^&*()');
+    expect(result).toBe('untitled');
+  });
+
+  test('handles input with only hyphens as untitled', () => {
+    const result = slugify('---');
     expect(result).toBe('untitled');
   });
 });
