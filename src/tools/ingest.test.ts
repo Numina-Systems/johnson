@@ -1380,4 +1380,300 @@ Para 3 with further content and information. `.repeat(250);
       expect(hasChunkEncodes).toBe(true);
     });
   });
+
+  // ── Task 7-8: Reference intent tests ────────────────────────────────
+
+  describe('AC4.4: Reference intent stores as ref:* document', () => {
+    test('stores file as ref:<name> document for small files', async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'reference',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.rkey).toBe('ref:notes');
+      expect(parsed.content).toBe('Stored as ref:notes');
+      expect(parsed.tokenEstimate).toBeGreaterThan(0);
+
+      // Verify the content was actually stored with the correct rkey
+      const refDoc = deps.store.docGet('ref:notes');
+      expect(refDoc).toBeDefined();
+      expect(refDoc?.content).toContain('# My Notes');
+      expect(refDoc?.content).toContain('Fact: Example content');
+    });
+
+    test('stores file as ref:<name> document for large files with chunks', async () => {
+      const largeContent = 'Reference content with details. '.repeat(600); // ~4800 tokens
+
+      const testFile = join(testFilesDir, 'reference-test.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'This is a reference summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const result = await registry.execute('ingest_file', {
+        path: 'reference-test.md',
+        intent: 'reference',
+      });
+
+      const parsed = JSON.parse(result as string);
+      expect(parsed.rkey).toBe('ref:reference-test');
+      expect(parsed.content).toBe('Stored as ref:reference-test');
+      expect(parsed.chunks).toBeGreaterThan(0);
+
+      // Verify summary document exists
+      const summaryDoc = deps.store.docGet('ref:reference-test');
+      expect(summaryDoc).toBeDefined();
+      expect(summaryDoc?.content).toContain('This is a reference summary.');
+    });
+  });
+
+  describe('AC4.4: Reference intent metadata header', () => {
+    test('includes <!-- source: ... --> metadata in reference document', async () => {
+      const largeContent = 'Reference documentation content. '.repeat(600);
+      const testFile = join(testFilesDir, 'ref-metadata.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'ref-metadata.md',
+        intent: 'reference',
+      });
+
+      const refDoc = deps.store.docGet('ref:ref-metadata');
+      expect(refDoc?.content).toContain('<!-- source: ref-metadata.md -->');
+      expect(refDoc?.content).toContain('<!-- chunks:');
+      expect(refDoc?.content).toContain('<!-- ingested:');
+      expect(refDoc?.content).toMatch(/\d{4}-\d{2}-\d{2}T/);
+    });
+  });
+
+  describe('AC4.4: Reference intent chunk storage', () => {
+    test('stores chunks with ref:*:chunk:N pattern for large reference files', async () => {
+      const largeContent = 'Reference chunk one with details. '.repeat(400)
+        + '\n\n# Section Two\n\n'
+        + 'Reference chunk two with details. '.repeat(400);
+
+      const testFile = join(testFilesDir, 'ref-chunks-test.md');
+      await writeFile(testFile, largeContent);
+
+      const mockSubAgent = {
+        complete: async (text: string) => {
+          return `Summary of: ${text.slice(0, 30)}...`;
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'ref-chunks-test.md',
+        intent: 'reference',
+      });
+
+      // Verify chunk documents exist with ref: prefix
+      const chunk0 = deps.store.docGet('ref:ref-chunks-test:chunk:0');
+      const chunk1 = deps.store.docGet('ref:ref-chunks-test:chunk:1');
+
+      expect(chunk0).toBeDefined();
+      expect(chunk1).toBeDefined();
+      expect(chunk0?.content).toContain('Reference chunk');
+      expect(chunk1?.content).toContain('Reference chunk');
+    });
+
+    test('cleans up stale reference chunks on re-ingest with fewer chunks', async () => {
+      const testFile = join(testFilesDir, 'ref-shrink-test.md');
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      // First ingest: large file producing multiple chunks
+      const largeContent = 'Reference section one with details. '.repeat(400)
+        + '\n\n# Section Two\n\n'
+        + 'Reference section two with details. '.repeat(400)
+        + '\n\n# Section Three\n\n'
+        + 'Reference section three with details. '.repeat(400);
+
+      await writeFile(testFile, largeContent);
+      const result1 = await registry.execute('ingest_file', {
+        path: 'ref-shrink-test.md',
+        intent: 'reference',
+      });
+      const parsed1 = JSON.parse(result1 as string);
+      const originalChunkCount = parsed1.chunks;
+      expect(originalChunkCount).toBeGreaterThanOrEqual(3);
+
+      // Verify chunks exist
+      for (let i = 0; i < originalChunkCount; i++) {
+        const chunk = deps.store.docGet(`ref:ref-shrink-test:chunk:${i}`);
+        expect(chunk).toBeDefined();
+      }
+
+      // Re-ingest: smaller file producing fewer chunks
+      const smallContent = 'Reference content one. '.repeat(200)
+        + '\n\n# Section Two\n\n'
+        + 'Reference content two. '.repeat(200);
+
+      await writeFile(testFile, smallContent);
+      const result2 = await registry.execute('ingest_file', {
+        path: 'ref-shrink-test.md',
+        intent: 'reference',
+      });
+      const parsed2 = JSON.parse(result2 as string);
+      const newChunkCount = parsed2.chunks;
+      expect(newChunkCount).toBeLessThan(originalChunkCount);
+
+      // Verify old chunks are deleted
+      for (let i = newChunkCount; i < originalChunkCount; i++) {
+        const chunk = deps.store.docGet(`ref:ref-shrink-test:chunk:${i}`);
+        expect(chunk).toBeNull();
+      }
+    });
+  });
+
+  describe('AC4.4: Reference intent embeddings', () => {
+    test('calls embedding.embed() for reference summary and chunks', async () => {
+      const largeContent = 'Reference content for embedding test. '.repeat(500)
+        + '\n\n# Section\n\n'
+        + 'More reference content. '.repeat(300);
+
+      const testFile = join(testFilesDir, 'embedding-reference.md');
+      await writeFile(testFile, largeContent);
+
+      const embedCalls: string[] = [];
+      const mockEmbedding = {
+        embed: async (text: string) => {
+          embedCalls.push(text.slice(0, 50));
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Reference summary text.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding, subAgent: mockSubAgent });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'embedding-reference.md',
+        intent: 'reference',
+      });
+
+      // Should have called embed for summary + all chunks
+      expect(embedCalls.length).toBeGreaterThanOrEqual(2); // Summary + at least 1 chunk
+    });
+
+    test('calls embedding.embed() for small reference files without chunking', async () => {
+      let embeddingCalled = false;
+
+      const mockEmbedding = {
+        embed: async (text: string) => {
+          embeddingCalled = true;
+          return new Float32Array([0.1, 0.2, 0.3]);
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, { embedding: mockEmbedding });
+
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'notes.md',
+        intent: 'reference',
+      });
+
+      expect(embeddingCalled).toBe(true);
+    });
+  });
+
+  describe('AC4.4: Reference intent recall encoding', () => {
+    test('calls recallClient.encode() for reference summary and chunks', async () => {
+      const largeContent = 'Reference content for recall indexing. '.repeat(500)
+        + '\n\n# Section\n\n'
+        + 'More reference content. '.repeat(300);
+
+      const testFile = join(testFilesDir, 'recall-reference.md');
+      await writeFile(testFile, largeContent);
+
+      const encodeCalls: string[] = [];
+      const mockRecallClient = {
+        encode: async (rkey: string, content: string) => {
+          encodeCalls.push(rkey);
+        },
+      };
+
+      const mockSubAgent = {
+        complete: async () => {
+          return 'Summary.';
+        },
+      };
+
+      const deps = makeDeps(testFilesDir, {
+        recallClient: mockRecallClient,
+        subAgent: mockSubAgent,
+      });
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      await registry.execute('ingest_file', {
+        path: 'recall-reference.md',
+        intent: 'reference',
+      });
+
+      // Should have called encode for summary document
+      expect(encodeCalls.some((rkey) => rkey === 'ref:recall-reference')).toBe(true);
+
+      // Should have called encode for chunk documents
+      const hasChunkEncodes = encodeCalls.some((rkey) => rkey.includes(':chunk:'));
+      expect(hasChunkEncodes).toBe(true);
+    });
+  });
+
+  describe('Tool schema validation: reference intent', () => {
+    test('reference intent is listed in tool schema enum', () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      const ingestTool = registry.get('ingest_file');
+      expect(ingestTool).toBeDefined();
+
+      const intentEnum = (ingestTool?.definition.input_schema.properties.intent as {enum?: unknown[]}).enum;
+      expect(intentEnum).toBeDefined();
+      expect(intentEnum).toContain('reference');
+    });
+  });
 });
