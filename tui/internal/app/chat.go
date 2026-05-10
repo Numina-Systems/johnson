@@ -91,6 +91,7 @@ func NewChatModel(client *protocol.Client, sessionID string) *ChatModel {
 	m.textarea.Placeholder = "Type a message..."
 	m.textarea.ShowLineNumbers = false
 	m.textarea.MaxHeight = 4
+	m.textarea.Focus()
 
 	if err := m.createRenderer(); err != nil {
 		m.status = fmt.Sprintf("Error: %v", err)
