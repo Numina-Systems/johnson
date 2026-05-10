@@ -49,7 +49,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	appModel := app.NewAppModel(client, proc)
+	// Create initial session
+	var initialSessionID string
+	var createResult protocol.SessionCreateResult
+	err = client.Call(context.Background(), "session/create", protocol.SessionCreateParams{}, &createResult)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create initial session, falling back to session list: %v\n", err)
+	} else {
+		initialSessionID = createResult.ID
+	}
+
+	appModel := app.NewAppModel(client, proc, initialSessionID)
 	p := tea.NewProgram(appModel)
 
 	if _, err := p.Run(); err != nil {

@@ -138,17 +138,29 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.client = msg.client
 		m.crashed = false
 		m.crashErr = ""
-		m.activeScreen = ScreenSessions
-		m.screenStack = []ScreenType{ScreenSessions}
-		m.sessions = NewSessionsModel(m.client)
 		m.chat = nil
 		m.tools = nil
 		m.secrets = nil
 		m.schedules = nil
 		m.prompt = nil
-		// Resume watching backend
+
+		// Try to create a new session (same as startup)
+		var createResult protocol.SessionCreateResult
+		err := m.client.Call(context.Background(), "session/create", protocol.SessionCreateParams{}, &createResult)
+		if err != nil {
+			m.activeScreen = ScreenSessions
+			m.screenStack = []ScreenType{ScreenSessions}
+			m.sessions = NewSessionsModel(m.client)
+			return m, tea.Batch(
+				m.sessions.Init(),
+				watchBackend(m.backend),
+			)
+		}
+		m.activeScreen = ScreenChat
+		m.screenStack = []ScreenType{ScreenChat}
+		m.chat = NewChatModel(m.client, createResult.ID)
 		return m, tea.Batch(
-			m.sessions.Init(),
+			m.chat.Init(),
 			watchBackend(m.backend),
 		)
 
