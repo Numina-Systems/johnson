@@ -26,7 +26,7 @@ type SummarizationResult = {
 
 async function summarizeChunks(
   chunks: ReadonlyArray<Chunk>,
-  intent: 'memory' | 'knowledge' | 'context',
+  intent: 'memory' | 'knowledge' | 'context' | 'reference',
   subAgent: SubAgentLLM,
 ): Promise<SummarizationResult> {
   const systemPrompts: Record<string, string> = {
@@ -36,6 +36,8 @@ async function summarizeChunks(
       'You are summarizing a document chunk for future reference. Capture the key information, decisions, and details that would be useful when searching for this content later. Be concise but complete.',
     context:
       'You are summarizing a document chunk to give the reader a quick understanding of its content. Focus on the main points and any actionable information.',
+    reference:
+      'You are summarizing a reference document chunk (e.g., textbook, handbook, manual). Capture key definitions, concepts, and explanations that would be useful for later lookups. Be accurate and complete.',
   };
 
   const chunkSystemPrompt = systemPrompts[intent] ?? systemPrompts.context;
@@ -92,6 +94,13 @@ function deriveRkeyFromFilename(filepath: string): string {
   return `knowledge:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
 }
 
+function deriveRefRkey(filepath: string): string {
+  // Extract basename, strip extension, replace spaces with hyphens, lowercase
+  const basename = filepath.split('/').pop() ?? 'unknown';
+  const nameWithoutExt = basename.replace(/\.[^.]+$/, '');
+  return `ref:${nameWithoutExt.replace(/\s+/g, '-').toLowerCase()}`;
+}
+
 function cleanupStaleChunks(
   store: Store,
   baseRkey: string,
@@ -124,7 +133,8 @@ When the user references a file with @/path/to/file, call this tool to ingest it
 Intents:
 - memory: Extract facts and append to your self document
 - knowledge: Store as a searchable knowledge document
-- context: Return content for this conversation only (nothing persisted)`,
+- context: Return content for this conversation only (nothing persisted)
+- reference: Store as an immutable reference document (ref:* prefix)`,
       input_schema: {
         type: 'object',
         properties: {
@@ -134,7 +144,7 @@ Intents:
           },
           intent: {
             type: 'string',
-            enum: ['memory', 'knowledge', 'context'],
+            enum: ['memory', 'knowledge', 'context', 'reference'],
             description: 'How to process the file content',
           },
         },
@@ -143,7 +153,7 @@ Intents:
     },
     async (params) => {
       const rawPath = str(params, 'path');
-      const intent = str(params, 'intent') as 'memory' | 'knowledge' | 'context';
+      const intent = str(params, 'intent') as 'memory' | 'knowledge' | 'context' | 'reference';
 
       // Normalize path: strip leading @/
       let userPath = rawPath.startsWith('@/') ? rawPath.slice(2) : rawPath;
@@ -348,6 +358,72 @@ ${rollUp}`;
             chunks: chunks.length,
           });
         }
+
+        if (intent === 'reference') {
+          const rkey = deriveRefRkey(rawPath);
+
+          // Clean up any stale chunks from previous ingest
+          cleanupStaleChunks(deps.store, rkey, chunks.length);
+
+          // Build summary document with metadata header
+          const summaryContent = `<!-- source: ${rawPath} -->
+<!-- chunks: ${chunks.length} -->
+<!-- ingested: ${new Date().toISOString()} -->
+
+${rollUp}`;
+
+          // Store summary document
+          deps.store.docUpsert(rkey, summaryContent);
+
+          // Store each chunk document
+          for (let i = 0; i < chunks.length; i++) {
+            const chunkRkey = `${rkey}:chunk:${i}`;
+            deps.store.docUpsert(chunkRkey, chunks[i]!.content);
+          }
+
+          // Fire embedding hook for summary
+          if (deps.embedding) {
+            try {
+              const emb = await deps.embedding.embed(summaryContent);
+              deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
+            } catch { /* non-fatal */ }
+          }
+
+          // Fire embedding hooks for chunks
+          if (deps.embedding) {
+            for (let i = 0; i < chunks.length; i++) {
+              try {
+                const emb = await deps.embedding.embed(chunks[i]!.content);
+                deps.store.saveEmbedding(`${rkey}:chunk:${i}`, emb, 'nomic-embed-text');
+              } catch { /* non-fatal */ }
+            }
+          }
+
+          // Fire recall encoding hook for summary
+          if (deps.recallClient) {
+            deps.recallClient.encode(rkey, summaryContent).catch(() => {
+              // Silently ignore — Recall encoding is best-effort
+            });
+          }
+
+          // Fire recall encoding hooks for chunks
+          if (deps.recallClient) {
+            for (let i = 0; i < chunks.length; i++) {
+              deps.recallClient
+                .encode(`${rkey}:chunk:${i}`, chunks[i]!.content)
+                .catch(() => {
+                  // Silently ignore — Recall encoding is best-effort
+                });
+            }
+          }
+
+          return JSON.stringify({
+            content: `Stored as ${rkey}`,
+            rkey,
+            tokenEstimate,
+            chunks: chunks.length,
+          });
+        }
       }
 
       // Dispatch by intent (small-file path unchanged)
@@ -391,6 +467,37 @@ ${rollUp}`;
 
       if (intent === 'knowledge') {
         const rkey = deriveRkeyFromFilename(rawPath);
+
+        // Clean up any chunks from a previously-large file
+        cleanupStaleChunks(deps.store, rkey, 0);
+
+        deps.store.docUpsert(rkey, content);
+
+        // Fire embedding hook
+        if (deps.embedding) {
+          try {
+            const emb = await deps.embedding.embed(content);
+            deps.store.saveEmbedding(rkey, emb, 'nomic-embed-text');
+          } catch { /* non-fatal */ }
+        }
+
+        // Fire recall encoding hook
+        if (deps.recallClient) {
+          deps.recallClient.encode(rkey, content).catch(() => {
+            // Silently ignore — Recall encoding is best-effort
+          });
+        }
+
+        return JSON.stringify({
+          content: `Stored as ${rkey}`,
+          rkey,
+          tokenEstimate,
+          chunks: 0,
+        });
+      }
+
+      if (intent === 'reference') {
+        const rkey = deriveRefRkey(rawPath);
 
         // Clean up any chunks from a previously-large file
         cleanupStaleChunks(deps.store, rkey, 0);
