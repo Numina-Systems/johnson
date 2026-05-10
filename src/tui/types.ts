@@ -7,7 +7,7 @@ import type { TaskStore } from '../scheduler/types.ts';
 import type { CustomToolManager } from '../tools/custom-tool-manager.ts';
 
 // Screen identifiers for stack-based navigation.
-export type Screen = 'sessions' | 'chat' | 'tools' | 'secrets' | 'schedules' | 'prompt';
+export type Screen = 'sessions' | 'chat' | 'tools' | 'secrets' | 'schedules' | 'prompt' | 'prune';
 
 // All TUI dependencies. Individual screens destructure what they need.
 export type TuiDependencies = {
