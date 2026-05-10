@@ -68,13 +68,12 @@ func TestNewAppModel_InitialState(t *testing.T) {
 	}
 }
 
-func TestAppModel_CtrlTPushesScreenTools(t *testing.T) {
+func TestAppModel_SlashToolsPushesScreenTools(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	// Create a ctrl+t key message
-	msg := tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl})
+	msg := SlashCommandMsg{Command: "tools"}
 	_, _ = app.Update(msg)
 
 	if app.activeScreen != ScreenTools {
@@ -90,12 +89,12 @@ func TestAppModel_CtrlTPushesScreenTools(t *testing.T) {
 	}
 }
 
-func TestAppModel_CtrlSPushesScreenSecrets(t *testing.T) {
+func TestAppModel_SlashSecretsPushesScreenSecrets(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	msg := tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl})
+	msg := SlashCommandMsg{Command: "secrets"}
 	_, _ = app.Update(msg)
 
 	if app.activeScreen != ScreenSecrets {
@@ -111,12 +110,12 @@ func TestAppModel_CtrlSPushesScreenSecrets(t *testing.T) {
 	}
 }
 
-func TestAppModel_CtrlDPushesScreenSchedules(t *testing.T) {
+func TestAppModel_SlashSchedulesPushesScreenSchedules(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	msg := tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl})
+	msg := SlashCommandMsg{Command: "schedules"}
 	_, _ = app.Update(msg)
 
 	if app.activeScreen != ScreenSchedules {
@@ -132,12 +131,12 @@ func TestAppModel_CtrlDPushesScreenSchedules(t *testing.T) {
 	}
 }
 
-func TestAppModel_CtrlPPushesScreenPrompt(t *testing.T) {
+func TestAppModel_SlashPromptPushesScreenPrompt(t *testing.T) {
 	client := newMockClient()
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	msg := tea.KeyPressMsg(tea.Key{Code: 'p', Mod: tea.ModCtrl})
+	msg := SlashCommandMsg{Command: "prompt"}
 	_, _ = app.Update(msg)
 
 	if app.activeScreen != ScreenPrompt {
@@ -158,16 +157,13 @@ func TestAppModel_EscapePopScreen(t *testing.T) {
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	// Push ScreenTools
-	msg := tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl})
-	_, _ = app.Update(msg)
+	// Push ScreenTools via slash command
+	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
 
 	if app.activeScreen != ScreenTools {
 		t.Errorf("before escape: activeScreen got %v, want ScreenTools", app.activeScreen)
 	}
 
-	// The ScreenTools model handles escape key and returns a backToSessionsMsg
-	// We need to send that message to app for it to pop the screen
 	escapeMsg := backToSessionsMsg{}
 	_, _ = app.Update(escapeMsg)
 
@@ -185,13 +181,11 @@ func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 	backend := newMockBackendProcess()
 	app := NewAppModel(client, backend)
 
-	// Push ScreenTools
-	toolsMsg := tea.KeyPressMsg(tea.Key{Code: 't', Mod: tea.ModCtrl})
-	_, _ = app.Update(toolsMsg)
+	// Push ScreenTools via slash command
+	_, _ = app.Update(SlashCommandMsg{Command: "tools"})
 
-	// Push ScreenSecrets
-	secretsMsg := tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl})
-	_, _ = app.Update(secretsMsg)
+	// Push ScreenSecrets via slash command
+	_, _ = app.Update(SlashCommandMsg{Command: "secrets"})
 
 	if len(app.screenStack) != 3 {
 		t.Errorf("after pushing 2 screens: screenStack length got %d, want 3", len(app.screenStack))
@@ -204,7 +198,6 @@ func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 		}
 	}
 
-	// Pop back to Tools using backToSessionsMsg
 	escapeMsg := backToSessionsMsg{}
 	_, _ = app.Update(escapeMsg)
 
@@ -216,7 +209,6 @@ func TestAppModel_ScreenStackMaintainsHistory(t *testing.T) {
 		t.Errorf("after first escape: screenStack length got %d, want 2", len(app.screenStack))
 	}
 
-	// Pop back to Sessions
 	_, _ = app.Update(escapeMsg)
 
 	if app.activeScreen != ScreenSessions {

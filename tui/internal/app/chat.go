@@ -221,6 +221,14 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if strings.HasPrefix(text, "/") {
+			cmd := strings.TrimPrefix(text, "/")
+			m.textarea.SetValue("")
+			return m, func() tea.Msg {
+				return SlashCommandMsg{Command: cmd}
+			}
+		}
+
 		rendered := m.renderer.RenderUserMessage(text)
 		m.messages = append(m.messages, renderedMessage{role: "user", rendered: rendered})
 		m.textarea.SetValue("")

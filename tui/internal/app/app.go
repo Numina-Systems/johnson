@@ -37,6 +37,10 @@ type AppModel struct {
 	crashErr     string
 }
 
+type SlashCommandMsg struct {
+	Command string
+}
+
 type backendCrashedMsg struct {
 	err error
 }
@@ -135,6 +139,32 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			watchBackend(m.backend),
 		)
 
+	case SlashCommandMsg:
+		switch msg.Command {
+		case "tools":
+			m.tools = NewToolsModel(m.client)
+			m.pushScreen(ScreenTools)
+			return m, m.tools.Init()
+		case "secrets":
+			m.secrets = NewSecretsModel(m.client)
+			m.pushScreen(ScreenSecrets)
+			return m, m.secrets.Init()
+		case "schedules":
+			m.schedules = NewSchedulesModel(m.client)
+			m.pushScreen(ScreenSchedules)
+			return m, m.schedules.Init()
+		case "prompt":
+			m.prompt = NewPromptModel(m.client)
+			m.pushScreen(ScreenPrompt)
+			return m, m.prompt.Init()
+		case "back":
+			m.popScreen()
+			return m, nil
+		case "quit":
+			return m, tea.Quit
+		}
+		return m, nil
+
 	case NavigateToChatMsg:
 		// Create new chat model with selected session
 		m.chat = NewChatModel(m.client, msg.SessionID)
@@ -210,24 +240,7 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Normal keybindings
 		switch msg.String() {
-		case "ctrl+t":
-			m.tools = NewToolsModel(m.client)
-			m.pushScreen(ScreenTools)
-			return m, m.tools.Init()
-		case "ctrl+s":
-			m.secrets = NewSecretsModel(m.client)
-			m.pushScreen(ScreenSecrets)
-			return m, m.secrets.Init()
-		case "ctrl+d":
-			m.schedules = NewSchedulesModel(m.client)
-			m.pushScreen(ScreenSchedules)
-			return m, m.schedules.Init()
-		case "ctrl+p":
-			m.prompt = NewPromptModel(m.client)
-			m.pushScreen(ScreenPrompt)
-			return m, m.prompt.Init()
 		case "ctrl+c":
 			return m, tea.Quit
 		}
