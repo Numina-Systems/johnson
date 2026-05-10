@@ -269,7 +269,7 @@ func (m *ChatModel) handleKeyPress(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return chatStartedMsg{requestID: result.RequestID}
 		}
 
-	case "escape":
+	case "esc":
 		return m, func() tea.Msg {
 			return popScreenMsg{}
 		}

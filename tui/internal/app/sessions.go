@@ -21,8 +21,10 @@ type SessionsModel struct {
 // NewSessionsModel creates a new sessions screen model
 func NewSessionsModel(client *protocol.Client) *SessionsModel {
 	// Initial dimensions are defaults (80x24), overridden by WindowSizeMsg on first render
+	l := list.New([]list.Item{}, newSessionDelegate(), 80, 24)
+	l.DisableQuitKeybindings()
 	return &SessionsModel{
-		list:   list.New([]list.Item{}, newSessionDelegate(), 80, 24),
+		list:   l,
 		client: client,
 		width:  80,
 		height: 24,
@@ -59,7 +61,7 @@ func (m *SessionsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "escape":
+		case "esc":
 			if m.list.FilterState() == list.Filtering || m.list.FilterState() == list.FilterApplied {
 				break // let list handle escape during filtering
 			}

@@ -46,13 +46,20 @@ func NewToolsModel(client *protocol.Client) *ToolsModel {
 	builtinDelegate := list.NewDefaultDelegate()
 	builtinDelegate.SetSpacing(0)
 
+	skillList := list.New([]list.Item{}, skillDelegate, 80, 20)
+	skillList.DisableQuitKeybindings()
+	customList := list.New([]list.Item{}, customDelegate, 80, 20)
+	customList.DisableQuitKeybindings()
+	builtinList := list.New([]list.Item{}, builtinDelegate, 80, 20)
+	builtinList.DisableQuitKeybindings()
+
 	m := &ToolsModel{
 		client:      client,
 		tabs:        []string{"Skills", "Custom Tools", "Builtins"},
 		activeTab:   0,
-		skillList:   list.New([]list.Item{}, skillDelegate, 80, 20),
-		customList:  list.New([]list.Item{}, customDelegate, 80, 20),
-		builtinList: list.New([]list.Item{}, builtinDelegate, 80, 20),
+		skillList:   skillList,
+		customList:  customList,
+		builtinList: builtinList,
 		mode:        toolsModeList,
 		codeViewer:  viewport.New(),
 		width:       80,
@@ -120,7 +127,7 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.activeTab = (m.activeTab + 3 - 1) % 3
 				return m, nil
 
-			case "escape":
+			case "esc":
 				return m, func() tea.Msg { return popScreenMsg{} }
 
 			case "a", "g", "r", "v", "s", "d":
@@ -177,7 +184,7 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case toolsModeViewCode:
 			switch msg.String() {
-			case "escape":
+			case "esc":
 				m.mode = toolsModeList
 				return m, nil
 			}
@@ -186,7 +193,7 @@ func (m *ToolsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case toolsModeEditSecrets:
 			switch msg.String() {
-			case "escape":
+			case "esc":
 				m.mode = toolsModeList
 				selected := make([]string, 0)
 				for i, toggled := range m.secretToggle {

@@ -52,7 +52,7 @@ func (m *PromptModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "escape":
+		case "esc":
 			return m, func() tea.Msg { return popScreenMsg{} }
 
 		case "j", "down":

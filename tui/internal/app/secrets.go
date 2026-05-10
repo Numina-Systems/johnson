@@ -79,7 +79,7 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case secretsModeList:
 			switch msg.String() {
-			case "escape":
+			case "esc":
 				return m, func() tea.Msg { return popScreenMsg{} }
 
 			case "j", "down":
@@ -119,7 +119,7 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
-			case "escape":
+			case "esc":
 				m.mode = secretsModeList
 				return m, nil
 
@@ -142,7 +142,7 @@ func (m *SecretsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 
-			case "escape":
+			case "esc":
 				m.mode = secretsModeList
 				return m, nil
 
