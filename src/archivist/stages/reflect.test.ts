@@ -156,7 +156,9 @@ Remove this
       expect(result).not.toContain('Remove this');
     });
   });
+});
 
+describe('reflect: store summarization', () => {
   describe('summarizeStore', () => {
     test('counts documents by prefix', () => {
       const store = createStore(':memory:');
@@ -244,8 +246,9 @@ Remove this
       expect(formatted).not.toContain('Recent archive dates:');
     });
   });
+});
 
-  describe('reflect: integration tests', () => {
+describe('reflect: integration tests', () => {
     function createMockSubAgent(): SubAgentLLM {
       return {
         async complete(prompt: string): Promise<string> {
@@ -388,5 +391,4 @@ Important footer`;
 
       expect(result.skipped).toBe(true);
     });
-  });
 });

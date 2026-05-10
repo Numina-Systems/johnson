@@ -3,12 +3,9 @@
 import type { Store } from '@/store/store.ts';
 import type { SubAgentLLM } from '@/model/sub-agent.ts';
 import type { StageResult, BudgetTracker } from '../types.ts';
-import {
-  getArchivistSection,
-  setArchivistSection,
-} from './reflect-sections.ts';
+import { setArchivistSection } from './reflect-sections.ts';
 
-// ── Functional Core: Store summarization ──────────────────────────────────
+// ── Imperative Shell: Store summarization ──────────────────────────────────
 
 export type StoreSummary = {
   readonly totalDocs: number;
@@ -110,8 +107,9 @@ ${formattedSummary}`;
   let selfObservations = '';
   try {
     selfObservations = await deps.subAgent.complete(selfPrompt, deps.systemPrompt);
-    tokensUsed += Math.ceil(selfObservations.length / 4); // rough token estimate
-    deps.budget.record('reflect', tokensUsed);
+    const selfTokens = Math.ceil(selfObservations.length / 4); // rough token estimate
+    tokensUsed += selfTokens;
+    deps.budget.record('reflect', selfTokens);
   } catch (error) {
     // Continue gracefully if sub-agent fails
     selfObservations = `Unable to generate observations (${error instanceof Error ? error.message : 'unknown error'})`;
@@ -127,7 +125,7 @@ ${formattedSummary}`;
 
   // Update knowledge-domains section in self
   const updatedSelfContent = setArchivistSection(
-    selfDoc!.content,
+    selfDoc?.content ?? '',
     'knowledge-domains',
     selfObservations
   );
@@ -143,8 +141,9 @@ ${formattedSummary}`;
   let operatorObservations = '';
   try {
     operatorObservations = await deps.subAgent.complete(operatorPrompt, deps.systemPrompt);
-    tokensUsed += Math.ceil(operatorObservations.length / 4);
-    deps.budget.record('reflect', tokensUsed);
+    const operatorTokens = Math.ceil(operatorObservations.length / 4);
+    tokensUsed += operatorTokens;
+    deps.budget.record('reflect', operatorTokens);
   } catch (error) {
     operatorObservations = `Unable to generate observations (${error instanceof Error ? error.message : 'unknown error'})`;
   }
@@ -158,7 +157,7 @@ ${formattedSummary}`;
 
   // Update user-patterns section in operator
   const updatedOperatorContent = setArchivistSection(
-    operatorDoc!.content,
+    operatorDoc?.content ?? '',
     'user-patterns',
     operatorObservations
   );
