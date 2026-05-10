@@ -704,6 +704,45 @@ func TestChatModel_UpdateViewportContent_RendersAllMessages(t *testing.T) {
 	}
 }
 
+func TestChatModel_LoadOlderErrorPreservesMessages(t *testing.T) {
+	client := newChatClient()
+	model := NewChatModel(client, "session-123")
+
+	// Load initial messages
+	messagesMsg := messagesLoadedMsg{
+		messages: []protocol.MessageRow{
+			{Role: "user", Content: "msg1"},
+			{Role: "agent", Content: "msg2"},
+			{Role: "user", Content: "msg3"},
+		},
+		cursor: "cursor-abc",
+	}
+	_, _ = model.Update(messagesMsg)
+
+	if len(model.messages) != 3 {
+		t.Fatalf("expected 3 messages after load, got %d", len(model.messages))
+	}
+
+	// Send load older error
+	errorMsg := loadOlderErrorMsg{err: fmt.Errorf("timeout")}
+	_, _ = model.Update(errorMsg)
+
+	// Verify messages are preserved
+	if len(model.messages) != 3 {
+		t.Errorf("expected 3 messages after error (unchanged), got %d", len(model.messages))
+	}
+
+	// Verify error status is set
+	if !strContains(model.status, "Error loading older messages") {
+		t.Errorf("expected status to contain error message, got %q", model.status)
+	}
+
+	// Verify statusError is true
+	if !model.statusError {
+		t.Error("expected statusError to be true")
+	}
+}
+
 func TestChatModel_TextareaPlaceholder(t *testing.T) {
 	client := newChatClient()
 	model := NewChatModel(client, "session-123")

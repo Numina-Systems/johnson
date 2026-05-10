@@ -70,6 +70,10 @@ type loadOlderMsg struct {
 	cursor   string
 }
 
+type loadOlderErrorMsg struct {
+	err error
+}
+
 type popScreenMsg struct{}
 
 func NewChatModel(client *protocol.Client, sessionID string) *ChatModel {
@@ -193,6 +197,10 @@ func (m *ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if linesAdded > 0 {
 			m.viewport.SetYOffset(oldYOffset + linesAdded)
 		}
+
+	case loadOlderErrorMsg:
+		m.status = fmt.Sprintf("Error loading older messages: %v", msg.err)
+		m.statusError = true
 
 	case chatStartedMsg:
 		m.chatRequestID = msg.requestID
@@ -351,7 +359,7 @@ func (m *ChatModel) loadOlderMessages() tea.Cmd {
 			Cursor:    m.messageCursor,
 		}, &result)
 		if err != nil {
-			return loadOlderMsg{messages: []protocol.MessageRow{}, cursor: ""}
+			return loadOlderErrorMsg{err: err}
 		}
 		return loadOlderMsg{messages: result.Messages, cursor: result.Cursor}
 	}
