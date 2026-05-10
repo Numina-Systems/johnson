@@ -96,3 +96,18 @@ endpoint = "http://localhost:11434"    # required — where your embedding serve
 # prefix = "!"
 # allowed_channels = []   # empty = all channels
 # allowed_users = []      # empty = respond to everyone; add Discord user IDs to restrict
+
+# ─── Archivist (optional) ─────────────────────────────────────────────────────
+# Background knowledge maintenance. Runs on dual schedules: hourly incremental
+# passes during the day and a full overnight sweep. Requires [sub_model] and
+# [embedding] to be configured.
+#
+# [archivist]
+# enabled = true
+# daytime_schedule = "0 6-22 * * *"
+# nighttime_schedule = "0 2 * * *"
+# dedup_threshold = 0.88
+# crossref_threshold = 0.60
+# prune_threshold = 0.92
+# token_budget = 0                   # 0 = unlimited
+# max_log_entries = 30

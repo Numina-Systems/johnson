@@ -62,6 +62,17 @@ export type RecallConfig = {
   readonly timeoutMs: number;
 };
 
+export type ArchivistConfig = {
+  readonly enabled: boolean;
+  readonly daytimeSchedule: string;
+  readonly nighttimeSchedule: string;
+  readonly dedupThreshold: number;
+  readonly crossrefThreshold: number;
+  readonly pruneThreshold: number;
+  readonly tokenBudget: number;
+  readonly maxLogEntries: number;
+};
+
 export type InterfaceMode = 'tui' | 'discord' | 'both';
 
 export type AppConfig = {
@@ -73,4 +84,5 @@ export type AppConfig = {
   readonly interface: InterfaceMode;
   readonly subModel?: SubModelConfig;
   readonly recall?: RecallConfig;
+  readonly archivist?: ArchivistConfig;
 };

@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import TOML from 'toml';
-import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig, RecallConfig } from './types.ts';
+import type { AppConfig, ModelConfig, RuntimeConfig, AgentLoopConfig, EmbeddingConfig, DiscordConfig, InterfaceMode, SubModelConfig, RecallConfig, ArchivistConfig } from './types.ts';
 
 type RawConfig = {
   model?: Partial<ModelConfig> & Record<string, unknown>;
@@ -13,6 +13,7 @@ type RawConfig = {
   discord?: Partial<DiscordConfig> & Record<string, unknown>;
   sub_model?: Partial<SubModelConfig> & Record<string, unknown>;
   recall?: Partial<RecallConfig> & Record<string, unknown>;
+  archivist?: Partial<ArchivistConfig> & Record<string, unknown>;
   interface?: string;
 };
 
@@ -40,6 +41,17 @@ const DEFAULT_AGENT: AgentLoopConfig = {
   recallEnabled: false,
   recallTokenBudget: 1500,
   devMode: false,
+};
+
+const DEFAULT_ARCHIVIST: ArchivistConfig = {
+  enabled: true,
+  daytimeSchedule: '0 6-22 * * *',
+  nighttimeSchedule: '0 2 * * *',
+  dedupThreshold: 0.88,
+  crossrefThreshold: 0.60,
+  pruneThreshold: 0.92,
+  tokenBudget: 0,
+  maxLogEntries: 30,
 };
 
 function resolveApiKey(provider: string, explicit: string | undefined): string | undefined {
@@ -161,5 +173,19 @@ export function loadConfig(configPath: string): AppConfig {
       : (() => { throw new Error('[recall] enabled=true requires endpoint (e.g. "http://localhost:8420")'); })()
     : undefined;
 
-  return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel, recall };
+  const archivistEnabled = pick(raw.archivist, 'enabled', DEFAULT_ARCHIVIST.enabled);
+  const archivist: ArchivistConfig | undefined = archivistEnabled
+    ? {
+        enabled: true,
+        daytimeSchedule: pick(raw.archivist, 'daytimeSchedule', DEFAULT_ARCHIVIST.daytimeSchedule),
+        nighttimeSchedule: pick(raw.archivist, 'nighttimeSchedule', DEFAULT_ARCHIVIST.nighttimeSchedule),
+        dedupThreshold: pick(raw.archivist, 'dedupThreshold', DEFAULT_ARCHIVIST.dedupThreshold),
+        crossrefThreshold: pick(raw.archivist, 'crossrefThreshold', DEFAULT_ARCHIVIST.crossrefThreshold),
+        pruneThreshold: pick(raw.archivist, 'pruneThreshold', DEFAULT_ARCHIVIST.pruneThreshold),
+        tokenBudget: pick(raw.archivist, 'tokenBudget', DEFAULT_ARCHIVIST.tokenBudget),
+        maxLogEntries: pick(raw.archivist, 'maxLogEntries', DEFAULT_ARCHIVIST.maxLogEntries),
+      }
+    : undefined;
+
+  return { model, runtime, agent, embedding, discord, interface: interfaceMode, subModel, recall, archivist };
 }
