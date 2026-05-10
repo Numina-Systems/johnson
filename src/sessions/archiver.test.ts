@@ -84,7 +84,7 @@ function createMockStore(options: CreateMockStoreOptions): MockStoreTest {
         messageCount: (messagesPerSession[s.id] ?? []).length,
         lastMessageAt: (() => {
           const msgs = messagesPerSession[s.id] ?? [];
-          return msgs.length > 0 ? msgs[msgs.length - 1].createdAt : null;
+          return msgs.length > 0 ? msgs[msgs.length - 1]?.createdAt ?? null : null;
         })(),
       }));
     },
@@ -182,7 +182,7 @@ describe('archiveSession', () => {
     expect(result.title).toBe('Test Session');
     expect(result.messageCount).toBe(3);
     expect(mockStore.docUpsertCalls.length).toBe(1);
-    expect(mockStore.docUpsertCalls[0].rkey).toBe(result.rkey);
+    expect(mockStore.docUpsertCalls[0]?.rkey).toBe(result.rkey);
     expect(mockStore.deleteSessionCalls).toContain('session-123');
   });
 
@@ -216,8 +216,8 @@ describe('archiveSession', () => {
     await archiveSession('session-long', mockStore, mockSubAgent);
 
     expect(mockSubAgent.completeCalls.length).toBe(1);
-    expect(mockSubAgent.completeCalls[0].system).toContain('conversation summarizer');
-    const archiveDoc = mockStore.docUpsertCalls[0].content;
+    expect(mockSubAgent.completeCalls[0]?.system).toContain('conversation summarizer');
+    const archiveDoc = mockStore.docUpsertCalls[0]?.content;
     expect(archiveDoc).toContain('## Summary');
     expect(archiveDoc).toContain('Test summary');
   });
@@ -247,7 +247,7 @@ describe('archiveSession', () => {
     await archiveSession('session-short', mockStore, mockSubAgent);
 
     expect(mockSubAgent.completeCalls.length).toBe(0);
-    const archiveDoc = mockStore.docUpsertCalls[0].content;
+    const archiveDoc = mockStore.docUpsertCalls[0]?.content;
     expect(archiveDoc).not.toContain('## Summary');
   });
 
@@ -305,7 +305,7 @@ describe('archiveSession', () => {
 
     expect(result.messageCount).toBe(7);
     expect(mockStore.docUpsertCalls.length).toBe(1);
-    const archiveDoc = mockStore.docUpsertCalls[0].content;
+    const archiveDoc = mockStore.docUpsertCalls[0]?.content;
     expect(archiveDoc).not.toContain('## Summary');
   });
 
@@ -341,7 +341,7 @@ describe('archiveSession', () => {
     expect(mockEmbedding.embedCalls.length).toBe(1);
     expect(mockEmbedding.embedCalls[0]).toBe('Summary text');
     expect(mockStore.saveEmbeddingCalls.length).toBe(1);
-    expect(mockStore.saveEmbeddingCalls[0].model).toBe('test-model');
+    expect(mockStore.saveEmbeddingCalls[0]?.model).toBe('test-model');
   });
 
   test('AC3.6: embeds full document for ≤5 msg sessions', async () => {
@@ -370,8 +370,8 @@ describe('archiveSession', () => {
 
     expect(mockEmbedding.embedCalls.length).toBe(1);
     const embeddedText = mockEmbedding.embedCalls[0];
-    expect(embeddedText).toContain('---');
-    expect(embeddedText).toContain('## Transcript');
+    expect(embeddedText ?? '').toContain('---');
+    expect(embeddedText ?? '').toContain('## Transcript');
   });
 
   test('AC3.7: succeeds without EmbeddingProvider', async () => {
