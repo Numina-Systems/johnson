@@ -26,3 +26,5 @@ export type {
 } from './types.ts';
 export { createBudgetTracker } from './budget.ts';
 export { computeChangeSet, filterMutable, isImmutable, createEmptySnapshot, loadSnapshot, saveSnapshot } from './state.ts';
+export { cosineSimilarity, findSimilarPairs } from './similarity.ts';
+export type { EmbeddingPair } from './similarity.ts';
