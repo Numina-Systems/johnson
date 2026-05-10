@@ -145,10 +145,6 @@ func (m *SchedulesModel) View() tea.View {
 
 			// Run count
 			view += fmt.Sprintf("    runs: %d\n", task.RunCount)
-
-			if i < len(m.tasks)-1 {
-				view += "\n"
-			}
 		}
 	}
 
