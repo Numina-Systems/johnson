@@ -300,6 +300,40 @@ describe('scan stage', () => {
     });
   });
 
+  describe('archivist internal documents', () => {
+    test('archivist: prefixed documents are excluded from scan', () => {
+      const store = createStore(':memory:');
+      store.docUpsert('archivist:log', '[]');
+      store.docUpsert('archivist:identity', 'identity content');
+      store.docUpsert('archivist:state', '{}');
+      store.docUpsert('archivist:ref-migration', 'done');
+      store.docUpsert('knowledge:doc1', 'doc-content');
+
+      const result = scan(store, 'incremental');
+
+      expect(result.changeSet.added).toContain('knowledge:doc1');
+      expect(result.changeSet.added).not.toContain('archivist:log');
+      expect(result.changeSet.added).not.toContain('archivist:identity');
+      expect(result.changeSet.added).not.toContain('archivist:state');
+      expect(result.changeSet.added).not.toContain('archivist:ref-migration');
+      expect(result.currentHashes).not.toHaveProperty('archivist:log');
+      expect(result.currentHashes).not.toHaveProperty('archivist:identity');
+      expect(result.currentHashes).not.toHaveProperty('archivist:state');
+      expect(result.currentHashes).not.toHaveProperty('archivist:ref-migration');
+    });
+
+    test('archivist: documents excluded from full sweep too', () => {
+      const store = createStore(':memory:');
+      store.docUpsert('archivist:log', '[{"test": true}]');
+      store.docUpsert('knowledge:doc1', 'doc-content');
+
+      const result = scan(store, 'full');
+
+      expect(result.changeSet.added).toContain('knowledge:doc1');
+      expect(result.changeSet.added).not.toContain('archivist:log');
+    });
+  });
+
   describe('state persistence', () => {
     test('archivist.AC5.1: saveSnapshot persists to archivist:state document', () => {
       const store = createStore(':memory:');

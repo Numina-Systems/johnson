@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import type { Store } from '@/store/store.ts';
 import type { ChangeSet, PipelineMode, StageResult } from '../types.ts';
-import { computeChangeSet, filterMutable, loadSnapshot, STATE_RKEY } from '../state.ts';
+import { computeChangeSet, filterMutable, loadSnapshot } from '../state.ts';
 
 export type ScanResult = {
   readonly changeSet: ChangeSet;
@@ -22,8 +22,8 @@ export function scan(store: Store, mode: PipelineMode): ScanResult {
   do {
     const page = store.docList(500, cursor);
     for (const doc of page.documents) {
-      // Skip internal state document
-      if (doc.rkey === STATE_RKEY) continue;
+      // Skip archivist's own internal documents
+      if (doc.rkey.startsWith('archivist:')) continue;
       currentHashes[doc.rkey] = hashContent(doc.content);
     }
     cursor = page.cursor;

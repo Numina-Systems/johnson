@@ -209,11 +209,14 @@ ${summary}
 ${docList}`;
 }
 
-function parseSubAgentResponse(response: string): { topicName: string; summary: string } {
+export function parseSubAgentResponse(response: string): { topicName: string; summary: string } {
+  const jsonMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/) ?? response.match(/(\{[\s\S]*\})/);
+  const raw = jsonMatch?.[1]?.trim() ?? response.trim();
+
   try {
-    const parsed = JSON.parse(response);
+    const parsed = JSON.parse(raw);
     return {
-      topicName: typeof parsed.topicName === 'string' ? parsed.topicName : 'Topic Cluster',
+      topicName: typeof parsed.topicName === 'string' && parsed.topicName.length > 0 ? parsed.topicName : 'Topic Cluster',
       summary: typeof parsed.summary === 'string' ? parsed.summary : '',
     };
   } catch {

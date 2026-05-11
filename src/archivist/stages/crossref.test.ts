@@ -9,6 +9,7 @@ import {
   stripRelatedMarker,
   addRelatedMarker,
   parseRelatedMarker,
+  parseSubAgentResponse,
   crossref,
 } from './crossref.ts';
 
@@ -114,6 +115,44 @@ describe('crossref: marker management', () => {
 
       expect(result).toEqual(['rkey1', 'rkey2', 'rkey3']);
     });
+  });
+});
+
+describe('crossref: parseSubAgentResponse', () => {
+  test('parses raw JSON', () => {
+    const result = parseSubAgentResponse('{"topicName": "Memory Systems", "summary": "Documents about memory."}');
+    expect(result.topicName).toBe('Memory Systems');
+    expect(result.summary).toBe('Documents about memory.');
+  });
+
+  test('parses JSON wrapped in markdown code fence', () => {
+    const result = parseSubAgentResponse('```json\n{"topicName": "Memory Systems", "summary": "About memory."}\n```');
+    expect(result.topicName).toBe('Memory Systems');
+    expect(result.summary).toBe('About memory.');
+  });
+
+  test('parses JSON wrapped in untyped code fence', () => {
+    const result = parseSubAgentResponse('```\n{"topicName": "Search Skills", "summary": "Search tools."}\n```');
+    expect(result.topicName).toBe('Search Skills');
+    expect(result.summary).toBe('Search tools.');
+  });
+
+  test('parses JSON with surrounding prose', () => {
+    const result = parseSubAgentResponse('Here is the analysis:\n{"topicName": "Podcast Notes", "summary": "Audio content."}\nHope that helps!');
+    expect(result.topicName).toBe('Podcast Notes');
+    expect(result.summary).toBe('Audio content.');
+  });
+
+  test('falls back to defaults on empty topicName', () => {
+    const result = parseSubAgentResponse('{"topicName": "", "summary": "Some summary."}');
+    expect(result.topicName).toBe('Topic Cluster');
+    expect(result.summary).toBe('Some summary.');
+  });
+
+  test('falls back to defaults on garbage input', () => {
+    const result = parseSubAgentResponse('I cannot process this request.');
+    expect(result.topicName).toBe('Topic Cluster');
+    expect(result.summary).toBe('');
   });
 });
 
