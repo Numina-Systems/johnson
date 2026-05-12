@@ -36,7 +36,7 @@ export function createStatusBar(options: StatusBarOptions): StatusBar {
 
     setText(text: string): void {
       element.setContent(text);
-      const screen = (element as any).screen;
+      const screen = element.screen;
       if (screen) {
         screen.render();
       }
