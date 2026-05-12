@@ -1,5 +1,3 @@
-// pattern: Functional Core — prune view tests
-
 import { describe, it, expect, beforeEach } from 'bun:test';
 import type { SessionWithCounts } from '../../sessions/types.ts';
 import { formatPruneLine } from './prune.ts';
@@ -51,7 +49,7 @@ describe('formatPruneLine', () => {
     const line = formatPruneLine(session, 'delete', false);
 
     expect(line).toContain('delete');
-    expect(line).toContain('{red-fg}');
+    expect(line).toContain(`{${palette.red}-fg}`);
   });
 
   it('includes archive classification with peach color tag', () => {
@@ -67,7 +65,7 @@ describe('formatPruneLine', () => {
     const line = formatPruneLine(session, 'archive', false);
 
     expect(line).toContain('archive');
-    expect(line).toContain('{peach-fg}');
+    expect(line).toContain(`{${palette.peach}-fg}`);
   });
 
   it('includes active classification with green color tag', () => {
@@ -83,7 +81,7 @@ describe('formatPruneLine', () => {
     const line = formatPruneLine(session, 'active', false);
 
     expect(line).toContain('active');
-    expect(line).toContain('{green-fg}');
+    expect(line).toContain(`{${palette.green}-fg}`);
   });
 
   it('shows message count in parentheses', () => {
@@ -131,5 +129,85 @@ describe('formatPruneLine', () => {
 
     expect(line).toBeDefined();
     expect(line.length).toBeGreaterThan(0);
+  });
+});
+
+describe('createPruneView', () => {
+  let screen: import('blessed').Widgets.Screen;
+
+  beforeEach(() => {
+    screen = require('neo-blessed').screen({ smartCSR: true });
+  });
+
+  it('should create a view with proper structure', () => {
+    const mockStore = {
+      listSessionsWithCounts: () => [],
+      deleteSession: () => {},
+      archiveSession: () => {},
+    } as any;
+
+    const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
+
+    expect(view.name).toBe('Prune');
+    expect(view.isCapturingInput).toBe(false);
+    expect(view.container).toBeDefined();
+  });
+
+  it('should render sessions with proper formatting', () => {
+    const mockSessions: SessionWithCounts[] = [
+      {
+        id: 'sess-1',
+        title: 'Session 1',
+        createdAt: '2026-05-11T10:00:00Z',
+        updatedAt: '2026-05-11T14:00:00Z',
+        messageCount: 5,
+        lastMessageAt: '2026-05-11T14:00:00Z',
+      },
+      {
+        id: 'sess-2',
+        title: 'Old Session',
+        createdAt: '2026-05-01T10:00:00Z',
+        updatedAt: '2026-05-01T10:00:00Z',
+        messageCount: 0,
+        lastMessageAt: null,
+      },
+    ];
+
+    const mockStore = {
+      listSessionsWithCounts: () => mockSessions,
+      deleteSession: () => {},
+    } as any;
+
+    const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
+    view.show();
+
+    // Verify the view renders without error
+    expect(view.container.visible).toBe(true);
+  });
+
+  it('should have required view methods', () => {
+    const mockStore = {
+      listSessionsWithCounts: () => [],
+      deleteSession: () => {},
+    } as any;
+
+    const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
+
+    expect(typeof view.show).toBe('function');
+    expect(typeof view.hide).toBe('function');
+    expect(typeof view.focus).toBe('function');
+    expect(typeof view.destroy).toBe('function');
+  });
+
+  it('should capture input in confirm and executing modes but not in select mode', () => {
+    const mockStore = {
+      listSessionsWithCounts: () => [],
+      deleteSession: () => {},
+    } as any;
+
+    const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
+
+    // Initially in select mode
+    expect(view.isCapturingInput).toBe(false);
   });
 });

@@ -37,10 +37,10 @@ export function formatPruneLine(
 
   const colorTag =
     classification === 'delete'
-      ? '{red-fg}'
+      ? `{${palette.red}-fg}`
       : classification === 'archive'
-        ? '{peach-fg}'
-        : '{green-fg}';
+        ? `{${palette.peach}-fg}`
+        : `{${palette.green}-fg}`;
 
   const classText = `${colorTag}${classification}{/}`;
 
@@ -118,14 +118,14 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
 
   // Update status bar based on mode
   function updateStatus(): void {
-    if (mode === 'select') {
+    if (resultMsg) {
+      statusBar.setText(resultMsg);
+    } else if (mode === 'select') {
       statusBar.setText('Space:toggle  a:select stale  Enter:confirm  Esc:back');
     } else if (mode === 'confirm') {
       statusBar.setText('y:confirm  n:cancel');
     } else if (mode === 'executing') {
       statusBar.setText('Processing...');
-    } else if (resultMsg) {
-      statusBar.setText(resultMsg);
     }
   }
 
@@ -133,7 +133,7 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
   list.element.key(['space'], () => {
     if (mode !== 'select') return;
 
-    const currentIndex = list.getCurrentIndex();
+    const currentIndex = list.getSelectedIndex();
     if (currentIndex >= 0 && currentIndex < sessions.length) {
       const sessionId = sessions[currentIndex]!.id;
       if (selected.has(sessionId)) {
