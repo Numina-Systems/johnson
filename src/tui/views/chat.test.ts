@@ -3,17 +3,16 @@ import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
 import { EventEmitter } from 'events';
 import { createChatView } from './chat.ts';
-import type { Agent, ChatResult, ChatOptions } from '../../agent/types.ts';
+import type { Agent, ChatOptions } from '../../agent/types.ts';
 import type { Store } from '../../store/store.ts';
 
-// Helper to create a controllable promise for testing
 function createControlledPromise<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
-  reject: (reason?: any) => void;
+  reject: (reason?: unknown) => void;
 } {
   let resolve: (value: T) => void = () => {};
-  let reject: (reason?: any) => void = () => {};
+  let reject: (reason?: unknown) => void = () => {};
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
@@ -21,7 +20,6 @@ function createControlledPromise<T>(): {
   return { promise, resolve, reject };
 }
 
-// Mock implementations following project's partial mock pattern
 const createMockAgent = (): Agent => ({
   chat: mock(async (msg: string) => ({
     text: `response to: ${msg}`,
@@ -75,6 +73,20 @@ const createMockStore = (): Store => ({
   close: mock(() => {}),
 });
 
+function findTextarea(container: Widgets.BoxElement): Widgets.TextareaElement | null {
+  for (const child of container.children) {
+    if ('getValue' in child && 'setValue' in child && 'clearValue' in child) {
+      return child as Widgets.TextareaElement;
+    }
+  }
+  return null;
+}
+
+function triggerSubmit(textarea: Widgets.TextareaElement, text: string): void {
+  textarea.setValue(text);
+  textarea.emit('key enter', '\r', { name: 'enter', full: 'enter' });
+}
+
 describe('createChatView', () => {
   let screen: Widgets.Screen;
   let agent: Agent;
@@ -117,15 +129,11 @@ describe('createChatView', () => {
       { role: 'assistant', content: 'world', createdAt: '2026-05-11T10:00:01Z' },
     ]);
 
-    const view = createChatView({ screen, agent, store, bus });
-    const sessionId = 'test-session-123';
+    createChatView({ screen, agent, store, bus });
+    bus.emit('session:selected', { sessionId: 'test-session-123' });
 
-    bus.emit('session:selected', { sessionId });
-
-    // Give it a moment for async operations
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Verify getMessages was called
     expect(mockStore.getMessages.mock.calls.length).toBeGreaterThan(0);
   });
 
@@ -136,18 +144,13 @@ describe('createChatView', () => {
     bus.emit('session:selected', { sessionId: 'test-123' });
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Try to get the textarea and simulate submitting empty text
-    // (This is a simplified test; in reality you'd interact with blessed UI directly)
-    // The view should prevent submission of empty messages
+    const textarea = findTextarea(view.container);
+    expect(textarea).not.toBeNull();
+
+    // Submit empty text
+    triggerSubmit(textarea!, '');
 
     expect(mockAgent.chat.mock.calls.length).toBe(0);
-  });
-
-  test('status bar is created', () => {
-    const view = createChatView({ screen, agent, store, bus });
-
-    // Verify the view has internal state for status
-    expect(view.container).toBeDefined();
   });
 
   test('view can be shown and hidden', () => {
@@ -157,31 +160,9 @@ describe('createChatView', () => {
     expect(() => view.hide()).not.toThrow();
   });
 
-  test('hide() does not throw error', async () => {
-    const view = createChatView({ screen, agent, store, bus });
-    bus.emit('session:selected', { sessionId: 'test-123' });
-
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    // Verify that hiding the view does not throw and preserves state
-    expect(() => view.hide()).not.toThrow();
-    expect(view.container.hidden).toBe(true);
-
-    // Show again should work
-    expect(() => view.show()).not.toThrow();
-    expect(view.container.hidden).toBe(false);
-  });
-
-  test('can be destroyed', () => {
-    const view = createChatView({ screen, agent, store, bus });
-
-    expect(() => view.destroy()).not.toThrow();
-  });
-
   test('container is initially hidden', () => {
     const view = createChatView({ screen, agent, store, bus });
 
-    // Container should be hidden initially (until show() is called)
     expect(view.container.hidden).toBe(true);
   });
 
@@ -191,156 +172,109 @@ describe('createChatView', () => {
     expect(() => view.focus()).not.toThrow();
   });
 
-  test('auto-scroll to bottom on new messages', async () => {
-    const mockStore = store as any;
-    mockStore.getMessages = mock(() => [
-      { role: 'user', content: 'msg1', createdAt: '2026-05-11T10:00:00Z' },
-    ]);
-
+  test('can be destroyed', () => {
     const view = createChatView({ screen, agent, store, bus });
-    bus.emit('session:selected', { sessionId: 'test-123' });
 
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-    view.show();
-
-    // The view should auto-scroll via ScrollableViewer's appendContent
-    // This is tested implicitly through integration with ScrollableViewer
-    expect(view.container.hidden).toBe(false);
+    expect(() => view.destroy()).not.toThrow();
   });
 
-  test('submitting /reset command clears history and calls agent.reset()', async () => {
+  test('input textarea does not have tags enabled [AC6.1]', () => {
+    const view = createChatView({ screen, agent, store, bus });
+    const textarea = findTextarea(view.container);
+
+    expect(textarea).not.toBeNull();
+    expect((textarea as any).parseTags).not.toBe(true);
+  });
+
+  test('submitting message calls agent.chat and persists response [AC1.2]', async () => {
+    const controlled = createControlledPromise<{ text: string; stats: any }>();
     const mockAgent = agent as any;
-    const mockStore = store as any;
-
-    const resetCalls: any[] = [];
-    const clearMessagesCalls: any[] = [];
-
-    mockAgent.reset = mock(() => {
-      resetCalls.push({});
-    });
-
-    mockStore.clearMessages = mock((sessionId: string) => {
-      clearMessagesCalls.push({ sessionId });
-    });
+    mockAgent.chat = mock(() => controlled.promise);
 
     const view = createChatView({ screen, agent, store, bus });
-    const sessionId = 'test-123';
-
-    // Load the session first
-    mockStore.getMessages = mock(() => []);
-    bus.emit('session:selected', { sessionId });
-
+    bus.emit('session:selected', { sessionId: 'test-session' });
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // NOTE: Testing /reset command behavior
-    // ======================================
-    // The /reset command is submitted via blessed textarea when user types
-    // "/reset" and presses Enter. Because blessed textarea doesn't support
-    // programmatic keyboard event triggering in tests, we cannot directly
-    // invoke submitMessage() → handleCommand('/reset') in unit tests.
-    //
-    // Manual test steps to verify AC4.4 (/reset command):
-    // 1. Run: bun start
-    // 2. Select a session (Chat view appears with existing messages)
-    // 3. Type "/reset" in the input box
-    // 4. Press Enter
-    // 5. Verify: "History cleared" system message appears
-    // 6. Verify: Previous messages disappear from history
-    // 7. Verify: agent.reset() was called internally
-    //
-    // For now, we verify the view structure is correct:
-    expect(view.container).toBeDefined();
-    expect(view.name).toBe('Chat');
-    expect(view.isCapturingInput).toBe(true);
+    const textarea = findTextarea(view.container);
+    expect(textarea).not.toBeNull();
+    triggerSubmit(textarea!, 'hello world');
 
-    // The handler is registered and will execute when blessed fires the event
-    expect(mockAgent.reset).toBeDefined();
-    expect(mockStore.clearMessages).toBeDefined();
+    // Agent should have been called
+    expect(mockAgent.chat.mock.calls.length).toBe(1);
+    expect(mockAgent.chat.mock.calls[0][0]).toBe('hello world');
+
+    // User message should be persisted
+    expect((store.appendMessage as any).mock.calls.length).toBe(1);
+
+    // Resolve the agent response
+    controlled.resolve({
+      text: 'agent reply',
+      stats: { inputTokens: 10, outputTokens: 20, contextEstimate: 100, contextLimit: 2000, rounds: 1, durationMs: 100 },
+    });
+    await controlled.promise;
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    // Agent response should be persisted
+    expect((store.appendMessage as any).mock.calls.length).toBe(2);
+    expect((store.appendMessage as any).mock.calls[1][2]).toBe('agent reply');
   });
 
   test('hide() does not interrupt in-progress agent.chat() [AC4.3]', async () => {
+    const controlled = createControlledPromise<{ text: string; stats: any }>();
     const mockAgent = agent as any;
-    const mockStore = store as any;
-
-    // Mock store to track appendMessage calls
-    const appendMessageCalls: any[] = [];
-    mockStore.getMessages = mock(() => []);
-    mockStore.appendMessage = mock((sessionId: string, role: string, content: string) => {
-      appendMessageCalls.push({ sessionId, role, content });
-    });
-
-    // Mock agent.chat to simulate a delayed response
-    const chatCalls: any[] = [];
-    mockAgent.chat = mock(async (msg: string, options?: ChatOptions) => {
-      chatCalls.push({ msg, options });
-
-      // Simulate async agent processing with a short delay
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            text: `response to: ${msg}`,
-            stats: {
-              inputTokens: 10,
-              outputTokens: 20,
-              contextEstimate: 100,
-              contextLimit: 2000,
-              rounds: 1,
-              durationMs: 100,
-            },
-          });
-        }, 50);
-      });
-    });
+    mockAgent.chat = mock(() => controlled.promise);
 
     const view = createChatView({ screen, agent, store, bus });
-    const sessionId = 'test-123';
-
-    bus.emit('session:selected', { sessionId });
+    bus.emit('session:selected', { sessionId: 'test-session' });
     await new Promise(resolve => setTimeout(resolve, 50));
 
+    const textarea = findTextarea(view.container);
+    expect(textarea).not.toBeNull();
+
+    // Submit a message — starts agent.chat() promise
     view.show();
+    triggerSubmit(textarea!, 'test message');
+    expect(mockAgent.chat.mock.calls.length).toBe(1);
 
-    // NOTE: Testing AC4.3 (hide doesn't interrupt agent.chat())
-    // =========================================================
-    // The key invariant: calling hide() while agent.chat() is pending should NOT:
-    // - Cancel the agent.chat() promise
-    // - Prevent the response from being persisted to store
-    // - Clear the message history
-    // - Destroy the view's internal state
-    //
-    // Full integration test (requires message submission):
-    // 1. Run: bun start
-    // 2. Select a session (Chat view opens)
-    // 3. Type a message and press Enter (agent.chat starts, status shows "Thinking...")
-    // 4. Immediately switch tabs (Tab key) - this calls hide()
-    // 5. Switch back to Chat tab (Shift+Tab) - this calls show()
-    // 6. Verify: Agent response appears when chat completes
-    // 7. Verify: Message history is preserved (both user message and agent response)
-    //
-    // Unit-level verification (what we can test without blessed keyboard):
-    expect(view.container).toBeDefined();
-
-    // Verify show/hide toggle works correctly (doesn't destroy state)
-    expect(view.container.hidden).toBe(false);
+    // Hide the view while agent is still processing
     view.hide();
     expect(view.container.hidden).toBe(true);
 
-    view.show();
-    expect(view.container.hidden).toBe(false);
+    // Resolve the agent response after hide
+    controlled.resolve({
+      text: 'delayed response',
+      stats: { inputTokens: 10, outputTokens: 20, contextEstimate: 100, contextLimit: 2000, rounds: 1, durationMs: 100 },
+    });
+    await controlled.promise;
+    await new Promise(resolve => setTimeout(resolve, 10));
 
-    // Verify view can be shown/hidden multiple times
-    for (let i = 0; i < 3; i++) {
-      view.hide();
-      expect(view.container.hidden).toBe(true);
-      view.show();
-      expect(view.container.hidden).toBe(false);
-    }
+    // Agent response should STILL be persisted despite view being hidden
+    const appendCalls = (store.appendMessage as any).mock.calls;
+    const agentResponsePersisted = appendCalls.some(
+      (call: Array<unknown>) => call[1] === 'assistant' && call[2] === 'delayed response'
+    );
+    expect(agentResponsePersisted).toBe(true);
+  });
 
-    // The internal implementation uses `.then()` on agent.chat(), which means
-    // the promise chain is not tied to view visibility. Even if the view is
-    // hidden, the promise continues executing and the response is persisted.
-    expect(mockAgent.chat).toBeDefined();
-    expect(mockStore.appendMessage).toBeDefined();
+  test('/reset command clears history and calls agent.reset()', async () => {
+    const view = createChatView({ screen, agent, store, bus });
+    bus.emit('session:selected', { sessionId: 'test-session' });
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const textarea = findTextarea(view.container);
+    expect(textarea).not.toBeNull();
+
+    // Submit /reset command
+    triggerSubmit(textarea!, '/reset');
+
+    // agent.reset() should have been called
+    expect((agent.reset as any).mock.calls.length).toBe(1);
+
+    // store.clearMessages should have been called with the session ID
+    expect((store.clearMessages as any).mock.calls.length).toBe(1);
+    expect((store.clearMessages as any).mock.calls[0][0]).toBe('test-session');
+
+    // agent.chat should NOT have been called (commands don't go to agent)
+    expect((agent.chat as any).mock.calls.length).toBe(0);
   });
 });
