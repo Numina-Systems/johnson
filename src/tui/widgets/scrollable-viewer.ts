@@ -109,7 +109,7 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
 
   function getScrollImpl(): number {
     // childBase is the blessed-internal scroll position property
-    return (element as any).childBase || 0;
+    return (element as any).childBase ?? 0;
   }
 
   function isScrolledToBottomImpl(): boolean {
@@ -124,7 +124,7 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
 
     setContent(content: string): void {
       element.setContent(content);
-      const screen = (element as any).screen;
+      const screen = element.screen;
       if (screen) {
         screen.render();
       }
@@ -143,7 +143,7 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
         scrollToBottomImpl();
       }
 
-      const screen = (element as any).screen;
+      const screen = element.screen;
       if (screen) {
         screen.render();
       }
