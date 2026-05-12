@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'bun:test';
+import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
 import type { GrantRow, Store } from '../../store/store.ts';
@@ -128,5 +128,56 @@ describe('createToolsView - integration', () => {
     expect(view.container.children?.length).toBeGreaterThan(0);
     // Should have: section header, custom list, builtin list, skills list, code viewer, status bar
     expect(view.container.children?.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('g key on skills section calls updateGrantStatus with granted', () => {
+    const updateGrantStatus = mock(() => {});
+    mockStore.updateGrantStatus = updateGrantStatus;
+    mockStore.docList = () => ({
+      documents: [
+        { rkey: 'skill:test-skill', content: '// Skill: test-skill\n// Description: A test skill\ncode here' },
+      ],
+    });
+    mockStore.getGrant = () => ({ skillName: 'skill:test-skill', contentHash: 'abc', status: 'pending' as const, secrets: [], createdAt: new Date().toISOString() });
+
+    const view = createToolsView({
+      screen,
+      store: mockStore as Store,
+      secrets: mockSecrets as SecretManager,
+      customTools: mockCustomTools as CustomToolManager,
+      builtinTools: [],
+    });
+
+    // Navigate to skills section (index 2) by pressing right twice
+    view.container.emit('key right', 'r', { name: 'right', full: 'right' });
+    view.container.emit('key right', 'r', { name: 'right', full: 'right' });
+
+    // Press g to grant
+    view.container.emit('key g', 'g', { name: 'g', full: 'g' });
+
+    expect(updateGrantStatus.mock.calls.length).toBe(1);
+    expect(updateGrantStatus.mock.calls[0][0]).toBe('skill:test-skill');
+    expect(updateGrantStatus.mock.calls[0][1]).toBe('granted');
+  });
+
+  it('section cycling wraps correctly (right at 2 wraps to 0)', () => {
+    const view = createToolsView({
+      screen,
+      store: mockStore as Store,
+      secrets: mockSecrets as SecretManager,
+      customTools: mockCustomTools as CustomToolManager,
+      builtinTools: [],
+    });
+
+    // Right 3 times wraps back to 0
+    view.container.emit('key right', 'r', { name: 'right', full: 'right' });
+    view.container.emit('key right', 'r', { name: 'right', full: 'right' });
+    view.container.emit('key right', 'r', { name: 'right', full: 'right' });
+
+    // g key should NOT call updateGrantStatus since we're back at section 0
+    const updateGrantStatus = mock(() => {});
+    mockStore.updateGrantStatus = updateGrantStatus;
+    view.container.emit('key g', 'g', { name: 'g', full: 'g' });
+    expect(updateGrantStatus.mock.calls.length).toBe(0);
   });
 });

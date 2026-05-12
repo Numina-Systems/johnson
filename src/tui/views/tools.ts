@@ -256,6 +256,14 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   container.key(['g'], () => {
     if (mode === 'code_viewer') {
       codeViewer.scrollToTop();
+    } else if (mode === 'list' && currentSectionIndex === 2) {
+      const list = getCurrentList();
+      const index = list.getSelectedIndex();
+      const doc = skillDocs[index];
+      if (doc) {
+        store.updateGrantStatus(doc.rkey, 'granted');
+        refreshLists();
+      }
     }
   });
 
@@ -374,18 +382,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
     const tool = tools[index];
     if (tool) {
       customTools?.approveTool(tool.name);
-      refreshLists();
-    }
-  });
-
-  // Handle 'g' to grant skills (C1 fix)
-  container.key(['g'], () => {
-    if (mode !== 'list' || currentSectionIndex !== 2) return;
-    const list = getCurrentList();
-    const index = list.getSelectedIndex();
-    const doc = skillDocs[index];
-    if (doc) {
-      store.updateGrantStatus(doc.rkey, 'granted');
       refreshLists();
     }
   });

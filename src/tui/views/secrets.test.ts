@@ -99,7 +99,7 @@ describe('createSecretsView - integration', () => {
     expect(view.isCapturingInput).toBe(false);
   });
 
-  it('shows secret names never values', () => {
+  it('shows secret names in the list', () => {
     mockSecrets.listKeys = () => ['api_key', 'oauth_token'];
 
     const view = createSecretsView({
@@ -109,9 +109,28 @@ describe('createSecretsView - integration', () => {
       customTools: mockCustomTools as CustomToolManager,
     });
 
-    // The list should contain the secret names
-    expect(view.container).toBeDefined();
-    // Cannot directly test item display without rendering, but structure is correct
-    expect(view).toBeDefined();
+    view.show();
+    // View should have a selectable list with items
+    expect(view.container.children?.length).toBeGreaterThan(0);
+    expect(view.name).toBe('Secrets');
+  });
+
+  it('d key in list mode triggers delete confirmation', () => {
+    mockSecrets.listKeys = () => ['test-secret'];
+
+    const view = createSecretsView({
+      screen,
+      store: mockStore as Store,
+      secrets: mockSecrets as SecretManager,
+      customTools: mockCustomTools as CustomToolManager,
+    });
+
+    view.show();
+
+    // Press d to trigger delete confirmation
+    view.container.emit('key d', 'd', { name: 'd', full: 'd' });
+
+    // isCapturingInput should now be true (in confirm_delete mode)
+    expect(view.isCapturingInput).toBe(true);
   });
 });
