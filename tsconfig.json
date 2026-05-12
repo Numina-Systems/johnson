@@ -17,12 +17,11 @@
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src",
-    "jsx": "react-jsx",
     "types": ["bun-types"],
     "paths": {
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/runtime/deno"]
 }
