@@ -92,16 +92,11 @@ describe('createSystemPromptView', () => {
     view.show();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Verify the viewer element exists in the container
-    const hasViewerChild = view.container.children?.some(
-      (child) => typeof (child as any).setContent === 'function'
-    );
-    expect(hasViewerChild).toBe(true);
-
-    // Verify a viewer (box with scrollable content) exists
+    // Find the scrollable viewer element (has scrollable: true, distinct from header/status)
     const viewer = view.container.children?.find(
-      (child) => typeof (child as any).setContent === 'function'
+      (child) => (child as any).scrollable === true
     ) as any;
     expect(viewer).toBeDefined();
+    expect(viewer.getContent()).toContain(promptText);
   });
 });

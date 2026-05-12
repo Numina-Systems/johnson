@@ -153,7 +153,7 @@ describe('createPruneView', () => {
     expect(view.container).toBeDefined();
   });
 
-  it('should render sessions with proper formatting', () => {
+  it('should show container and render without error when sessions exist', () => {
     const mockSessions: SessionWithCounts[] = [
       {
         id: 'sess-1',
@@ -181,11 +181,10 @@ describe('createPruneView', () => {
     const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
     view.show();
 
-    // Verify the view renders without error
     expect(view.container.visible).toBe(true);
   });
 
-  it('should have required view methods', () => {
+  it('should have required ScreenView methods', () => {
     const mockStore = {
       listSessionsWithCounts: () => [],
       deleteSession: () => {},
@@ -199,7 +198,7 @@ describe('createPruneView', () => {
     expect(typeof view.destroy).toBe('function');
   });
 
-  it('should capture input in confirm and executing modes but not in select mode', () => {
+  it('should not capture input in initial select mode', () => {
     const mockStore = {
       listSessionsWithCounts: () => [],
       deleteSession: () => {},
@@ -207,7 +206,40 @@ describe('createPruneView', () => {
 
     const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
 
-    // Initially in select mode
     expect(view.isCapturingInput).toBe(false);
+  });
+
+  it('should capture input after entering confirm mode via Enter with selections', () => {
+    const mockSessions: SessionWithCounts[] = [
+      {
+        id: 'sess-old',
+        title: 'Old Empty',
+        createdAt: '2026-04-01T10:00:00Z',
+        updatedAt: '2026-04-01T10:00:00Z',
+        messageCount: 0,
+        lastMessageAt: null,
+      },
+    ];
+
+    const mockStore = {
+      listSessionsWithCounts: () => mockSessions,
+      deleteSession: () => {},
+    } as any;
+
+    const view = require('./prune.ts').createPruneView({ screen, store: mockStore });
+    view.show();
+
+    // Find the list element (blessed.list has 'selected' property)
+    const listEl = view.container.children?.find(
+      (child: any) => typeof child.selected === 'number'
+    ) as any;
+    expect(listEl).toBeDefined();
+
+    // Select the session with Space and press Enter (keys bound on list element)
+    listEl.emit('key space', ' ', { name: 'space', full: 'space' });
+    listEl.emit('key enter', '\r', { name: 'enter', full: 'enter' });
+
+    // Should now be capturing input in confirm mode
+    expect(view.isCapturingInput).toBe(true);
   });
 });
