@@ -112,8 +112,12 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
 
   // Render the list display
   function renderList(): void {
-    const lines = sessions.map((s) => formatPruneLine(s, s.classification, selected.has(s.id)));
-    list.setItems(lines);
+    if (sessions.length === 0) {
+      list.setItems(['{dim}No sessions to prune{/}']);
+    } else {
+      const lines = sessions.map((s) => formatPruneLine(s, s.classification, selected.has(s.id)));
+      list.setItems(lines);
+    }
   }
 
   // Update status bar based on mode

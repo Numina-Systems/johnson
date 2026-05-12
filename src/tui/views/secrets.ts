@@ -100,11 +100,15 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
   // Helper: refresh the list
   function refreshList(): void {
     const secretNames = secrets?.listKeys() ?? [];
-    const items = secretNames.map((name) => {
-      const usage = findSecretUsage(name);
-      return formatSecretUsage(name, usage);
-    });
-    list.setItems(items);
+    if (secretNames.length === 0) {
+      list.setItems(['{dim}No secrets. Press a to add one.{/}']);
+    } else {
+      const items = secretNames.map((name) => {
+        const usage = findSecretUsage(name);
+        return formatSecretUsage(name, usage);
+      });
+      list.setItems(items);
+    }
   }
 
   // Helper: update status bar based on mode

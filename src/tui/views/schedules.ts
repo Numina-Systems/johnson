@@ -73,8 +73,12 @@ export function createSchedulesView(options: SchedulesViewOptions): ScreenView {
   // Helper: refresh the list
   function refreshList(): void {
     const tasks = scheduler?.list() ?? [];
-    const items = tasks.map((task) => formatTaskLine(task));
-    list.setItems(items);
+    if (tasks.length === 0) {
+      list.setItems(['{dim}No scheduled tasks{/}']);
+    } else {
+      const items = tasks.map((task) => formatTaskLine(task));
+      list.setItems(items);
+    }
   }
 
   // Helper: update status bar

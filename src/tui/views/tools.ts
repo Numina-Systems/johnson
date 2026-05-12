@@ -128,11 +128,13 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   function refreshLists(): void {
     // Refresh custom tools
     const customTools_ = customTools?.listTools() ?? [];
-    const customItems = customTools_.map((tool) => {
-      const status = formatCustomToolStatus(tool.approved, palette);
-      const desc = tool.description ? ` — ${tool.description}` : '';
-      return `${status} ${tool.name}${desc}`;
-    });
+    const customItems = customTools_.length === 0
+      ? ['{dim}No custom tools{/}']
+      : customTools_.map((tool) => {
+          const status = formatCustomToolStatus(tool.approved, palette);
+          const desc = tool.description ? ` — ${tool.description}` : '';
+          return `${status} ${tool.name}${desc}`;
+        });
     customList.setItems(customItems);
 
     // Refresh built-in tools
@@ -157,7 +159,12 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       skillItems.push(`${icon} ${name}${desc}`);
       skillDocs.push({ rkey: doc.rkey, name, content: doc.content, grant });
     }
-    skillsList.setItems(skillItems);
+
+    if (skillItems.length === 0) {
+      skillsList.setItems(['{dim}No skills{/}']);
+    } else {
+      skillsList.setItems(skillItems);
+    }
   }
 
   // Helper: update section header

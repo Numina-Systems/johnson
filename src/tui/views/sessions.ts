@@ -87,9 +87,13 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
    */
   function refresh(): void {
     sessions = store.listSessionsWithCounts(50);
-    const now = new Date();
-    const formatted = sessions.map((session) => formatSessionLine(session, now));
-    list.setItems(formatted);
+    if (sessions.length === 0) {
+      list.setItems(['{dim}No sessions. Press n to create one.{/}']);
+    } else {
+      const now = new Date();
+      const formatted = sessions.map((session) => formatSessionLine(session, now));
+      list.setItems(formatted);
+    }
     screen.render();
   }
 
