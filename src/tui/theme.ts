@@ -66,6 +66,36 @@ export const theme = {
   spinner: palette.pink,
 } as const;
 
+// Blessed style object type for neo-blessed compatibility
+export type BlessedStyle = {
+  readonly fg: string;
+  readonly bg?: string;
+  readonly bold?: boolean;
+};
+
+// Blessed-compatible style objects mapped from theme colors
+export const blessedStyles = {
+  userMsg: { fg: palette.lavender, bold: true } as BlessedStyle,
+  agentMsg: { fg: palette.green, bold: true } as BlessedStyle,
+  systemMsg: { fg: palette.yellow } as BlessedStyle,
+  accent: { fg: palette.mauve, bold: true } as BlessedStyle,
+  heading: { fg: palette.mauve, bold: true } as BlessedStyle,
+  selected: { fg: palette.base, bg: palette.mauve } as BlessedStyle,
+  error: { fg: palette.red, bold: true } as BlessedStyle,
+  warning: { fg: palette.peach } as BlessedStyle,
+  success: { fg: palette.green } as BlessedStyle,
+  tabActive: { fg: palette.base, bg: palette.mauve, bold: true } as BlessedStyle,
+  tabInactive: { fg: palette.overlay0 } as BlessedStyle,
+  border: { fg: palette.surface1 } as BlessedStyle,
+  text: { fg: palette.text } as BlessedStyle,
+  subtext: { fg: palette.subtext0 } as BlessedStyle,
+  surface: { bg: palette.base } as BlessedStyle,
+  grantOk: { fg: palette.green, bold: true } as BlessedStyle,
+  grantPending: { fg: palette.yellow } as BlessedStyle,
+  grantRevoked: { fg: palette.red } as BlessedStyle,
+  spinner: { fg: palette.pink } as BlessedStyle,
+} as const;
+
 export function separator(width: number): string {
   return '─'.repeat(Math.max(20, width));
 }
