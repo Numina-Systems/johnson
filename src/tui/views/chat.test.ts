@@ -186,6 +186,69 @@ describe('createChatView', () => {
     expect((textarea as any).parseTags).not.toBe(true);
   });
 
+  test('findMatches returns correct indices for case-insensitive matching [AC9.2]', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages = [
+      { text: 'Hello world' },
+      { text: 'HELLO EARTH' },
+      { text: 'goodbye' },
+      { text: 'HeLLo SuN' },
+    ];
+
+    const result = findMatches(messages, 'hello');
+    expect(result).toEqual([0, 1, 3]);
+  });
+
+  test('findMatches returns empty for empty query', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages = [
+      { text: 'Hello world' },
+      { text: 'HELLO EARTH' },
+    ];
+
+    const result = findMatches(messages, '');
+    expect(result).toEqual([]);
+  });
+
+  test('findMatches returns empty when no messages match', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages = [
+      { text: 'Hello world' },
+      { text: 'HELLO EARTH' },
+    ];
+
+    const result = findMatches(messages, 'xyz');
+    expect(result).toEqual([]);
+  });
+
+  test('findMatches returns all indices when all match', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages = [
+      { text: 'the quick brown fox' },
+      { text: 'the lazy dog' },
+      { text: 'the big cat' },
+    ];
+
+    const result = findMatches(messages, 'the');
+    expect(result).toEqual([0, 1, 2]);
+  });
+
+  test('findMatches handles single message array', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages = [{ text: 'hello' }];
+
+    const result = findMatches(messages, 'hello');
+    expect(result).toEqual([0]);
+  });
+
+  test('findMatches handles empty message array', () => {
+    const { findMatches } = require('./chat.ts');
+    const messages: Array<{ text: string }> = [];
+
+    const result = findMatches(messages, 'hello');
+    expect(result).toEqual([]);
+  });
+
   test('submitting message calls agent.chat and persists response [AC1.2]', async () => {
     const controlled = createControlledPromise<{ text: string; stats: any }>();
     const mockAgent = agent as any;

@@ -12,6 +12,23 @@ import { palette, blessedStyles } from '../theme.ts';
 import { formatMessage, formatMessageHistory, mapStoreRole } from './format.ts';
 import type { DisplayMessage } from './format.ts';
 
+// pattern: Functional Core — pure function for finding matching messages
+/**
+ * Find indices of messages that match a query string (case-insensitive).
+ * Returns empty array if query is empty.
+ */
+export function findMatches(
+  messages: ReadonlyArray<{ text: string }>,
+  query: string,
+): Array<number> {
+  if (!query) return [];
+  const lower = query.toLowerCase();
+  return messages.reduce<Array<number>>((acc, msg, idx) => {
+    if (msg.text.toLowerCase().includes(lower)) acc.push(idx);
+    return acc;
+  }, []);
+}
+
 type ChatViewOptions = {
   readonly screen: Widgets.Screen;
   readonly agent: Agent;
@@ -42,7 +59,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     top: 0,
     left: 0,
     width: '100%',
-    height: '100%-3',
+    height: '100%-3', // Account for textarea height (1) + margin (1) + status bar (1)
   });
 
   // Create input textarea for user messages
@@ -66,14 +83,62 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   // Create status bar
   const statusBar = createStatusBar({ parent: container });
 
+  // Create search overlay box
+  const searchOverlay = blessed.box({
+    parent: container,
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: 3,
+    hidden: true,
+    tags: true,
+    border: 'line',
+    style: {
+      bg: palette.surface0,
+      border: {
+        fg: blessedStyles.accent.fg,
+      },
+    },
+  }) as Widgets.BoxElement;
+
+  // Create search input textbox (single line)
+  const searchInput = blessed.textbox({
+    parent: searchOverlay,
+    top: 1,
+    left: 1,
+    width: 'shrink',
+    height: 1,
+    inputOnFocus: true,
+    keys: true,
+    mouse: true,
+    style: {
+      fg: blessedStyles.text.fg,
+      bg: palette.surface0,
+    },
+  }) as Widgets.TextboxElement;
+
+  // Add label to search box
+  (searchOverlay as any).setLabel('Search');
+
   // Internal state
   const messages: Array<DisplayMessage> = [];
   let currentSessionId: string | null = null;
   let isThinking = false;
 
+  // Search state
+  let searchVisible = false;
+  let searchQuery = '';
+  let matchIndices: Array<number> = [];
+  let currentMatchIdx = 0;
+
   // Load messages from store when session is selected
   function loadSession(): void {
-    if (!currentSessionId) return;
+    if (!currentSessionId) {
+      // No session selected — show empty state
+      messages.length = 0;
+      viewer.setContent('{dim}Select a session to start chatting{/}');
+      return;
+    }
 
     const storedMessages = store.getMessages(currentSessionId, 200);
     messages.length = 0;
@@ -241,6 +306,71 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     screen.render();
   }
 
+  // Handle search input changes
+  function performSearch(): void {
+    searchQuery = searchInput.getValue();
+    matchIndices = findMatches(messages, searchQuery);
+    currentMatchIdx = 0;
+
+    if (matchIndices.length > 0) {
+      // Scroll to first match
+      viewer.scrollToItem(matchIndices[0]);
+      searchOverlay.setContent(`{bold}Search{/bold} - {#${blessedStyles.accent.fg.replace('#', '')}-fg}${matchIndices.length} match${matchIndices.length === 1 ? '' : 'es'}{/}`);
+    } else {
+      searchOverlay.setContent(`{bold}Search{/bold} - {#${blessedStyles.text.fg.replace('#', '')}-fg}No matches{/}`);
+    }
+
+    screen.render();
+  }
+
+  // Toggle search overlay
+  function toggleSearch(): void {
+    if (searchVisible) {
+      // Close search
+      searchVisible = false;
+      searchOverlay.hide();
+      searchInput.clearValue();
+      searchQuery = '';
+      matchIndices = [];
+      textarea.focus();
+    } else {
+      // Open search
+      searchVisible = true;
+      searchOverlay.show();
+      searchInput.focus();
+    }
+
+    screen.render();
+  }
+
+  // Jump to next match
+  function nextMatch(): void {
+    if (matchIndices.length === 0) return;
+    currentMatchIdx = (currentMatchIdx + 1) % matchIndices.length;
+    viewer.scrollToItem(matchIndices[currentMatchIdx]);
+    screen.render();
+  }
+
+  // Bind container keys (for F5 search activation)
+  container.key(['f5'], () => {
+    toggleSearch();
+  });
+
+  // Bind search input keys
+  searchInput.key(['enter'], () => {
+    // Enter in search: jump to next match
+    nextMatch();
+  });
+
+  searchInput.key(['escape'], () => {
+    // Escape in search: close search and return to textarea
+    toggleSearch();
+  });
+
+  searchInput.on('change', () => {
+    performSearch();
+  });
+
   // Bind textarea keys
   textarea.key(['enter'], () => {
     if (!isThinking) {
@@ -252,6 +382,11 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     // Insert newline for multi-line input (Shift+Enter)
     const current = textarea.getValue();
     textarea.setValue(current + '\n');
+  });
+
+  // Bind F5 on textarea to open search
+  textarea.key(['f5'], () => {
+    toggleSearch();
   });
 
   // Bind Escape to return to Sessions (when not thinking)
