@@ -7,6 +7,7 @@ import type { TuiDependencies, ScreenView } from './types.ts';
 import { createTabBar } from './tab-bar.ts';
 import { palette } from './theme.ts';
 import { createSessionsView } from './views/sessions.ts';
+import { createChatView } from './views/chat.ts';
 
 export type { TuiDependencies };
 
@@ -46,6 +47,14 @@ export function startTUI(deps: TuiDependencies): void {
       // Emit event to trigger session list refresh
       bus.emit('session:changed');
     },
+  });
+
+  // Create the Chat view (Phase 4)
+  const chatView = createChatView({
+    screen,
+    agent: deps.agent,
+    store: deps.store,
+    bus,
   });
 
   // Placeholder views for future tabs (Phase 4+)
@@ -92,7 +101,7 @@ export function startTUI(deps: TuiDependencies): void {
   // Set up views array: index corresponds to tab index
   const views: Array<ScreenView> = [
     sessionsView, // 0: Sessions
-    createPlaceholderView('Chat'), // 1: Chat (Phase 4)
+    chatView, // 1: Chat (Phase 4)
     createPlaceholderView('Tools'), // 2: Tools (Phase 5)
     createPlaceholderView('Secrets'), // 3: Secrets (Phase 5)
     createPlaceholderView('Schedules'), // 4: Schedules (Phase 5)
