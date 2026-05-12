@@ -193,15 +193,12 @@ Recalled fragments are injected into the system prompt as a `## Recalled Context
 
 ### Interfaces
 
-- **TUI** (`src/tui/`): Ink/React terminal UI with stack-based navigation. `App.tsx` is the navigation shell routing between 7 screens in `src/tui/screens/`:
-  - **Sessions** — list/create sessions (home screen)
-  - **Chat** — conversation interface
-  - **Tools** — manage skills, custom tools, and built-in tool listings (replaced the old `ReviewPage.tsx`)
-  - **Secrets** — add/remove secrets via `SecretManager`
-  - **Schedules** — view scheduled tasks
-  - **SystemPrompt** — inspect the current system prompt
-  - **Prune** — multi-select session management: classify sessions (delete/archive/active), batch archive or delete with confirmation
-  Global navigation keybindings: `t` (tools), `s` (secrets), `c` (schedules), `p` (prompt), `r` (prune), `Escape` (back), `q` (quit).
+- **TUI** (`src/tui/`): Terminal UI using neo-blessed (Phase 1+). Entry point `startTUI(deps: TuiDependencies)` creates a blessed screen with tab-bar navigation. Key modules:
+  - `index.ts` — Imperative Shell. Creates blessed screen, tab bar, and screen-level key bindings (Tab/S-Tab for tab cycling, Escape to Sessions, q/C-c to quit).
+  - `types.ts` — Functional Core. Exports `ScreenView` contract, `TuiEvents` typing, and `TuiDependencies`.
+  - `theme.ts` — Functional Core. Catppuccin Macchiato palette (hex strings) and `blessedStyles` (blessed-compatible style objects).
+  - `tab-bar.ts` — Imperative Shell. Blessed box widget for horizontal tab rendering with activity indicators. Supports mouse clicks and keyboard navigation.
+  - `screens/` — Phase 3+ implementations. Will contain `ScreenView` implementations for Sessions, Chat, Tools, Secrets, Schedules, SystemPrompt, Prune tabs.
 - **Discord** (`src/discord/bot.ts`): Per-channel agent instances. Responds to DMs unconditionally, guilds on mention or prefix. Splits long responses at 2000 chars.
 
 ## Key Patterns
