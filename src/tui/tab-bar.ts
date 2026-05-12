@@ -5,6 +5,21 @@ import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
 import { palette, blessedStyles } from './theme.ts';
 
+// pattern: Functional Core — pure tab navigation utilities
+/**
+ * Calculate the next tab index, wrapping at the end.
+ */
+export function nextTab(current: number, total: number): number {
+  return (current + 1) % total;
+}
+
+/**
+ * Calculate the previous tab index, wrapping at the beginning.
+ */
+export function prevTab(current: number, total: number): number {
+  return (current - 1 + total) % total;
+}
+
 function hexTag(color: string): string {
   return color.startsWith('#') ? color.slice(1) : color;
 }

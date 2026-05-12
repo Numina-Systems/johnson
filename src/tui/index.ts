@@ -143,8 +143,9 @@ export function startTUI(deps: TuiDependencies): void {
       newView.focus();
     }
 
-    // Update tab bar
+    // Update tab bar and clear activity indicator for newly active tab
     tabBar.setActive(newIndex);
+    tabBar.setActivity(tabLabels[newIndex], false);
   }
 
   // Create tab bar
@@ -204,6 +205,20 @@ export function startTUI(deps: TuiDependencies): void {
     }
     screen.destroy();
     process.exit(0);
+  });
+
+  // Listen for tab:activity events (views emitting when updated while hidden)
+  bus.on('tab:activity', (data: { tab: string }) => {
+    // Only show activity if this tab is not the active one
+    if (tabLabels[activeTabIndex] !== data.tab) {
+      tabBar.setActivity(data.tab, true);
+      screen.render();
+    }
+  });
+
+  // Listen for screen resize events
+  screen.on('resize', () => {
+    screen.render();
   });
 
   // Final render
