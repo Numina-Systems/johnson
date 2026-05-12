@@ -3,10 +3,9 @@
 
 import { EventEmitter } from 'events';
 import blessed from 'neo-blessed';
-import type { TuiDependencies } from './types.ts';
+import type { TuiDependencies, ScreenView } from './types.ts';
 import { createTabBar } from './tab-bar.ts';
 import { palette } from './theme.ts';
-import type { ScreenView } from './types.ts';
 import { createSessionsView } from './views/sessions.ts';
 
 export type { TuiDependencies };
@@ -38,12 +37,13 @@ export function startTUI(deps: TuiDependencies): void {
     screen,
     store: deps.store,
     bus,
-    onSelectSession(_sessionId: string): void {
-      // For now, just emit the event — Chat view will handle it in Phase 4
-      // Switch to Chat tab (index 1)
+    onSelectSession(sessionId: string): void {
+      // Emit event for other views, then switch to Chat tab (index 1)
+      bus.emit('session:selected', { sessionId });
       switchTab(1);
     },
     onNewSession(): void {
+      // Emit event to trigger session list refresh
       bus.emit('session:changed');
     },
   });

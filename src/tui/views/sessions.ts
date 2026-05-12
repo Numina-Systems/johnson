@@ -9,7 +9,7 @@ import type { SessionWithCounts } from '../../sessions/types.ts';
 import type { ScreenView } from '../types.ts';
 import { createSelectableList } from '../widgets/selectable-list.ts';
 import { createStatusBar } from '../widgets/status-bar.ts';
-import { palette, blessedStyles } from '../theme.ts';
+import { palette } from '../theme.ts';
 import { formatDate } from '../util.ts';
 
 export type SessionsViewOptions = {
@@ -25,10 +25,10 @@ export type SessionsViewOptions = {
  * Format a SessionWithCounts into a blessed-tagged string for display.
  * Shows title (bold), message count, and relative timestamp.
  */
-export function formatSessionLine(session: SessionWithCounts): string {
+export function formatSessionLine(session: SessionWithCounts, now?: Date): string {
   const title = session.title ?? 'Untitled session';
   const count = `(${session.messageCount} msgs)`;
-  const date = session.lastMessageAt ? formatDate(session.lastMessageAt) : formatDate(session.createdAt);
+  const date = session.lastMessageAt ? formatDate(session.lastMessageAt, now) : formatDate(session.createdAt, now);
   return `{bold}${title}{/bold}  ${count}  {${palette.overlay0}-fg}${date}{/}`;
 }
 
@@ -87,7 +87,8 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
    */
   function refresh(): void {
     sessions = store.listSessionsWithCounts(50);
-    const formatted = sessions.map(formatSessionLine);
+    const now = new Date();
+    const formatted = sessions.map((session) => formatSessionLine(session, now));
     list.setItems(formatted);
     screen.render();
   }
@@ -99,8 +100,6 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
     const sessionId = crypto.randomUUID();
     store.createSession(sessionId);
     options.onNewSession();
-    bus.emit('session:changed');
-    refresh();
   }
 
   /**
@@ -137,7 +136,7 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
   }
 
   /**
-   * Handle Enter key: select session and emit event.
+   * Handle Enter key: select session and invoke callback.
    */
   function handleSelectSession(): void {
     const selectedIndex = list.getSelectedIndex();
@@ -148,7 +147,6 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
     const session = sessions[selectedIndex];
     if (session) {
       onSelectSession(session.id);
-      bus.emit('session:selected', { sessionId: session.id });
     }
   }
 

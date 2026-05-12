@@ -13,10 +13,10 @@ export function parseDescription(content: string): string {
   return '';
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string, now?: Date): string {
   const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
+  const ref = now ?? new Date();
+  const diffMs = ref.getTime() - d.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   if (diffMins < 1) return 'just now';
   if (diffMins < 60) return `${diffMins}m ago`;
