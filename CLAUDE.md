@@ -193,12 +193,13 @@ Recalled fragments are injected into the system prompt as a `## Recalled Context
 
 ### Interfaces
 
-- **TUI** (`src/tui/`): Terminal UI using neo-blessed (Phase 1+). Entry point `startTUI(deps: TuiDependencies)` creates a blessed screen with tab-bar navigation. Key modules:
-  - `index.ts` — Imperative Shell. Creates blessed screen, tab bar, and screen-level key bindings (Tab/S-Tab for tab cycling, Escape to Sessions, q/C-c to quit).
-  - `types.ts` — Functional Core. Exports `ScreenView` contract, `TuiEvents` typing, and `TuiDependencies`.
-  - `theme.ts` — Functional Core. Catppuccin Macchiato palette (hex strings) and `blessedStyles` (blessed-compatible style objects).
+- **TUI** (`src/tui/`): Terminal UI using neo-blessed with tab-bar navigation. Entry point `startTUI(deps: TuiDependencies)` creates a blessed screen, event bus (`EventEmitter`), and 7 tab views. See `src/tui/CLAUDE.md` for domain contracts.
+  - `index.ts` — Imperative Shell. Creates blessed screen, tab bar, wires views, and binds screen-level keys (Tab/S-Tab for tab cycling, Escape to Sessions, q/C-c to quit).
+  - `types.ts` — Functional Core. Exports `ScreenView` contract (show/hide/focus/destroy + `isCapturingInput`), `TuiEvents` event bus typing, and `TuiDependencies`.
+  - `theme.ts` — Functional Core. Catppuccin Macchiato palette (hex strings), semantic `theme` mapping, and `blessedStyles` (blessed-compatible style objects).
   - `tab-bar.ts` — Imperative Shell. Blessed box widget for horizontal tab rendering with activity indicators. Supports mouse clicks and keyboard navigation.
-  - `screens/` — Phase 3+ implementations. Will contain `ScreenView` implementations for Sessions, Chat, Tools, Secrets, Schedules, SystemPrompt, Prune tabs.
+  - `views/` — 7 `ScreenView` implementations: Sessions, Chat, Tools, Secrets, Schedules, SystemPrompt, Prune. Each is a factory function (`create*View(options) → ScreenView`).
+  - `widgets/` — Reusable blessed widget factories: `SelectableList` (keyboard/mouse list), `ScrollableViewer` (scrollable content box with auto-scroll), `StatusBar` (bottom status line), `isAtBottom` (scroll position utility).
 - **Discord** (`src/discord/bot.ts`): Per-channel agent instances. Responds to DMs unconditionally, guilds on mention or prefix. Splits long responses at 2000 chars.
 
 ## Key Patterns
