@@ -2,7 +2,7 @@ import { describe, expect, test, mock, beforeEach } from 'bun:test';
 import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
 import { EventEmitter } from 'events';
-import { createChatView } from './chat.ts';
+import { createChatView, findMatches } from './chat.ts';
 import type { Agent, ChatOptions } from '../../agent/types.ts';
 import type { Store } from '../../store/store.ts';
 
@@ -187,7 +187,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches returns correct indices for case-insensitive matching [AC9.2]', () => {
-    const { findMatches } = require('./chat.ts');
     const messages = [
       { text: 'Hello world' },
       { text: 'HELLO EARTH' },
@@ -200,7 +199,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches returns empty for empty query', () => {
-    const { findMatches } = require('./chat.ts');
     const messages = [
       { text: 'Hello world' },
       { text: 'HELLO EARTH' },
@@ -211,7 +209,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches returns empty when no messages match', () => {
-    const { findMatches } = require('./chat.ts');
     const messages = [
       { text: 'Hello world' },
       { text: 'HELLO EARTH' },
@@ -222,7 +219,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches returns all indices when all match', () => {
-    const { findMatches } = require('./chat.ts');
     const messages = [
       { text: 'the quick brown fox' },
       { text: 'the lazy dog' },
@@ -234,7 +230,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches handles single message array', () => {
-    const { findMatches } = require('./chat.ts');
     const messages = [{ text: 'hello' }];
 
     const result = findMatches(messages, 'hello');
@@ -242,7 +237,6 @@ describe('createChatView', () => {
   });
 
   test('findMatches handles empty message array', () => {
-    const { findMatches } = require('./chat.ts');
     const messages: Array<{ text: string }> = [];
 
     const result = findMatches(messages, 'hello');

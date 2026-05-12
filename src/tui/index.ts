@@ -4,7 +4,7 @@
 import { EventEmitter } from 'events';
 import blessed from 'neo-blessed';
 import type { TuiDependencies, ScreenView } from './types.ts';
-import { createTabBar } from './tab-bar.ts';
+import { createTabBar, nextTab, prevTab } from './tab-bar.ts';
 import { palette } from './theme.ts';
 import { createSessionsView } from './views/sessions.ts';
 import { createChatView } from './views/chat.ts';
@@ -169,14 +169,12 @@ export function startTUI(deps: TuiDependencies): void {
   // Screen-level key bindings
   screen.key(['tab'], () => {
     // Cycle to next tab (with wrapping)
-    const nextIndex = (activeTabIndex + 1) % tabLabels.length;
-    switchTab(nextIndex);
+    switchTab(nextTab(activeTabIndex, tabLabels.length));
   });
 
   screen.key(['S-tab'], () => {
     // Cycle to previous tab (with wrapping)
-    const prevIndex = (activeTabIndex - 1 + tabLabels.length) % tabLabels.length;
-    switchTab(prevIndex);
+    switchTab(prevTab(activeTabIndex, tabLabels.length));
   });
 
   screen.key(['escape'], () => {

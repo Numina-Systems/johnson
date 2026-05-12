@@ -104,7 +104,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   // Create search input textbox (single line)
   const searchInput = blessed.textbox({
     parent: searchOverlay,
-    top: 1,
+    top: 0,
     left: 1,
     width: 'shrink',
     height: 1,
@@ -313,14 +313,30 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     currentMatchIdx = 0;
 
     if (matchIndices.length > 0) {
-      // Scroll to first match
-      viewer.scrollToItem(matchIndices[0]);
-      searchOverlay.setContent(`{bold}Search{/bold} - {#${blessedStyles.accent.fg.replace('#', '')}-fg}${matchIndices.length} match${matchIndices.length === 1 ? '' : 'es'}{/}`);
+      // Scroll to first match by estimating its position
+      scrollToMessageIndex(matchIndices[0]);
+      searchOverlay.setContent(`{#${blessedStyles.accent.fg.replace('#', '')}-fg}${matchIndices.length} match${matchIndices.length === 1 ? '' : 'es'}{/}`);
     } else {
-      searchOverlay.setContent(`{bold}Search{/bold} - {#${blessedStyles.text.fg.replace('#', '')}-fg}No matches{/}`);
+      searchOverlay.setContent(`{#${blessedStyles.text.fg.replace('#', '')}-fg}No matches{/}`);
     }
 
     screen.render();
+  }
+
+  // Calculate scroll position for a given message index and scroll there
+  function scrollToMessageIndex(messageIndex: number): void {
+    const scrollHeight = (viewer.element as any).getScrollHeight() ?? 0;
+    const elementHeight = (viewer.element.height as number) ?? 10;
+    if (scrollHeight === 0 || messages.length === 0) {
+      return;
+    }
+    // Estimate position: distribute scroll height evenly across messages
+    const estimatedOffset = Math.floor((messageIndex / messages.length) * scrollHeight);
+    (viewer.element as any).setScroll(Math.max(0, estimatedOffset - elementHeight / 2));
+    const scr = viewer.element.screen;
+    if (scr) {
+      scr.render();
+    }
   }
 
   // Toggle search overlay
@@ -347,7 +363,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   function nextMatch(): void {
     if (matchIndices.length === 0) return;
     currentMatchIdx = (currentMatchIdx + 1) % matchIndices.length;
-    viewer.scrollToItem(matchIndices[currentMatchIdx]);
+    scrollToMessageIndex(matchIndices[currentMatchIdx]);
     screen.render();
   }
 
@@ -367,7 +383,8 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     toggleSearch();
   });
 
-  searchInput.on('change', () => {
+  searchInput.on('keypress', () => {
+    // On each keystroke, update search results
     performSearch();
   });
 
@@ -423,6 +440,8 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     destroy(): void {
       viewer.destroy();
       statusBar.destroy();
+      searchInput.destroy();
+      searchOverlay.destroy();
       textarea.destroy();
       container.destroy();
       bus.removeAllListeners('session:selected');
