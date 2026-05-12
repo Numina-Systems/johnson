@@ -8,6 +8,9 @@ import { createTabBar } from './tab-bar.ts';
 import { palette } from './theme.ts';
 import { createSessionsView } from './views/sessions.ts';
 import { createChatView } from './views/chat.ts';
+import { createToolsView } from './views/tools.ts';
+import { createSecretsView } from './views/secrets.ts';
+import { createSchedulesView } from './views/schedules.ts';
 
 export type { TuiDependencies };
 
@@ -57,7 +60,30 @@ export function startTUI(deps: TuiDependencies): void {
     bus,
   });
 
-  // Placeholder views for future tabs (Phase 4+)
+  // Create the Tools view (Phase 5)
+  const toolsView = createToolsView({
+    screen,
+    store: deps.store,
+    secrets: deps.secrets,
+    customTools: deps.customTools,
+    builtinTools: deps.builtinTools,
+  });
+
+  // Create the Secrets view (Phase 5)
+  const secretsView = createSecretsView({
+    screen,
+    secrets: deps.secrets,
+    store: deps.store,
+    customTools: deps.customTools,
+  });
+
+  // Create the Schedules view (Phase 5)
+  const schedulesView = createSchedulesView({
+    screen,
+    scheduler: deps.scheduler,
+  });
+
+  // Placeholder views for future tabs (Phase 6+)
   function createPlaceholderView(tabName: string): ScreenView {
     const container = blessed.box({
       parent: screen,
@@ -102,9 +128,9 @@ export function startTUI(deps: TuiDependencies): void {
   const views: Array<ScreenView> = [
     sessionsView, // 0: Sessions
     chatView, // 1: Chat (Phase 4)
-    createPlaceholderView('Tools'), // 2: Tools (Phase 5)
-    createPlaceholderView('Secrets'), // 3: Secrets (Phase 5)
-    createPlaceholderView('Schedules'), // 4: Schedules (Phase 5)
+    toolsView, // 2: Tools (Phase 5)
+    secretsView, // 3: Secrets (Phase 5)
+    schedulesView, // 4: Schedules (Phase 5)
     createPlaceholderView('Prompt'), // 5: Prompt (Phase 6)
     createPlaceholderView('Prune'), // 6: Prune (Phase 6)
   ];
