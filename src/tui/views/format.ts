@@ -31,9 +31,10 @@ export function formatMessage(msg: DisplayMessage): string {
     case 'user':
       return `{bold}{${blessedStyles.userMsg.fg}-fg}you>{/} ${msg.text}`;
 
-    case 'agent':
+    case 'agent': {
       const highlighted = highlightMarkdown(msg.text);
       return `{bold}{${blessedStyles.agentMsg.fg}-fg}agent>{/} ${highlighted}`;
+    }
 
     case 'system':
       return `{${blessedStyles.systemMsg.fg}-fg}[system] ${msg.text}{/}`;

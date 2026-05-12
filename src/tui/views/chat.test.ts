@@ -54,6 +54,10 @@ const createMockStore = (): Store => ({
   updateGrantStatus: mock(() => {}),
   updateGrantSecrets: mock(() => {}),
   deleteGrant: mock(() => false),
+  addManagedThread: mock(() => {}),
+  removeManagedThread: mock(() => {}),
+  getManagedThreadIds: mock(() => []),
+  close: mock(() => {}),
 });
 
 describe('createChatView', () => {
@@ -138,58 +142,19 @@ describe('createChatView', () => {
     expect(() => view.hide()).not.toThrow();
   });
 
-  test('hide() does not interrupt ongoing agent.chat() call', async () => {
-    const mockAgent = agent as any;
-    let resolveChatPromise: (value: ChatResult) => void = () => {};
-    const chatPromise = new Promise<ChatResult>(resolve => {
-      resolveChatPromise = resolve;
-    });
-
-    mockAgent.chat = mock(async () => {
-      await chatPromise;
-      return {
-        text: 'delayed response',
-        stats: {
-          inputTokens: 10,
-          outputTokens: 20,
-          contextEstimate: 100,
-          contextLimit: 2000,
-          rounds: 1,
-          durationMs: 500,
-        } as const,
-      };
-    });
-
-    const mockStore = store as any;
-    mockStore.appendMessage = mock(() => {});
-
+  test('hide() does not throw error', async () => {
     const view = createChatView({ screen, agent, store, bus });
     bus.emit('session:selected', { sessionId: 'test-123' });
 
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // Hide the view while thinking
-    view.hide();
+    // Verify that hiding the view does not throw and preserves state
+    expect(() => view.hide()).not.toThrow();
+    expect(view.container.hidden).toBe(true);
 
-    // Resolve the delayed chat promise
-    resolveChatPromise({
-      text: 'delayed response',
-      stats: {
-        inputTokens: 10,
-        outputTokens: 20,
-        contextEstimate: 100,
-        contextLimit: 2000,
-        rounds: 1,
-        durationMs: 500,
-      },
-    });
-
-    // Give it time to process
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // The response should still be appended to messages even while hidden
-    // (verification would require accessing internal state)
-    expect(true).toBe(true);
+    // Show again should work
+    expect(() => view.show()).not.toThrow();
+    expect(view.container.hidden).toBe(false);
   });
 
   test('can be destroyed', () => {
@@ -241,8 +206,9 @@ describe('createChatView', () => {
 
     await new Promise(resolve => setTimeout(resolve, 50));
 
-    // The view should parse and execute /reset command
-    // (Testing this would require simulating textarea input, which is complex in blessed)
-    expect(true).toBe(true);
+    // Verify that the view can be shown and interacted with
+    view.show();
+    expect(() => view.focus()).not.toThrow();
+    expect(view.isCapturingInput).toBe(true);
   });
 });

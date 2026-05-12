@@ -42,8 +42,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     top: 0,
     left: 0,
     width: '100%',
-    height: 'shrink',
-    bottom: 3,
+    height: '100%-3',
   });
 
   // Create input textarea for user messages
@@ -61,14 +60,14 @@ export function createChatView(options: ChatViewOptions): ScreenView {
       bg: palette.surface0,
       border: blessedStyles.border,
     },
-    border: 'top',
+    border: 'line',
   }) as Widgets.TextareaElement;
 
   // Create status bar
   const statusBar = createStatusBar({ parent: container });
 
   // Internal state
-  const messages: DisplayMessage[] = [];
+  const messages: Array<DisplayMessage> = [];
   let currentSessionId: string | null = null;
   let isThinking = false;
 
@@ -113,6 +112,12 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     // Clear textarea
     textarea.clearValue();
 
+    // Check for commands before persisting
+    if (text.startsWith('/')) {
+      handleCommand(text);
+      return;
+    }
+
     // Add user message to history
     const userMsg: DisplayMessage = { role: 'user', text };
     appendMessage(userMsg);
@@ -120,12 +125,6 @@ export function createChatView(options: ChatViewOptions): ScreenView {
     // Persist to store
     if (currentSessionId) {
       store.appendMessage(currentSessionId, 'user', text);
-    }
-
-    // Check for commands
-    if (text.startsWith('/')) {
-      handleCommand(text);
-      return;
     }
 
     // Set thinking state and send to agent
@@ -176,6 +175,12 @@ export function createChatView(options: ChatViewOptions): ScreenView {
 
         isThinking = false;
         statusBar.setText('Ready');
+
+        // Emit activity event if chat is hidden (for tab bar indicator)
+        if (container.hidden) {
+          bus.emit('tab:activity', { tab: 'Chat' });
+        }
+
         screen.render();
       },
       (error) => {
@@ -188,6 +193,12 @@ export function createChatView(options: ChatViewOptions): ScreenView {
 
         isThinking = false;
         statusBar.setText('Error');
+
+        // Emit activity event if chat is hidden (for tab bar indicator)
+        if (container.hidden) {
+          bus.emit('tab:activity', { tab: 'Chat' });
+        }
+
         screen.render();
       }
     );
@@ -195,7 +206,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
 
   // Handle special commands
   function handleCommand(command: string): void {
-    if (command === '/reset' || command === '/reset ') {
+    if (command === '/reset') {
       agent.reset();
       messages.length = 0;
 
@@ -206,7 +217,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
       const systemMsg: DisplayMessage = { role: 'system', text: 'History cleared' };
       appendMessage(systemMsg);
       statusBar.setText('Ready');
-    } else if (command === '/help' || command === '/help ') {
+    } else if (command === '/help') {
       const helpMsg: DisplayMessage = {
         role: 'system',
         text:
@@ -217,7 +228,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
           '  /exit   - Exit the application',
       };
       appendMessage(helpMsg);
-    } else if (command === '/quit' || command === '/exit' || command === '/quit ' || command === '/exit ') {
+    } else if (command === '/quit' || command === '/exit') {
       process.exit(0);
     } else {
       const unknownMsg: DisplayMessage = {
