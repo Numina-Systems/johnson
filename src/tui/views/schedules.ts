@@ -10,9 +10,9 @@ import { palette } from '../theme.ts';
 import { formatDate } from '../util.ts';
 
 // pattern: Functional Core — format a task for display
-export function formatTaskLine(task: TaskState, now?: Date): string {
+export function formatTaskLine(task: TaskState, now?: Date, pal: typeof palette = palette): string {
   // Enabled status icon
-  const icon = task.enabled ? `{${palette.green}-fg}●{/}` : `{${palette.overlay0}-fg}○{/}`;
+  const icon = task.enabled ? `{${pal.green}-fg}●{/}` : `{${pal.overlay0}-fg}○{/}`;
 
   // Task name
   const name = task.name;
@@ -32,7 +32,7 @@ export function formatTaskLine(task: TaskState, now?: Date): string {
     lastRunInfo = `${timestamp} ${status} (${durationSec}s)`;
   }
 
-  return `${icon} ${name}  {dim}${schedule}{/}  ${runCount}  {${palette.overlay1}-fg}${lastRunInfo}{/}`;
+  return `${icon} ${name}  {dim}${schedule}{/}  ${runCount}  {${pal.overlay1}-fg}${lastRunInfo}{/}`;
 }
 
 type SchedulesViewOptions = {

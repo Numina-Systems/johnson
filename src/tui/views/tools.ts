@@ -67,6 +67,9 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   let assigningSecretsItem: { type: 'custom' | 'skill'; name: string } | null = null;
   let assigningSecretsCheckboxes: Widgets.CheckboxListElement | null = null;
 
+  // Store skill docs for type-safe access (C2 fix)
+  let skillDocs: Array<{ rkey: string; name: string; content: string; grant?: GrantRow }> = [];
+
   // Section header showing current section and navigation hint
   const sectionHeader = blessed.box({
     parent: container,
@@ -142,7 +145,7 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
     // Refresh skills
     const result = store.docList(500);
     const skillItems: string[] = [];
-    const skillDocs: Array<{ rkey: string; name: string; content: string; grant?: GrantRow }> = [];
+    skillDocs = [];
 
     for (const doc of result.documents) {
       if (!doc.rkey.startsWith('skill:')) continue;
@@ -155,9 +158,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       skillDocs.push({ rkey: doc.rkey, name, content: doc.content, grant });
     }
     skillsList.setItems(skillItems);
-
-    // Store skill docs for later access
-    (skillsList as any)._skillDocs = skillDocs;
   }
 
   // Helper: update section header
@@ -209,8 +209,12 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
         currentSectionIndex === 1
           ? '◀▶:section  Esc:back'
           : '◀▶:section  v:view  s:secrets  Esc:back';
-      if (currentSectionIndex === 0 || currentSectionIndex === 2) {
+      if (currentSectionIndex === 0) {
+        // Custom tools
         statusBar.setText(hints + '  a:approve  r:revoke  d:delete');
+      } else if (currentSectionIndex === 2) {
+        // Skills
+        statusBar.setText(hints + '  g:grant  r:revoke  d:delete');
       } else {
         statusBar.setText(hints);
       }
@@ -221,6 +225,7 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   container.key(['left'], () => {
     if (mode !== 'list') return;
     currentSectionIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
+    updateVisibleList();
     getCurrentList().focus();
     updateSectionHeader();
     updateStatusBar();
@@ -229,6 +234,7 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   container.key(['right'], () => {
     if (mode !== 'list') return;
     currentSectionIndex = (currentSectionIndex + 1) % sections.length;
+    updateVisibleList();
     getCurrentList().focus();
     updateSectionHeader();
     updateStatusBar();
@@ -291,7 +297,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       }
     } else {
       // Skills
-      const skillDocs = (skillsList as any)._skillDocs as Array<{ rkey: string; name: string; content: string }>;
       const doc = skillDocs[index];
       if (doc) {
         showCodeViewer({ type: 'skill', name: doc.name, code: doc.content });
@@ -323,7 +328,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       }
     } else {
       // Skills
-      const skillDocs = (skillsList as any)._skillDocs as Array<{ rkey: string; name: string; content: string }>;
       const doc = skillDocs[index];
       if (doc) {
         assigningName = doc.name;
@@ -374,6 +378,18 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
     }
   });
 
+  // Handle 'g' to grant skills (C1 fix)
+  container.key(['g'], () => {
+    if (mode !== 'list' || currentSectionIndex !== 2) return;
+    const list = getCurrentList();
+    const index = list.getSelectedIndex();
+    const doc = skillDocs[index];
+    if (doc) {
+      store.updateGrantStatus(doc.rkey, 'granted');
+      refreshLists();
+    }
+  });
+
   // Handle 'r' to revoke approval
   container.key(['r'], () => {
     if (mode !== 'list' || (currentSectionIndex !== 0 && currentSectionIndex !== 2)) return;
@@ -390,7 +406,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       }
     } else {
       // Skills
-      const skillDocs = (skillsList as any)._skillDocs as Array<{ rkey: string; name: string; content: string }>;
       const doc = skillDocs[index];
       if (doc) {
         store.updateGrantStatus(doc.rkey, 'revoked');
@@ -415,7 +430,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
       }
     } else {
       // Skills
-      const skillDocs = (skillsList as any)._skillDocs as Array<{ rkey: string; name: string; content: string }>;
       const doc = skillDocs[index];
       if (doc) {
         store.docDelete(doc.rkey);
@@ -440,7 +454,6 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
         if (assigningSecretsItem?.type === 'custom') {
           customTools?.updateSecrets(assigningSecretsItem.name, selectedSecrets);
         } else if (assigningSecretsItem?.type === 'skill') {
-          const skillDocs = (skillsList as any)._skillDocs as Array<{ rkey: string }>;
           const skillDoc = skillDocs.find((d) => d.name === assigningSecretsItem?.name);
           if (skillDoc) {
             store.updateGrantSecrets(skillDoc.rkey, selectedSecrets);
@@ -459,45 +472,17 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   builtinList.element.hide();
   skillsList.element.hide();
 
-  // Show/hide lists when switching sections
-  const originalShowCustom = customList.element.show.bind(customList.element);
-  const originalShowBuiltin = builtinList.element.show.bind(builtinList.element);
-  const originalShowSkills = skillsList.element.show.bind(skillsList.element);
-
-  // Override getCurrentList to also handle visibility
-  const getListForSection = (index: number) => {
+  // Helper: show/hide lists when switching sections
+  function updateVisibleList(): void {
     const lists = [customList, builtinList, skillsList];
     for (let i = 0; i < lists.length; i++) {
-      if (i === index) {
+      if (i === currentSectionIndex) {
         lists[i].element.show();
       } else {
         lists[i].element.hide();
       }
     }
-    return lists[index];
-  };
-
-  // Patch key handlers to use getListForSection
-  const originalKey = container.key.bind(container);
-  container.key = function (keys: any, handler: any) {
-    if (Array.isArray(keys) && (keys.includes('left') || keys.includes('right'))) {
-      const newHandler = () => {
-        if (mode !== 'list') return;
-        if (keys.includes('left')) {
-          currentSectionIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
-        } else {
-          currentSectionIndex = (currentSectionIndex + 1) % sections.length;
-        }
-        const list = getListForSection(currentSectionIndex);
-        list.focus();
-        updateSectionHeader();
-        updateStatusBar();
-        screen.render();
-      };
-      return originalKey(keys, newHandler);
-    }
-    return originalKey(keys, handler);
-  };
+  }
 
   return {
     name: 'Tools',

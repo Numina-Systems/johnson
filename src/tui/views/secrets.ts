@@ -81,8 +81,8 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
     const grants = store.listGrants();
     for (const grant of grants) {
       if (grant.secrets.includes(secretName)) {
-        // Extract skill name from the rkey (which is the skill name itself in GrantRow)
-        usage.push(grant.skillName);
+        // Extract friendly skill name from the rkey (remove 'skill:' prefix) (I3 fix)
+        usage.push(grant.skillName.replace('skill:', ''));
       }
     }
 
@@ -431,7 +431,7 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
     }
   });
 
-  // Handle Escape
+  // Handle Escape (I4 fix: skip edit_skills mode since skillsCheckbox handler saves it)
   container.key(['escape'], () => {
     if (mode === 'add_name' || mode === 'add_value') {
       if (inputBox) inputBox.destroy();
@@ -447,14 +447,8 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
       list.focus();
       updateStatusBar();
       screen.render();
-    } else if (mode === 'edit_skills') {
-      if (skillsCheckbox) skillsCheckbox.destroy();
-      skillsCheckbox = null;
-      mode = 'list';
-      list.focus();
-      updateStatusBar();
-      screen.render();
     }
+    // edit_skills mode is handled by skillsCheckbox.key(['escape']) which saves
   });
 
   // Initial setup
