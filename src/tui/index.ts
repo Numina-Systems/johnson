@@ -2,8 +2,7 @@
 // Replaces Ink-based React rendering with neo-blessed screen initialization
 
 import blessed from 'neo-blessed';
-import { EventEmitter } from 'events';
-import type { TuiDependencies, TuiEvents } from './types.ts';
+import type { TuiDependencies } from './types.ts';
 import { createTabBar } from './tab-bar.ts';
 import { palette } from './theme.ts';
 

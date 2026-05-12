@@ -75,7 +75,7 @@ export function createTabBar(options: TabBarOptions): TabBar {
   updateRender();
 
   // Mouse click support: click on tab to switch
-  element.on('click', (_data: ClickData) => {
+  element.on('click', (data: ClickData) => {
     // Estimate tab widths and positions
     let charPos = 0;
     for (let i = 0; i < labels.length; i++) {
@@ -85,7 +85,7 @@ export function createTabBar(options: TabBarOptions): TabBar {
       const displayLabel = hasActivity ? `${label}*` : label;
       const tabWidth = displayLabel.length + 2; // +2 for padding
 
-      if (_data.x >= charPos && _data.x < charPos + tabWidth) {
+      if (data.x >= charPos && data.x < charPos + tabWidth) {
         onSwitch(i);
         return;
       }
