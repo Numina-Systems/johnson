@@ -3,9 +3,9 @@
 
 import blessed from 'neo-blessed';
 import { EventEmitter } from 'events';
-import type { TuiDependencies, TuiEvents } from './types';
-import { createTabBar } from './tab-bar';
-import { palette } from './theme';
+import type { TuiDependencies, TuiEvents } from './types.ts';
+import { createTabBar } from './tab-bar.ts';
+import { palette } from './theme.ts';
 
 export type { TuiDependencies };
 
@@ -13,7 +13,7 @@ export type { TuiDependencies };
  * Initialize and render the blessed-based TUI application.
  * Call this from the imperative shell (src/index.ts).
  */
-export function startTUI(deps: TuiDependencies): void {
+export function startTUI(_deps: TuiDependencies): void {
   // Create blessed screen with Catppuccin Macchiato styling
   const screen = blessed.screen({
     smartCSR: true,
@@ -23,12 +23,6 @@ export function startTUI(deps: TuiDependencies): void {
       bg: palette.base,
     },
   });
-
-  // Create typed event bus for TUI events
-  const bus = new EventEmitter() as EventEmitter & {
-    emit<K extends keyof TuiEvents>(event: K, data: TuiEvents[K]): boolean;
-    on<K extends keyof TuiEvents>(event: K, listener: (data: TuiEvents[K]) => void): EventEmitter;
-  };
 
   // Define tab labels (7 tabs in order)
   const tabLabels = ['Sessions', 'Chat', 'Tools', 'Secrets', 'Schedules', 'Prompt', 'Prune'] as const;
@@ -60,6 +54,7 @@ export function startTUI(deps: TuiDependencies): void {
     labels: Array.from(tabLabels),
     onSwitch: (index: number) => {
       activeTabIndex = index;
+      tabBar.setActive(index);
       updateContent();
     },
   });

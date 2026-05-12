@@ -3,7 +3,11 @@
 
 import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
-import { palette, blessedStyles } from './theme';
+import { palette, blessedStyles } from './theme.ts';
+
+function hexTag(color: string): string {
+  return color.startsWith('#') ? color.slice(1) : color;
+}
 
 type TabBarOptions = {
   readonly screen: Widgets.Screen;
@@ -16,6 +20,11 @@ export type TabBar = {
   setActive(index: number): void;
   setActivity(tabName: string, hasActivity: boolean): void;
   destroy(): void;
+};
+
+type ClickData = {
+  readonly x: number;
+  readonly y: number;
 };
 
 export function createTabBar(options: TabBarOptions): TabBar {
@@ -47,10 +56,10 @@ export function createTabBar(options: TabBarOptions): TabBar {
 
       if (isActive) {
         // Active tab: use tabActive style (mauve bg, dark fg, bold)
-        return `{bold}{#${blessedStyles.tabActive.fg}-fg}{#${blessedStyles.tabActive.bg}-bg} ${displayLabel} {/}`;
+        return `{bold}{#${hexTag(blessedStyles.tabActive.fg)}-fg}{#${hexTag(blessedStyles.tabActive.bg!)}-bg} ${displayLabel} {/}`;
       } else {
         // Inactive tab: use tabInactive style (dim fg, no bg)
-        return `{#${blessedStyles.tabInactive.fg}-fg} ${displayLabel} {/}`;
+        return `{#${hexTag(blessedStyles.tabInactive.fg)}-fg} ${displayLabel} {/}`;
       }
     });
 
@@ -66,16 +75,12 @@ export function createTabBar(options: TabBarOptions): TabBar {
   updateRender();
 
   // Mouse click support: click on tab to switch
-  element.on('click', (_data: any) => {
-    // Compute tab positions based on rendered content
-    // This is a simplified approximation: count chars to find clicked tab
-    const content = renderTabs();
-    const cleanContent = content.replace(/{[^}]+}/g, ''); // Strip tags
-
+  element.on('click', (_data: ClickData) => {
     // Estimate tab widths and positions
     let charPos = 0;
     for (let i = 0; i < labels.length; i++) {
       const label = labels[i];
+      if (!label) continue;
       const hasActivity = activityMap.get(label) || false;
       const displayLabel = hasActivity ? `${label}*` : label;
       const tabWidth = displayLabel.length + 2; // +2 for padding
