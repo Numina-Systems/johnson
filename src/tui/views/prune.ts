@@ -96,6 +96,7 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
   let selected = new Set<string>();
   let mode: PruneMode = 'select';
   let resultMsg: string | null = null;
+  let resultTimeout: NodeJS.Timeout | null = null;
 
   // Refresh sessions list
   function refresh(): void {
@@ -268,8 +269,12 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
     screen.render();
 
     // Clear result after 3 seconds
-    setTimeout(() => {
+    if (resultTimeout) {
+      clearTimeout(resultTimeout);
+    }
+    resultTimeout = setTimeout(() => {
       resultMsg = null;
+      resultTimeout = null;
       updateStatus();
       screen.render();
     }, 3000);
@@ -299,6 +304,10 @@ export function createPruneView(options: PruneViewOptions): ScreenView {
       list.focus();
     },
     destroy(): void {
+      if (resultTimeout) {
+        clearTimeout(resultTimeout);
+        resultTimeout = null;
+      }
       list.destroy();
       container.destroy();
     },

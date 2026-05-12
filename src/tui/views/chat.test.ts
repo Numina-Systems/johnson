@@ -4,7 +4,7 @@ import type { Widgets } from 'blessed';
 import { EventEmitter } from 'events';
 import { createChatView, findMatches } from './chat.ts';
 import type { Agent, ChatOptions } from '../../agent/types.ts';
-import type { Store } from '../../store/store.ts';
+import type { Store, GrantRow } from '../../store/store.ts';
 
 function createControlledPromise<T>(): {
   promise: Promise<T>;
@@ -62,14 +62,14 @@ const createMockStore = (): Store => ({
   updateTaskRun: mock(() => {}),
   deleteTask: mock(() => false),
   saveGrant: mock(() => {}),
-  getGrant: mock(() => null),
+  getGrant: mock((): GrantRow | null => null),
   listGrants: mock(() => []),
   updateGrantStatus: mock(() => {}),
   updateGrantSecrets: mock(() => {}),
-  deleteGrant: mock(() => false),
+  deleteGrant: mock((): boolean => false),
   addManagedThread: mock(() => {}),
-  removeManagedThread: mock(() => {}),
-  getManagedThreadIds: mock(() => []),
+  removeManagedThread: mock((): boolean => false),
+  getManagedThreadIds: mock((): Set<string> => new Set()),
   close: mock(() => {}),
 });
 

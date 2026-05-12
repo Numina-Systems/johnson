@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
-import type { Store } from '../../store/store.ts';
+import type { Store, GrantRow } from '../../store/store.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { CustomToolManager } from '../../tools/custom-tool-manager.ts';
 import { createSecretsView } from './secrets.ts';
@@ -55,8 +55,8 @@ describe('createSecretsView - integration', () => {
     // Mock Store
     mockStore = {
       listGrants: () => [],
-      getGrant: () => undefined,
-      updateGrantSecrets: () => {},
+      getGrant: (): GrantRow | null => null,
+      updateGrantSecrets: (): boolean => false,
     };
 
     // Mock SecretManager
@@ -70,7 +70,7 @@ describe('createSecretsView - integration', () => {
     mockCustomTools = {
       listTools: () => [],
       getTool: () => undefined,
-      updateSecrets: () => {},
+      updateSecrets: (): boolean => false,
     };
   });
 

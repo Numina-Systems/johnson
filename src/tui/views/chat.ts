@@ -314,7 +314,10 @@ export function createChatView(options: ChatViewOptions): ScreenView {
 
     if (matchIndices.length > 0) {
       // Scroll to first match by estimating its position
-      scrollToMessageIndex(matchIndices[0]);
+      const firstMatch = matchIndices[0];
+      if (firstMatch !== undefined) {
+        scrollToMessageIndex(firstMatch);
+      }
       searchOverlay.setContent(`{#${blessedStyles.accent.fg.replace('#', '')}-fg}${matchIndices.length} match${matchIndices.length === 1 ? '' : 'es'}{/}`);
     } else {
       searchOverlay.setContent(`{#${blessedStyles.text.fg.replace('#', '')}-fg}No matches{/}`);
@@ -327,7 +330,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   function scrollToMessageIndex(messageIndex: number): void {
     const scrollHeight = (viewer.element as any).getScrollHeight() ?? 0;
     const elementHeight = (viewer.element.height as number) ?? 10;
-    if (scrollHeight === 0 || messages.length === 0) {
+    if (scrollHeight === 0 || messages.length === 0 || messageIndex < 0 || messageIndex >= messages.length) {
       return;
     }
     // Estimate position: distribute scroll height evenly across messages
@@ -363,7 +366,10 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   function nextMatch(): void {
     if (matchIndices.length === 0) return;
     currentMatchIdx = (currentMatchIdx + 1) % matchIndices.length;
-    scrollToMessageIndex(matchIndices[currentMatchIdx]);
+    const nextIdx = matchIndices[currentMatchIdx];
+    if (nextIdx !== undefined) {
+      scrollToMessageIndex(nextIdx);
+    }
     screen.render();
   }
 
@@ -413,10 +419,11 @@ export function createChatView(options: ChatViewOptions): ScreenView {
   });
 
   // Listen for session selection on the bus
-  bus.on('session:selected', (data: { sessionId: string }) => {
+  const onSessionSelected = (data: { sessionId: string }) => {
     currentSessionId = data.sessionId;
     loadSession();
-  });
+  };
+  bus.on('session:selected', onSessionSelected);
 
   return {
     name: 'Chat',
@@ -444,7 +451,7 @@ export function createChatView(options: ChatViewOptions): ScreenView {
       searchOverlay.destroy();
       textarea.destroy();
       container.destroy();
-      bus.removeAllListeners('session:selected');
+      bus.off('session:selected', onSessionSelected);
     },
   };
 }

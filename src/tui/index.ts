@@ -145,7 +145,10 @@ export function startTUI(deps: TuiDependencies): void {
 
     // Update tab bar and clear activity indicator for newly active tab
     tabBar.setActive(newIndex);
-    tabBar.setActivity(tabLabels[newIndex], false);
+    const tabLabel = tabLabels[newIndex];
+    if (tabLabel) {
+      tabBar.setActivity(tabLabel, false);
+    }
   }
 
   // Create tab bar

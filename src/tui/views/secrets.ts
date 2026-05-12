@@ -68,7 +68,8 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
   let confirmDialog: Widgets.BoxElement | null = null;
 
   // Skills/tools checkbox list for edit_skills mode
-  let skillsCheckbox: Widgets.CheckboxListElement | null = null;
+  // blessed.checkbox creates a widget not in @types/blessed, so we use any
+  let skillsCheckbox: any = null;
 
   // Status bar
   const statusBar = createStatusBar({ parent: container });
@@ -193,6 +194,7 @@ export function createSecretsView(options: SecretsViewOptions): ScreenView {
       keys: true,
       vi: true,
       mouse: true,
+      censor: true,
       style: {
         border: blessedStyles.border,
         text: blessedStyles.text,

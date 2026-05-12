@@ -121,7 +121,8 @@ export function createSessionsView(options: SessionsViewOptions): ScreenView {
     isCapturingInput = true;
 
     // Create a simple confirmation question
-    screen.question(
+    // blessed extends Screen with question method at runtime even though types don't expose it
+    (screen as any).question(
       `Delete "${session.title ?? 'Untitled'}"`
       + ` (${session.messageCount} msgs)? (y/n): `,
       (_err: Error | null, answer: string) => {

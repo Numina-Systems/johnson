@@ -109,6 +109,7 @@ export function createSchedulesView(options: SchedulesViewOptions): ScreenView {
     },
     show(): void {
       container.show();
+      refreshList();
       screen.render();
     },
     hide(): void {

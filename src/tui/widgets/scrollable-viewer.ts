@@ -14,6 +14,7 @@ export type ScrollableViewerOptions = {
   readonly height: string | number;
   readonly label?: string;
   readonly alwaysScroll?: boolean;
+  readonly hidden?: boolean;
 };
 
 export type ScrollableViewer = {
@@ -24,12 +25,13 @@ export type ScrollableViewer = {
   scrollToTop(): void;
   isScrolledToBottom(): boolean;
   getScroll(): number;
+  scroll(lines: number): void;
   focus(): void;
   destroy(): void;
 };
 
 export function createScrollableViewer(options: ScrollableViewerOptions): ScrollableViewer {
-  const { parent, top, left, width, height, label, alwaysScroll = true } = options;
+  const { parent, top, left, width, height, label, alwaysScroll = true, hidden = false } = options;
 
   // Create the blessed box element
   const element = blessed.box({
@@ -42,6 +44,7 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
     alwaysScroll,
     keys: true,
     mouse: true,
+    hidden,
     scrollbar: {
       ch: '│',
       style: {
@@ -163,6 +166,14 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
 
     getScroll(): number {
       return getScrollImpl();
+    },
+
+    scroll(lines: number): void {
+      element.scroll(lines);
+      const screen = element.screen;
+      if (screen) {
+        screen.render();
+      }
     },
 
     focus(): void {

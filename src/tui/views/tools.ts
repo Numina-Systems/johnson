@@ -6,7 +6,7 @@ import type { Store, GrantRow } from '../../store/store.ts';
 import type { CustomToolManager, CustomTool } from '../../tools/custom-tool-manager.ts';
 import type { SecretManager } from '../../secrets/manager.ts';
 import type { ScreenView } from '../types.ts';
-import { createSelectableList } from '../widgets/selectable-list.ts';
+import { createSelectableList, type SelectableList } from '../widgets/selectable-list.ts';
 import { createScrollableViewer } from '../widgets/scrollable-viewer.ts';
 import { createStatusBar } from '../widgets/status-bar.ts';
 import { palette, blessedStyles } from '../theme.ts';
@@ -65,7 +65,8 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   // Mutable state for code viewer and secret assignment
   let viewingCodeItem: { type: 'custom' | 'skill'; name: string; code: string } | null = null;
   let assigningSecretsItem: { type: 'custom' | 'skill'; name: string } | null = null;
-  let assigningSecretsCheckboxes: Widgets.CheckboxListElement | null = null;
+  // blessed.checkbox creates a widget not in @types/blessed, so we use any
+  let assigningSecretsCheckboxes: any = null;
 
   // Store skill docs for type-safe access (C2 fix)
   let skillDocs: Array<{ rkey: string; name: string; content: string; grant?: GrantRow }> = [];
@@ -118,6 +119,10 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   // ScrollableViewer overlay for code display
   const codeViewer = createScrollableViewer({
     parent: container,
+    top: 1,
+    left: 0,
+    width: '100%',
+    height: '100%-2',
     hidden: true,
   });
 
@@ -152,7 +157,7 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
     for (const doc of result.documents) {
       if (!doc.rkey.startsWith('skill:')) continue;
       const name = doc.rkey.slice('skill:'.length);
-      const grant = store.getGrant(doc.rkey);
+      const grant = store.getGrant(doc.rkey) ?? undefined;
       const icon = formatGrantIcon(grant?.status, palette);
       const description = parseDescription(doc.content);
       const desc = description ? ` — ${description}` : '';
@@ -199,7 +204,7 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   }
 
   // Helper: get current list based on section
-  function getCurrentList() {
+  function getCurrentList(): SelectableList {
     if (currentSectionIndex === 0) return customList;
     if (currentSectionIndex === 1) return builtinList;
     return skillsList;
@@ -479,10 +484,12 @@ export function createToolsView(options: ToolsViewOptions): ScreenView {
   function updateVisibleList(): void {
     const lists = [customList, builtinList, skillsList];
     for (let i = 0; i < lists.length; i++) {
+      const list = lists[i];
+      if (!list) continue;
       if (i === currentSectionIndex) {
-        lists[i].element.show();
+        list.element.show();
       } else {
-        lists[i].element.hide();
+        list.element.hide();
       }
     }
   }
