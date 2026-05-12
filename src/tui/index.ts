@@ -11,6 +11,9 @@ import { createChatView } from './views/chat.ts';
 import { createToolsView } from './views/tools.ts';
 import { createSecretsView } from './views/secrets.ts';
 import { createSchedulesView } from './views/schedules.ts';
+import { createSystemPromptView } from './views/system-prompt.ts';
+import { createPruneView } from './views/prune.ts';
+import { buildSystemPrompt } from '../agent/prompt.ts';
 
 export type { TuiDependencies };
 
@@ -83,46 +86,34 @@ export function startTUI(deps: TuiDependencies): void {
     scheduler: deps.scheduler,
   });
 
-  // Placeholder views for future tabs (Phase 6+)
-  function createPlaceholderView(tabName: string): ScreenView {
-    const container = blessed.box({
-      parent: screen,
-      top: 1,
-      left: 0,
-      width: '100%',
-      bottom: 0,
-      hidden: true,
-      tags: true,
-      style: {
-        bg: palette.base,
-        fg: palette.text,
-      },
+  // Construct getSystemPrompt callback for SystemPrompt view
+  async function getSystemPrompt(): Promise<string> {
+    if (!deps.timezone) {
+      return 'System prompt unavailable: timezone not provided.';
+    }
+    const selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+    const allDocs = deps.store.docList(500);
+    const skillNames = allDocs.documents
+      .filter((d) => d.rkey.startsWith('skill:'))
+      .map((d) => d.rkey);
+    const customToolSummaries = deps.customTools?.getApprovedToolSummaries();
+    const secretNames = deps.secrets?.listKeys();
+    return buildSystemPrompt({
+      selfDoc,
+      skillNames,
+      toolDocs: deps.toolDocs ?? '',
+      timezone: deps.timezone,
+      customToolSummaries,
+      secretNames,
+      nativeToolNames: deps.builtinTools?.map((t) => t.name),
     });
-
-    container.setContent(`Coming soon: {bold}${tabName}{/}`);
-
-    return {
-      name: tabName,
-      container,
-      get isCapturingInput(): boolean {
-        return false;
-      },
-      show(): void {
-        container.show();
-        screen.render();
-      },
-      hide(): void {
-        container.hide();
-        screen.render();
-      },
-      focus(): void {
-        container.focus();
-      },
-      destroy(): void {
-        container.destroy();
-      },
-    };
   }
+
+  // Create the SystemPrompt view (Phase 6)
+  const systemPromptView = createSystemPromptView({ screen, getSystemPrompt });
+
+  // Create the Prune view (Phase 6)
+  const pruneView = createPruneView({ screen, store: deps.store });
 
   // Set up views array: index corresponds to tab index
   const views: Array<ScreenView> = [
@@ -131,8 +122,8 @@ export function startTUI(deps: TuiDependencies): void {
     toolsView, // 2: Tools (Phase 5)
     secretsView, // 3: Secrets (Phase 5)
     schedulesView, // 4: Schedules (Phase 5)
-    createPlaceholderView('Prompt'), // 5: Prompt (Phase 6)
-    createPlaceholderView('Prune'), // 6: Prune (Phase 6)
+    systemPromptView, // 5: SystemPrompt (Phase 6)
+    pruneView, // 6: Prune (Phase 6)
   ];
 
   function switchTab(newIndex: number): void {
