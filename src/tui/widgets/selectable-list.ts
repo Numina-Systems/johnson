@@ -27,15 +27,18 @@ export type SelectableList = {
 };
 
 type SelectListeners = {
-  select: (index: number) => void;
-  highlight: (index: number) => void;
+  select: Array<(index: number) => void>;
+  highlight: Array<(index: number) => void>;
 };
 
 export function createSelectableList(options: SelectableListOptions): SelectableList {
   const { parent, top, left, width, height, label } = options;
 
-  // Store listeners for custom events
-  const listeners: Partial<SelectListeners> = {};
+  // Store listeners for custom events — allow multiple listeners per event
+  const listeners: SelectListeners = {
+    select: [],
+    highlight: [],
+  };
 
   // Create the blessed list element
   const element = blessed.list({
@@ -64,15 +67,15 @@ export function createSelectableList(options: SelectableListOptions): Selectable
   }) as Widgets.ListElement;
 
   // Bind blessed list events to custom wrapper events
-  element.on('select', (item: any, index: number) => {
-    if (listeners.select) {
-      listeners.select(index);
+  element.on('select', (_item: Widgets.BoxElement, index: number) => {
+    for (const listener of listeners.select) {
+      listener(index);
     }
   });
 
-  element.on('select item', (item: any, index: number) => {
-    if (listeners.highlight) {
-      listeners.highlight(index);
+  element.on('select item', (_item: Widgets.BlessedElement, index: number) => {
+    for (const listener of listeners.highlight) {
+      listener(index);
     }
   });
 
@@ -81,18 +84,19 @@ export function createSelectableList(options: SelectableListOptions): Selectable
 
     setItems(items: ReadonlyArray<string>): void {
       element.setItems(items as string[]);
-      const screen = (element as any).screen;
+      const screen = element.screen;
       if (screen) {
         screen.render();
       }
     },
 
     getSelectedIndex(): number {
-      return (element as any).selected || 0;
+      // Use nullish coalescing to preserve 0 as a valid index
+      return (element as any).selected ?? 0;
     },
 
     getSelectedItem(): string | null {
-      const index = this.getSelectedIndex();
+      const index = (element as any).selected ?? 0;
       const items = (element as any).items || [];
       if (index >= 0 && index < items.length) {
         const item = items[index];
@@ -111,7 +115,7 @@ export function createSelectableList(options: SelectableListOptions): Selectable
     },
 
     on(event: 'select' | 'highlight', listener: (index: number) => void): void {
-      listeners[event] = listener;
+      listeners[event].push(listener);
     },
 
     destroy(): void {

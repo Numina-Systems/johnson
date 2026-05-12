@@ -131,7 +131,7 @@ describe('selectable-list widget', () => {
     list.destroy();
   });
 
-  test('select event fires with correct index', (done) => {
+  test('select event fires with correct index', () => {
     const options: SelectableListOptions = {
       parent: screen,
       top: 0,
@@ -153,22 +153,19 @@ describe('selectable-list widget', () => {
     });
 
     // Simulate selection by manipulating blessed element
+    // blessed emit is synchronous, no timeout needed
     const element = list.element as any;
     if (element.items.length > 0) {
       element.select(0);
       element.emit('select', element.items[0], 0);
     }
 
-    // Small delay to allow event to fire
-    setTimeout(() => {
-      expect(eventFired).toBe(true);
-      expect(eventIndex).toBeGreaterThanOrEqual(0);
-      list.destroy();
-      done();
-    }, 50);
+    expect(eventFired).toBe(true);
+    expect(eventIndex).toBeGreaterThanOrEqual(0);
+    list.destroy();
   });
 
-  test('highlight event fires with correct index', (done) => {
+  test('highlight event fires with correct index', () => {
     const options: SelectableListOptions = {
       parent: screen,
       top: 0,
@@ -190,19 +187,16 @@ describe('selectable-list widget', () => {
     });
 
     // Simulate highlight by manipulating blessed element
+    // blessed emit is synchronous, no timeout needed
     const element = list.element as any;
     if (element.items.length > 0) {
       element.select(1);
       element.emit('select item', element.items[1], 1);
     }
 
-    // Small delay to allow event to fire
-    setTimeout(() => {
-      expect(eventFired).toBe(true);
-      expect(typeof eventIndex).toBe('number');
-      list.destroy();
-      done();
-    }, 50);
+    expect(eventFired).toBe(true);
+    expect(typeof eventIndex).toBe('number');
+    list.destroy();
   });
 
   test('focus() focuses the element', () => {
@@ -253,6 +247,49 @@ describe('selectable-list widget', () => {
     const element = list.element as any;
 
     expect(element.options.label).toBe('Test Label');
+    list.destroy();
+  });
+
+  test('C2: supports multiple listeners on same event', () => {
+    const options: SelectableListOptions = {
+      parent: screen,
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: 5,
+    };
+
+    const list = createSelectableList(options);
+    const items = ['Item 1', 'Item 2', 'Item 3'];
+    list.setItems(items);
+
+    let listener1Called = false;
+    let listener2Called = false;
+    let listener1Index = -1;
+    let listener2Index = -1;
+
+    // Register first listener
+    list.on('select', (index: number) => {
+      listener1Called = true;
+      listener1Index = index;
+    });
+
+    // Register second listener — should NOT overwrite the first
+    list.on('select', (index: number) => {
+      listener2Called = true;
+      listener2Index = index;
+    });
+
+    // Emit event
+    const element = list.element as any;
+    element.emit('select', element.items[0], 0);
+
+    // Both listeners should have fired
+    expect(listener1Called).toBe(true);
+    expect(listener2Called).toBe(true);
+    expect(listener1Index).toBe(0);
+    expect(listener2Index).toBe(0);
+
     list.destroy();
   });
 });

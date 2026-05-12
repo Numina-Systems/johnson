@@ -4,6 +4,7 @@
 import blessed from 'neo-blessed';
 import type { Widgets } from 'blessed';
 import { palette, blessedStyles } from '../theme.ts';
+import { isAtBottom } from './scroll-utils.ts';
 
 export type ScrollableViewerOptions = {
   readonly parent: Widgets.BoxElement | Widgets.Screen;
@@ -26,13 +27,6 @@ export type ScrollableViewer = {
   focus(): void;
   destroy(): void;
 };
-
-// Pure function to check if viewer is at bottom
-function isAtBottom(scrollPos: number, scrollHeight: number, viewHeight: number): boolean {
-  // Allow small tolerance (±2 lines) for floating point comparisons
-  const tolerance = 2;
-  return scrollPos >= scrollHeight - viewHeight - tolerance;
-}
 
 export function createScrollableViewer(options: ScrollableViewerOptions): ScrollableViewer {
   const { parent, top, left, width, height, label, alwaysScroll = true } = options;
@@ -66,16 +60,19 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
 
   // Bind keyboard navigation for page up/down and jump to top/bottom
   element.key(['pageup'], () => {
-    element.scroll(-((element as any).height || 10));
-    const screen = (element as any).screen;
+    // blessed.Box has `height` property; blessed provides scroll() method
+    const height = (element.height as number) || 10;
+    element.scroll(-height);
+    const screen = element.screen;
     if (screen) {
       screen.render();
     }
   });
 
   element.key(['pagedown'], () => {
-    element.scroll((element as any).height || 10);
-    const screen = (element as any).screen;
+    const height = (element.height as number) || 10;
+    element.scroll(height);
+    const screen = element.screen;
     if (screen) {
       screen.render();
     }
@@ -92,8 +89,9 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
   });
 
   function scrollToTopImpl(): void {
+    // blessed.Box provides setScroll method via scrollable interface
     (element as any).setScroll(0);
-    const screen = (element as any).screen;
+    const screen = element.screen;
     if (screen) {
       screen.render();
     }
@@ -101,21 +99,22 @@ export function createScrollableViewer(options: ScrollableViewerOptions): Scroll
 
   function scrollToBottomImpl(): void {
     const scrollHeight = element.getScrollHeight();
-    const elementHeight = (element as any).height || 10;
+    const elementHeight = (element.height as number) || 10;
     (element as any).setScroll(Math.max(0, scrollHeight - elementHeight));
-    const screen = (element as any).screen;
+    const screen = element.screen;
     if (screen) {
       screen.render();
     }
   }
 
   function getScrollImpl(): number {
+    // childBase is the blessed-internal scroll position property
     return (element as any).childBase || 0;
   }
 
   function isScrolledToBottomImpl(): boolean {
     const scrollHeight = element.getScrollHeight();
-    const elementHeight = (element as any).height || 10;
+    const elementHeight = (element.height as number) || 10;
     const scrollPos = getScrollImpl();
     return isAtBottom(scrollPos, scrollHeight, elementHeight);
   }
