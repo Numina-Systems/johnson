@@ -2,7 +2,7 @@
 //
 // When conversation token count exceeds contextBudget × contextLimit:
 // 1. Save full conversation to store as context:<sessionId>:<timestamp> document
-// 2. Load the 2-3 most recent context documents (full text)
+// 2. Load the 2-3 most recent context documents for this session (full text)
 // 3. Summarize all older context documents into one paragraph
 // 4. Return rebuilt context for the agent to continue with
 
