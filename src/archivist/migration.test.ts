@@ -2,7 +2,7 @@
 
 import { test, expect, describe } from 'bun:test';
 import { createStore } from '@/store/store.ts';
-import { migrateRefsFromKnowledge } from './migration.ts';
+import { migrateRefsFromKnowledge, migrateCompactionArchives } from './migration.ts';
 
 describe('migrateRefsFromKnowledge', () => {
   test('migrates document with PDF source marker from knowledge to ref prefix', () => {
@@ -160,5 +160,117 @@ describe('migrateRefsFromKnowledge', () => {
     const migrationDoc = store.docGet('archivist:ref-migration');
     expect(migrationDoc).not.toBeNull();
     expect(migrationDoc?.content).toContain('<!-- archivist-ref-migration-complete -->');
+  });
+});
+
+describe('migrateCompactionArchives', () => {
+  test('deletes archive:<timestamp> documents', () => {
+    const store = createStore(':memory:');
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Old compaction');
+    store.docUpsert('archive:2025-01-02T00-00-00', 'Another old compaction');
+
+    const result = migrateCompactionArchives(store);
+
+    expect(result.deleted).toBe(2);
+    expect(result.skipped).toBe(false);
+
+    // Orphaned archives should be deleted
+    expect(store.docGet('archive:2025-01-01T00-00-00')).toBeNull();
+    expect(store.docGet('archive:2025-01-02T00-00-00')).toBeNull();
+  });
+
+  test('preserves archive:session:* documents', () => {
+    const store = createStore(':memory:');
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Old compaction');
+    store.docUpsert('archive:session:my-chat:2025-01-01T14-30', 'Session archive');
+
+    const result = migrateCompactionArchives(store);
+
+    expect(result.deleted).toBe(1);
+
+    // Orphaned compaction archive deleted
+    expect(store.docGet('archive:2025-01-01T00-00-00')).toBeNull();
+
+    // Session archive preserved
+    expect(store.docGet('archive:session:my-chat:2025-01-01T14-30')).not.toBeNull();
+  });
+
+  test('preserves archive:consolidated:* documents', () => {
+    const store = createStore(':memory:');
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Old compaction');
+    store.docUpsert('archive:consolidated:2025-01-01:2025-01-01T12-00-00', 'Consolidated archive');
+
+    const result = migrateCompactionArchives(store);
+
+    expect(result.deleted).toBe(1);
+
+    // Orphaned compaction archive deleted
+    expect(store.docGet('archive:2025-01-01T00-00-00')).toBeNull();
+
+    // Consolidated archive preserved
+    expect(store.docGet('archive:consolidated:2025-01-01:2025-01-01T12-00-00')).not.toBeNull();
+  });
+
+  test('writes migration marker document', () => {
+    const store = createStore(':memory:');
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Old compaction');
+
+    migrateCompactionArchives(store);
+
+    const migrationDoc = store.docGet('archivist:compaction-migration');
+    expect(migrationDoc).not.toBeNull();
+    expect(migrationDoc?.content).toContain('<!-- archivist-compaction-migration-complete -->');
+  });
+
+  test('is idempotent when marker exists', () => {
+    const store = createStore(':memory:');
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Old compaction');
+
+    const firstResult = migrateCompactionArchives(store);
+    expect(firstResult.deleted).toBe(1);
+    expect(firstResult.skipped).toBe(false);
+
+    // Seed a new compaction archive after first run
+    store.docUpsert('archive:2025-02-01T00-00-00', 'New compaction');
+
+    // Second run should be skipped
+    const secondResult = migrateCompactionArchives(store);
+    expect(secondResult.deleted).toBe(0);
+    expect(secondResult.skipped).toBe(true);
+
+    // New doc should not be deleted because marker prevents second run
+    expect(store.docGet('archive:2025-02-01T00-00-00')).not.toBeNull();
+  });
+
+  test('handles mixed archive documents correctly', () => {
+    const store = createStore(':memory:');
+
+    // Old compaction archives (should be deleted)
+    store.docUpsert('archive:2025-01-01T00-00-00', 'Compaction 1');
+    store.docUpsert('archive:2025-01-02T00-00-00', 'Compaction 2');
+
+    // Session archives (should be preserved)
+    store.docUpsert('archive:session:chat-a:2025-01-15T10-00', 'Session A');
+    store.docUpsert('archive:session:chat-b:2025-01-16T11-00', 'Session B');
+
+    // Consolidated archives (should be preserved)
+    store.docUpsert('archive:consolidated:2025-01-01:2025-01-15T12-00-00', 'Consolidated 1');
+    store.docUpsert('archive:consolidated:2025-01-16:2025-01-31T12-00-00', 'Consolidated 2');
+
+    const result = migrateCompactionArchives(store);
+
+    expect(result.deleted).toBe(2);
+
+    // Compaction archives deleted
+    expect(store.docGet('archive:2025-01-01T00-00-00')).toBeNull();
+    expect(store.docGet('archive:2025-01-02T00-00-00')).toBeNull();
+
+    // Session archives preserved
+    expect(store.docGet('archive:session:chat-a:2025-01-15T10-00')).not.toBeNull();
+    expect(store.docGet('archive:session:chat-b:2025-01-16T11-00')).not.toBeNull();
+
+    // Consolidated archives preserved
+    expect(store.docGet('archive:consolidated:2025-01-01:2025-01-15T12-00-00')).not.toBeNull();
+    expect(store.docGet('archive:consolidated:2025-01-16:2025-01-31T12-00-00')).not.toBeNull();
   });
 });

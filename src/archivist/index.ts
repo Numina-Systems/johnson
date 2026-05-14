@@ -86,4 +86,4 @@ export { scan } from './stages/scan.ts';
 export { runPipeline } from './pipeline.ts';
 export { appendRunLog } from './logging.ts';
 export { seedArchivistIdentity, loadArchivistIdentity } from './seed.ts';
-export { migrateRefsFromKnowledge } from './migration.ts';
+export { migrateRefsFromKnowledge, migrateCompactionArchives } from './migration.ts';

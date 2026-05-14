@@ -23,7 +23,7 @@ import { seedSelfDoc } from './agent/seed-self-doc.ts';
 import { reindexEmbeddings } from './search/hybrid.ts';
 import { startTUI } from './tui/index.ts';
 import { createDiscordBot } from './discord/index.ts';
-import { createArchivist, seedArchivistIdentity, migrateRefsFromKnowledge } from './archivist/index.ts';
+import { createArchivist, seedArchivistIdentity, migrateRefsFromKnowledge, migrateCompactionArchives } from './archivist/index.ts';
 import type { Agent, AgentDependencies } from './agent/types.ts';
 import type { EmbeddingProvider } from './embedding/types.ts';
 import type { TaskStore } from './scheduler/types.ts';
@@ -62,6 +62,13 @@ async function main(): Promise<void> {
     if (!migration.skipped && migration.migrated > 0) {
       log(`[archivist] migrated ${migration.migrated} reference books to ref:* prefix`);
     }
+  }
+
+  // Migrate orphaned compaction archives from archive: to context: namespace (one-time)
+  // Placed outside archivist guard — compaction orphans exist independently of archivist config
+  const compactionMigration = migrateCompactionArchives(store);
+  if (!compactionMigration.skipped && compactionMigration.deleted > 0) {
+    log(`[migration] deleted ${compactionMigration.deleted} orphaned compaction archive(s)`);
   }
 
   // Secret manager — flat JSON file for secret values (never in the DB)

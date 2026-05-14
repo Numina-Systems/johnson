@@ -72,3 +72,37 @@ export function migrateRefsFromKnowledge(store: Store): { migrated: number; skip
 
   return { migrated, skipped: false };
 }
+
+const COMPACTION_MIGRATION_MARKER = '<!-- archivist-compaction-migration-complete -->';
+const COMPACTION_MIGRATION_RKEY = 'archivist:compaction-migration';
+
+export function migrateCompactionArchives(store: Store): { deleted: number; skipped: boolean } {
+  const migrationDoc = store.docGet(COMPACTION_MIGRATION_RKEY);
+  if (migrationDoc?.content?.includes(COMPACTION_MIGRATION_MARKER)) {
+    return { deleted: 0, skipped: true };
+  }
+
+  let deleted = 0;
+  const toDelete: Array<string> = [];
+
+  let cursor: string | undefined;
+  do {
+    const page = store.docList(500, cursor);
+    for (const doc of page.documents) {
+      if (!doc.rkey.startsWith('archive:')) continue;
+      if (doc.rkey.startsWith('archive:session:')) continue;
+      if (doc.rkey.startsWith('archive:consolidated:')) continue;
+      toDelete.push(doc.rkey);
+    }
+    cursor = page.cursor;
+  } while (cursor);
+
+  for (const rkey of toDelete) {
+    store.docDelete(rkey);
+    deleted++;
+  }
+
+  store.docUpsert(COMPACTION_MIGRATION_RKEY, COMPACTION_MIGRATION_MARKER);
+
+  return { deleted, skipped: false };
+}
