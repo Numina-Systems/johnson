@@ -1,6 +1,6 @@
 # Recall Domain
 
-Last verified: 2026-05-06
+Last verified: 2026-05-13
 
 ## Purpose
 
@@ -10,7 +10,7 @@ so the agent has contextual awareness without the user re-stating prior knowledg
 ## Contracts
 
 - **Exposes**: `performRecall(message, deps) -> RecallResult | null`, `RecallDeps`, `RecallFragment`, `RecallResult`, `DecompositionResult`
-- **Guarantees**: Returns null (not error) when guards fail (short message, no embeddings, empty store). Fragments filtered to `knowledge:`, `skill:`, `archive:` prefixes only -- never leaks `self`, `operator`, or `task:*`. Total tokens never exceed `tokenBudget`. Graceful fallback when SubAgentLLM is missing or fails.
+- **Guarantees**: Returns null (not error) when guards fail (short message, no embeddings, empty store). Fragments filtered to `knowledge:`, `skill:`, `context:`, `archive:` prefixes only -- never leaks `self`, `operator`, or `task:*`. Total tokens never exceed `tokenBudget`. Graceful fallback when SubAgentLLM is missing or fails.
 - **Expects**: `Store` with `docList` and `docSearch`. `EmbeddingProvider` for semantic search (returns null without one). `SubAgentLLM` optional (falls back to raw message as single query).
 
 ## Dependencies
