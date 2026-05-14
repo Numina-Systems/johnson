@@ -82,7 +82,7 @@ Handles session lifecycle: classification, archival, and pruning. Follows the Fu
 - **Archive** (`archive.ts`) — Functional Core. Pure functions for session archival logic: `slugify()` (title to kebab-case), `buildArchiveRkey()` (format: `archive:session:<slug>:<datetime>`), `classifySession()` (delete if empty+>24h, archive if messages+>3d, else active), `formatArchiveDocument()` (markdown with YAML frontmatter + optional summary + transcript).
 - **Archiver** (`archiver.ts`) — Imperative Shell. `archiveSession()` loads a session, optionally generates a summary via `SubAgentLLM`, formats the archive document, upserts it as a document, generates embeddings if available, then deletes the original session. `pruneSessions()` iterates all sessions, classifies each, and applies the appropriate action (delete/archive/skip).
 
-Archive documents are stored with rkey prefix `archive:session:` (distinct from compaction's `archive:<timestamp>` prefix) and include YAML frontmatter with title, date range, and message count.
+Archive documents are stored with rkey prefix `archive:session:` (distinct from compaction's `context:<sessionId>:<timestamp>` prefix) and include YAML frontmatter with title, date range, and message count.
 
 ### Persistent Store (`src/store/store.ts`)
 
