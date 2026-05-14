@@ -3,7 +3,7 @@
 import type { ArchivistSnapshot, ChangeSet } from './types.ts';
 import type { Store } from '@/store/store.ts';
 
-const IMMUTABLE_PREFIXES = ['ref:', 'skill:', 'customtool:'] as const;
+const IMMUTABLE_PREFIXES = ['ref:', 'skill:', 'customtool:', 'context:'] as const;
 export const STATE_RKEY = 'archivist:state';
 
 export function isImmutable(rkey: string): boolean {
