@@ -179,6 +179,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       const compacted = await compactContext(history, {
         store: deps.store,
         subAgent: deps.subAgent,
+        sessionId: options?.sessionId,
       });
       // Replace history with compacted context + current user message
       const currentMessage = history[history.length - 1];
