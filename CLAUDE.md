@@ -96,7 +96,7 @@ The agent's memory is a flat document store: `rkey → content`. Conventional rk
 - `skill:<name>` — reusable TypeScript skills
 - `customtool:<name>` — user-created custom tools (hash-based approval)
 - `task:<name>` — task state
-- `archive:<timestamp>` — context compaction snapshots
+- `context:<sessionId>:<timestamp>` — session-scoped context compaction snapshots
 - `archive:session:<slug>:<datetime>` — archived conversation sessions (from session management)
 - `ref:<name>` — reference documents (books, PDFs, etc.; migrated from `knowledge:*` and immutable)
 - `ref:<name>:chunk:<i>` — chunked reference documents
@@ -106,11 +106,12 @@ The agent's memory is a flat document store: `rkey → content`. Conventional rk
 - `archivist:state` — archivist snapshot state (internal)
 - `archivist:log` — append-only archivist run log
 - `archivist:ref-migration` — marker for ref migration idempotency
+- `archivist:compaction-migration` — marker for compaction archive migration idempotency
 - `index:*` — semantic indices (future)
 
 The `self` document is auto-loaded each turn: `agent.ts` reads it via `store.docGet('self')` and passes it to `buildSystemPrompt()` as the `selfDoc` parameter. On first run, `seedSelfDoc()` populates it with domain knowledge migrated from the former `persona.md`. The `operator` document is intentionally NOT auto-loaded to save tokens.
 
-Context compaction (`src/agent/compaction.ts`) triggers when token estimates exceed `contextBudget × contextLimit`. It saves the current conversation as an `archive:<timestamp>` document, then rebuilds context from a summary of older context docs + the 3 most recent in full.
+Context compaction (`src/agent/compaction.ts`) triggers when token estimates exceed `contextBudget × contextLimit`. It saves the current conversation as a `context:<sessionId>:<timestamp>` document scoped to the current session, then rebuilds context from a summary of the session's older context docs + the 3 most recent in full. Each session (TUI UUID, Discord channel ID, or scheduler `task:<id>`) maintains its own compaction namespace, preventing cross-session contamination. When `sessionId` is not provided, compaction uses `"default"` as fallback.
 
 ### Secrets Management (`src/secrets/manager.ts`)
 
@@ -161,14 +162,17 @@ Autonomous background knowledge maintenance subsystem that runs on a dual-schedu
 - `archivist:identity` — Archivist identity document, seeded once, used as system prompt for all sub-agent calls.
 - `archivist:log` — Append-only run log with statistics (token usage, duration, mutations applied).
 - `archivist:ref-migration` — Marker document indicating ref migration has run (one-time idempotency).
+- `archivist:compaction-migration` — Marker document indicating compaction archive migration has run (one-time idempotency).
+- `context:*` — Session-scoped compaction snapshots. Transient — archivist never modifies.
 - `index:*` — Future: semantic indices built by archivist (e.g., `index:by-topic`, `index:by-timeline`).
 - `ref:*` — Reference documents (PDFs, books, etc.) migrated from `knowledge:*`. Immutable — archivist never modifies.
 
 **Immutability Boundaries:**
-The archivist respects three immutable prefixes and never modifies documents within them:
+The archivist respects four immutable prefixes and never modifies documents within them:
 - `ref:*` — Reference materials (books, PDFs). Migrated once, updated only by ingest tool with `reference` intent.
 - `skill:*` — Reusable skills. User-controlled, require grants.
 - `customtool:*` — Custom tools. User-controlled, require hash-based approval.
+- `context:*` — Session-scoped compaction snapshots. Transient context managed by compaction, not durable knowledge.
 
 All archivist mutations are marked with `<!-- archivist-managed -->` for identification.
 
