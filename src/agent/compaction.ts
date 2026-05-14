@@ -1,7 +1,7 @@
 // pattern: Imperative Shell — context compaction via SQLite store
 //
 // When conversation token count exceeds contextBudget × contextLimit:
-// 1. Save full conversation to store as archive:<timestamp> document
+// 1. Save full conversation to store as context:<sessionId>:<timestamp> document
 // 2. Load the 2-3 most recent context documents (full text)
 // 3. Summarize all older context documents into one paragraph
 // 4. Return rebuilt context for the agent to continue with
@@ -12,7 +12,7 @@ import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { Store } from '../store/store.ts';
 import { estimateTokens } from './context.ts';
 
-const CONTEXT_PREFIX = 'archive:';
+const CONTEXT_PREFIX = 'context:';
 const RECENT_NOTES_COUNT = 3;
 
 /**
@@ -48,19 +48,20 @@ export function formatConversation(messages: ReadonlyArray<Message>): string {
 /**
  * Generate a timestamp-based rkey for context documents.
  */
-function contextRkey(): string {
+function contextRkey(sessionId: string): string {
   const now = new Date();
   const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  return `${CONTEXT_PREFIX}${ts}`;
+  return `${CONTEXT_PREFIX}${sessionId}:${ts}`;
 }
 
 /**
  * List all context documents sorted by rkey (oldest first).
  */
-function listContextDocs(store: Store): Array<{ rkey: string; content: string }> {
+function listContextDocs(store: Store, sessionId: string): Array<{ rkey: string; content: string }> {
+  const prefix = `${CONTEXT_PREFIX}${sessionId}:`;
   const result = store.docList(500);
   return result.documents
-    .filter((d) => d.rkey.startsWith(CONTEXT_PREFIX))
+    .filter((d) => d.rkey.startsWith(prefix))
     .sort((a, b) => a.rkey.localeCompare(b.rkey))
     .map((d) => ({ rkey: d.rkey, content: d.content }));
 }
@@ -114,7 +115,7 @@ async function summarizeOlderContext(
 
 /**
  * Perform context compaction:
- * 1. Save current conversation to store as context/<timestamp> document
+ * 1. Save current conversation to store as context/<sessionId>/<timestamp> document
  * 2. Load 2-3 most recent context documents (full text)
  * 3. Summarize all older context documents
  * 4. Return messages to inject into the fresh context
@@ -124,15 +125,18 @@ export async function compactContext(
   deps: {
     store: Store;
     subAgent: SubAgentLLM;
+    sessionId?: string;
   },
 ): Promise<Array<Message>> {
+  const sid = deps.sessionId ?? 'default';
+
   // 1. Save current conversation
-  const rkey = contextRkey();
+  const rkey = contextRkey(sid);
   const conversationText = formatConversation(messages);
   deps.store.docUpsert(rkey, conversationText);
 
   // 2. Load all context documents (sorted oldest→newest)
-  const allDocs = listContextDocs(deps.store);
+  const allDocs = listContextDocs(deps.store, sid);
 
   // 3. Split into recent (full text) and older (to summarize)
   const recentDocs = allDocs.slice(-RECENT_NOTES_COUNT);
