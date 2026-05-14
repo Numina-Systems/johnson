@@ -207,6 +207,7 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
       const result = await deps.agent.chat(prompt, {
         context,
         conversationOverride: history,
+        sessionId,
       });
       output = result.text;
       success = true;
