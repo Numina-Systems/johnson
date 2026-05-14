@@ -37,6 +37,10 @@ describe('state module', () => {
     test('returns false for operator', () => {
       expect(isImmutable('operator')).toBe(false);
     });
+
+    test('returns true for context: prefix', () => {
+      expect(isImmutable('context:abc:2026-05-13T12-00-00')).toBe(true);
+    });
   });
 
   describe('computeChangeSet', () => {
@@ -210,6 +214,20 @@ describe('state module', () => {
       expect(filtered.modified).toEqual(['knowledge:modified-doc']);
       expect(filtered.deleted).toEqual(['knowledge:deleted-doc']);
       expect(filtered.unchanged).toEqual(['skill:unchanged-skill', 'knowledge:unchanged-doc']);
+    });
+
+    test('removes context: rkeys from all changeset lists', () => {
+      const changeSet = {
+        added: ['context:session-1:2026-05-13T12-00-00', 'knowledge:real-doc'],
+        modified: ['context:session-2:2026-05-13T13-00-00'],
+        deleted: ['context:default:2026-05-13T14-00-00'],
+        unchanged: ['context:session-1:2026-05-13T11-00-00'],
+      };
+      const filtered = filterMutable(changeSet);
+      expect(filtered.added).toEqual(['knowledge:real-doc']);
+      expect(filtered.modified).toEqual([]);
+      expect(filtered.deleted).toEqual([]);
+      expect(filtered.unchanged).toEqual(['context:session-1:2026-05-13T11-00-00']);
     });
   });
 

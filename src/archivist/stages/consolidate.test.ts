@@ -65,6 +65,10 @@ describe('consolidate.ts - pure functions', () => {
     it('returns false for other documents', () => {
       expect(isArchiveRkey('skill:typescript')).toBe(false);
     });
+
+    it('returns false for context: prefix', () => {
+      expect(isArchiveRkey('context:session-1:2026-05-13T12-00-00')).toBe(false);
+    });
   });
 
   describe('isConsolidatedRkey', () => {
