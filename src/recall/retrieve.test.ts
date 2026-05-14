@@ -43,12 +43,6 @@ describe('filterByPrefix', () => {
     expect(result).toHaveLength(1);
   });
 
-  test('reflexive-recall.AC3.1: allows context: prefix', () => {
-    const fragments = [createMockFragment('context:session-1:2025-01-01T00-00-00')];
-    const result = filterByPrefix(fragments);
-    expect(result).toHaveLength(1);
-  });
-
   test('reflexive-recall.AC3.1: allows archive: prefix', () => {
     const fragments = [createMockFragment('archive:2024-01-01')];
     const result = filterByPrefix(fragments);
@@ -85,15 +79,13 @@ describe('filterByPrefix', () => {
       createMockFragment('operator'),
       createMockFragment('skill:b'),
       createMockFragment('self'),
-      createMockFragment('context:session-1:2025-01-01T00-00-00'),
       createMockFragment('archive:c'),
     ];
     const result = filterByPrefix(fragments);
-    expect(result).toHaveLength(4);
+    expect(result).toHaveLength(3);
     expect(result[0]!.rkey).toBe('knowledge:a');
     expect(result[1]!.rkey).toBe('skill:b');
-    expect(result[2]!.rkey).toBe('context:session-1:2025-01-01T00-00-00');
-    expect(result[3]!.rkey).toBe('archive:c');
+    expect(result[2]!.rkey).toBe('archive:c');
   });
 
   test('accepts custom allowed prefixes', () => {

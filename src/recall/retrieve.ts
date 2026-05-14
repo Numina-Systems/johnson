@@ -29,7 +29,6 @@ export type RecallResult = {
 const DEFAULT_ALLOWED_PREFIXES: ReadonlyArray<string> = [
   'knowledge:',
   'skill:',
-  'context:',
   'archive:',
 ];
 

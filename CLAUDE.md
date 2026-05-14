@@ -191,7 +191,7 @@ Automatic context retrieval pipeline that runs on each `chat()` call (when `reca
 
 - **Orchestrator** (`index.ts`) — Imperative Shell. Guards: skips if message < 10 chars, no embedding provider, or empty store. Falls back gracefully: no SubAgentLLM uses raw message as query; LLM failure caught and falls back similarly.
 - **Decomposition** (`decompose.ts` + `decompose-message.ts`) — Decomposes user message into semantic queries (1-4) and named entities via SubAgentLLM. Functional Core parses/validates JSON response; Imperative Shell handles LLM call.
-- **Retrieval** (`retrieve.ts`) — Functional Core. Runs semantic queries via `hybridSearch` (up to 5 results per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `context:`, `archive:`), sorts by score, and trims to token budget. Returns `RecallResult`.
+- **Retrieval** (`retrieve.ts`) — Functional Core. Runs semantic queries via `hybridSearch` (up to 5 results per query) and entity FTS lookups (up to 3 per entity), deduplicates by rkey, filters to allowed prefixes (`knowledge:`, `skill:`, `archive:`), sorts by score, and trims to token budget. Returns `RecallResult`.
 
 Recalled fragments are injected into the system prompt as a `## Recalled Context` section via `buildSystemPrompt()` in `src/agent/prompt.ts`, passed as the `recalledContext` field of `SystemPromptParams`.
 
