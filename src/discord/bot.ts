@@ -112,6 +112,30 @@ export function createDiscordBot(
   // Load persisted managed threads from the store
   const managedThreads = store.getManagedThreadIds();
 
+  // Track channels with pending messages (for mailbox interrupt)
+  const pendingChannels = new Set<string>();
+
+  // Debounce timers per channel — coalesces rapid-fire messages
+  const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const DEBOUNCE_MS = 500;
+
+  function debouncedProcess(
+    content: string,
+    channelId: string,
+    authorId: string,
+    reply: (text: string) => Promise<void>,
+    images?: ChatImage[],
+  ): void {
+    const existing = debounceTimers.get(channelId);
+    if (existing) clearTimeout(existing);
+
+    debounceTimers.set(channelId, setTimeout(() => {
+      debounceTimers.delete(channelId);
+      processMessage(content, channelId, authorId, reply, images)
+        .catch((err) => log('Unhandled error in debounced message handler:', err));
+    }, DEBOUNCE_MS));
+  }
+
   const prefix = config.prefix ?? '!';
   // Empty array = allow all (null means no filtering)
   const allowedSet = config.allowedChannels && config.allowedChannels.length > 0
@@ -155,6 +179,9 @@ export function createDiscordBot(
 
     if (!processed) return;
 
+    // Signal any in-flight agent call for this channel to interrupt
+    pendingChannels.add(channelId);
+
     // Handle reset command
     if (processed === 'reset') {
       store.clearMessages(channelId);
@@ -186,11 +213,13 @@ export function createDiscordBot(
         } catch { /* ignore */ }
       }, 8_000);
 
+      pendingChannels.delete(channelId);
       const result = await agent.chat(processed, {
         context: { channelId },
         images,
         conversationOverride: history,
         sessionId: channelId,
+        shouldInterrupt: () => pendingChannels.has(channelId),
       });
       const response = result.text;
 
@@ -241,7 +270,7 @@ export function createDiscordBot(
       // Extract images from Discord attachments
       const images = await extractDiscordImages(msg);
 
-      await processMessage(
+      debouncedProcess(
         msg.content,
         msg.channelId,
         msg.author.id,
@@ -287,7 +316,7 @@ export function createDiscordBot(
     } catch (err) {
       // Fall back to replying in-channel if thread creation fails
       log(`Failed to create thread, replying in-channel: ${err}`);
-      await processMessage(
+      debouncedProcess(
         msg.content,
         msg.channelId,
         msg.author.id,
@@ -299,7 +328,7 @@ export function createDiscordBot(
       return;
     }
 
-    await processMessage(
+    debouncedProcess(
       msg.content,
       thread.id,
       msg.author.id,
@@ -368,7 +397,7 @@ export function createDiscordBot(
         }
       };
 
-      await processMessage(content, channelId, authorId, reply, dmImages);
+      debouncedProcess(content, channelId, authorId, reply, dmImages);
     } catch (err) {
       log('Error handling raw DM:', err);
     }

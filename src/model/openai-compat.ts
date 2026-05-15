@@ -51,6 +51,9 @@ type OpenAIResponse = {
   usage: {
     prompt_tokens: number;
     completion_tokens: number;
+    prompt_tokens_details?: {
+      cached_tokens?: number;
+    };
   };
 };
 
@@ -298,12 +301,16 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
         ? choice.message.reasoning_content
         : undefined;
 
+      const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens ?? null;
+
       return {
         content: mapResponseContent(choice),
         stop_reason: mapFinishReason(choice.finish_reason),
         usage: {
           input_tokens: data.usage.prompt_tokens,
           output_tokens: data.usage.completion_tokens,
+          cache_read_input_tokens: cachedTokens,
+          cache_creation_input_tokens: null,
         },
         reasoning_content,
       };

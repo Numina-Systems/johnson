@@ -19,11 +19,19 @@ export function formatStats(stats: ChatStats): string {
   const ctxPct = Math.round((stats.contextEstimate / stats.contextLimit) * 100);
   const secs = (stats.durationMs / 1000).toFixed(1);
 
-  return [
+  const parts = [
     `ctx ${fmtTokens(stats.contextEstimate)}/${fmtTokens(stats.contextLimit)} (${ctxPct}%)`,
     `in ${fmtTokens(stats.inputTokens)}`,
     `out ${fmtTokens(stats.outputTokens)}`,
-    `calls ${stats.rounds}`,
-    `${secs}s`,
-  ].join(' · ');
+  ];
+
+  if (stats.cacheReadTokens > 0 || stats.cacheCreationTokens > 0) {
+    const hitPct = stats.inputTokens > 0
+      ? Math.round(stats.cacheReadTokens / stats.inputTokens * 100)
+      : 0;
+    parts.push(`cache ${hitPct}%`);
+  }
+
+  parts.push(`calls ${stats.rounds}`, `${secs}s`);
+  return parts.join(' · ');
 }

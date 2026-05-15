@@ -34,6 +34,8 @@ export type AgentConfig = {
 export type ChatStats = {
   readonly inputTokens: number;
   readonly outputTokens: number;
+  readonly cacheCreationTokens: number;
+  readonly cacheReadTokens: number;
   readonly contextEstimate: number;  // estimated context size in tokens
   readonly contextLimit: number;     // configured context budget
   readonly rounds: number;           // number of model calls
@@ -87,6 +89,7 @@ export type ChatOptions = {
   readonly conversationOverride?: Array<Message>;
   readonly onEvent?: (event: AgentEvent) => Promise<void>;
   readonly sessionId?: string;
+  readonly shouldInterrupt?: () => boolean;
 };
 
 export type Agent = {

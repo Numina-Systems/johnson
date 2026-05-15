@@ -1,5 +1,6 @@
 // pattern: Imperative Shell — agent loop with execute_code dispatch
 
+import { createHash } from 'node:crypto';
 import type {
   Message,
   ToolUseBlock,
@@ -16,6 +17,10 @@ import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 import { maybeGenerateSessionTitle } from './session-title.ts';
 import { performRecall } from '../recall/index.ts';
+
+function quickHash(content: string): string {
+  return createHash('sha256').update(content).digest('hex').slice(0, 16);
+}
 
 const EXECUTE_CODE_TOOL: ToolDefinition = {
   name: 'execute_code',
@@ -147,6 +152,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Track cumulative stats across rounds
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let totalCacheCreation = 0;
+    let totalCacheRead = 0;
     let rounds = 0;
 
     // d. Append user message
@@ -204,8 +211,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       }
     }
 
-    // Build system prompt directly — no provider indirection
-    const selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+    // Build system prompt — track selfDoc hash to detect changes during tool loop
+    let selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+    let selfDocHash = quickHash(selfDoc);
     const allDocs = deps.store.docList(500);
     const skillNames = allDocs.documents
       .filter(d => d.rkey.startsWith('skill:'))
@@ -219,7 +227,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       ? deps.secrets.listKeys()
       : undefined;
 
-    const systemPrompt = buildSystemPrompt({
+    let systemPrompt = buildSystemPrompt({
       selfDoc,
       skillNames,
       toolDocs,
@@ -233,6 +241,27 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // e. Tool loop
     let exitedNormally = false;
     for (let round = 0; round < deps.config.maxToolRounds; round++) {
+      // Check if selfDoc was modified by tool execution — rebuild prompt if so
+      if (round > 0) {
+        const currentSelfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
+        const currentHash = quickHash(currentSelfDoc);
+        if (currentHash !== selfDocHash) {
+          selfDoc = currentSelfDoc;
+          selfDocHash = currentHash;
+          systemPrompt = buildSystemPrompt({
+            selfDoc,
+            skillNames,
+            toolDocs,
+            timezone: deps.config.timezone,
+            recalledContext,
+            customToolSummaries,
+            secretNames,
+            nativeToolNames: nativeTools.map(t => t.name),
+          });
+          log('[agent] selfDoc changed during tool loop, rebuilt system prompt');
+        }
+      }
+
       let response;
       try {
         await emit('llm_start', { round });
@@ -256,6 +285,15 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       rounds++;
       totalInputTokens += response.usage.input_tokens;
       totalOutputTokens += response.usage.output_tokens;
+      totalCacheCreation += response.usage.cache_creation_input_tokens ?? 0;
+      totalCacheRead += response.usage.cache_read_input_tokens ?? 0;
+
+      if (response.usage.cache_read_input_tokens || response.usage.cache_creation_input_tokens) {
+        const hitRatio = response.usage.input_tokens > 0
+          ? ((response.usage.cache_read_input_tokens ?? 0) / response.usage.input_tokens * 100).toFixed(1)
+          : '0.0';
+        log(`[agent] cache: read=${response.usage.cache_read_input_tokens ?? 0} created=${response.usage.cache_creation_input_tokens ?? 0} hit=${hitRatio}%`);
+      }
 
       await emit('llm_done', { round, usage: response.usage, stop_reason: response.stop_reason });
 
@@ -326,6 +364,13 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
           // Append tool results as user message
           history.push({ role: 'user', content: toolResults });
+
+          // Check for pending messages between tool rounds
+          if (options?.shouldInterrupt?.()) {
+            log('[agent] interrupted by pending message, exiting tool loop');
+            exitedNormally = true;
+            break;
+          }
         } catch (err) {
           // Tool dispatch crashed — assistant message with tool_use is in history
           // but no tool_result. repairConversation will fix this next call.
@@ -357,6 +402,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       rounds++;
       totalInputTokens += finalResponse.usage.input_tokens;
       totalOutputTokens += finalResponse.usage.output_tokens;
+      totalCacheCreation += finalResponse.usage.cache_creation_input_tokens ?? 0;
+      totalCacheRead += finalResponse.usage.cache_read_input_tokens ?? 0;
 
       await emit('llm_done', {
         round: rounds - 1,
@@ -386,6 +433,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     const stats: ChatStats = {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
+      cacheCreationTokens: totalCacheCreation,
+      cacheReadTokens: totalCacheRead,
       contextEstimate,
       contextLimit: deps.config.contextLimit,
       rounds,
