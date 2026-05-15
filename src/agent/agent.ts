@@ -9,6 +9,7 @@ import type {
   ToolDefinition,
   ContentBlock,
 } from '../model/types.ts';
+import { ModelError } from '../model/types.ts';
 import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
 import { estimateTokens, repairConversation, trimOldToolResults } from './context.ts';
 import { log } from '../util/log.ts';
@@ -275,9 +276,11 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           timeout: deps.config.modelTimeout,
         });
       } catch (err) {
-        // Model call failed (socket drop, timeout, etc.)
-        // History is safe — no assistant message was added yet.
-        // Re-throw so the caller can handle it (e.g. show error to user).
+        // Model call failed — re-throw with context. ModelError preserves kind/retryable.
+        if (err instanceof ModelError) {
+          log(`[agent] model error (${err.kind}): ${err.message}`);
+          throw err;
+        }
         throw new Error(`Model call failed: ${err instanceof Error ? err.message : err}`);
       }
 

@@ -10,7 +10,7 @@ import type {
   StopReason,
   ToolDefinition,
 } from './types.ts';
-import { toolResultContentToString } from './types.ts';
+import { toolResultContentToString, ModelError, classifyHttpError, classifyFetchError } from './types.ts';
 
 type OpenAIMessage = {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -213,21 +213,6 @@ function mapResponseContent(choice: OpenAIChoice): Array<ContentBlock> {
 const MAX_RETRIES = 3;
 const BASE_DELAY_MS = 2_000;
 
-function isRetryable(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return msg.includes('model_not_loaded')
-    || msg.includes('model not loaded')
-    || msg.includes('loading model')
-    || /\b(429|502|503|504)\b/.test(msg)
-    || msg.includes('econnrefused')
-    || msg.includes('econnreset')
-    || msg.includes('etimedout')
-    || msg.includes('enotfound')
-    || msg.includes('fetch failed')
-    || err.name === 'AbortError';
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -280,7 +265,7 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`OpenAI-compat API error ${res.status}: ${text}`);
+        throw classifyHttpError(res.status, text);
       }
 
       let data: OpenAIResponse;
@@ -288,11 +273,11 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
         const raw = await res.json();
         data = raw as OpenAIResponse;
       } catch (parseErr) {
-        throw new Error(`OpenAI-compat API returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+        throw new ModelError('parse', `OpenAI-compat API returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
       }
 
       if (!data?.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-        throw new Error(`OpenAI-compat API returned no choices. Response: ${JSON.stringify(data).slice(0, 500)}`);
+        throw new ModelError('parse', `OpenAI-compat API returned no choices. Response: ${JSON.stringify(data).slice(0, 500)}`);
       }
 
       const choice = data.choices[0]!;
@@ -321,18 +306,18 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
-      let lastErr: unknown;
+      let lastErr: ModelError | undefined;
       for (let i = 0; i <= MAX_RETRIES; i++) {
         try {
           return await attempt(request);
         } catch (err) {
-          lastErr = err;
-          if (i < MAX_RETRIES && isRetryable(err)) {
+          lastErr = classifyFetchError(err);
+          if (i < MAX_RETRIES && lastErr.retryable) {
             const delay = BASE_DELAY_MS * Math.pow(2, i);
             await sleep(delay);
             continue;
           }
-          throw err;
+          throw lastErr;
         }
       }
       throw lastErr;

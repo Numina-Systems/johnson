@@ -113,6 +113,8 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
         ? join(DENO_DIR, `_constellation_${execId}_tools.ts`)
         : null;
 
+      const startTime = performance.now();
+      let timedOut = false;
       try {
         if (stubsFile && stubsCode) {
           await Bun.write(stubsFile, stubsCode);
@@ -127,11 +129,9 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
         // Build permission flags
         const permFlags = buildPermissionFlags(config);
 
-        const startTime = performance.now();
-
         // Spawn deno with timeout via AbortController
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), config.timeoutMs);
+        const timeoutId = setTimeout(() => { timedOut = true; controller.abort(); }, config.timeoutMs);
 
         const proc = Bun.spawn(['deno', 'run', ...permFlags, tempFile], {
           cwd: config.workingDir,
@@ -245,6 +245,15 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
             stderr = stderr.slice(0, config.maxOutputSize);
           }
 
+          if (timedOut) {
+            return {
+              success: false,
+              output,
+              error: `Execution timed out after ${config.timeoutMs}ms`,
+              duration_ms,
+            };
+          }
+
           return {
             success: exitCode === 0,
             output,
@@ -265,7 +274,7 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
             stderr = stderrBuf;
           } catch {
             stdout = '';
-            stderr = 'Execution timed out';
+            stderr = `Execution timed out after ${config.timeoutMs}ms`;
           }
 
           clearTimeout(timeoutId);
@@ -290,14 +299,14 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const duration_ms = Math.round(performance.now() - startTime);
 
-        // Handle abort/timeout specifically
-        if (message.includes('abort')) {
+        if (timedOut || (err instanceof Error && err.name === 'AbortError')) {
           return {
             success: false,
             output: '',
             error: `Execution timed out after ${config.timeoutMs}ms`,
-            duration_ms: config.timeoutMs,
+            duration_ms,
           };
         }
 
@@ -305,7 +314,7 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
           success: false,
           output: '',
           error: message,
-          duration_ms: 0,
+          duration_ms,
         };
       } finally {
         await unlink(tempFile).catch(() => {});
