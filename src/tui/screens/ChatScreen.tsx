@@ -1,7 +1,7 @@
 // pattern: UI Shell — chat interface with event-driven status
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { Box, Text, useInput, useApp, useWindowSize } from 'ink';
 import TextInput from 'ink-text-input';
 import Spinner from 'ink-spinner';
 import type { Agent } from '../../agent/types.ts';
@@ -31,6 +31,10 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
   const [isThinking, setIsThinking] = useState(false);
   const [status, setStatus] = useState('Ready');
   const [inputValue, setInputValue] = useState('');
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const pinnedToBottom = useRef(true);
+  const { rows } = useWindowSize();
+  const APPROX_VISIBLE_MSGS = Math.max(3, Math.floor((rows - 6) / 3));
 
   useEffect(() => {
     const stored = store.getMessages(sessionId, 200);
@@ -39,7 +43,15 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
       text: m.content,
     }));
     setMessages(loaded);
-  }, [sessionId, store]);
+    setScrollOffset(Math.max(0, loaded.length - APPROX_VISIBLE_MSGS));
+    pinnedToBottom.current = true;
+  }, [sessionId, store, APPROX_VISIBLE_MSGS]);
+
+  useEffect(() => {
+    if (pinnedToBottom.current) {
+      setScrollOffset(Math.max(0, messages.length - APPROX_VISIBLE_MSGS));
+    }
+  }, [messages.length, APPROX_VISIBLE_MSGS]);
 
 
   const handleSubmit = useCallback(
@@ -75,6 +87,7 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
         return;
       }
 
+      pinnedToBottom.current = true;
       setMessages((prev) => [...prev, { role: 'user', text: input }]);
       store.appendMessage(sessionId, 'user', input);
       setIsThinking(true);
@@ -121,6 +134,8 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     [agent, isThinking, exit, store, sessionId],
   );
 
+  const maxOffset = Math.max(0, messages.length - APPROX_VISIBLE_MSGS);
+
   useInput((input, key) => {
     if (key.ctrl && input === 'c') {
       exit();
@@ -128,6 +143,33 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
     }
     if (key.escape && !isThinking) {
       onBack();
+      return;
+    }
+
+    if (key.shift && key.upArrow) {
+      setScrollOffset((o) => {
+        const next = Math.max(o - 1, 0);
+        pinnedToBottom.current = next >= maxOffset;
+        return next;
+      });
+    } else if (key.shift && key.downArrow) {
+      setScrollOffset((o) => {
+        const next = Math.min(o + 1, maxOffset);
+        pinnedToBottom.current = next >= maxOffset;
+        return next;
+      });
+    } else if (key.pageUp) {
+      setScrollOffset((o) => {
+        const next = Math.max(o - APPROX_VISIBLE_MSGS, 0);
+        pinnedToBottom.current = next >= maxOffset;
+        return next;
+      });
+    } else if (key.pageDown) {
+      setScrollOffset((o) => {
+        const next = Math.min(o + APPROX_VISIBLE_MSGS, maxOffset);
+        pinnedToBottom.current = next >= maxOffset;
+        return next;
+      });
     }
   });
 
@@ -158,15 +200,21 @@ export default function ChatScreen(props: ChatScreenProps): React.ReactElement {
       footer={footerContent}
       footerHeight={1}
       statusKeys={[
-        { key: '/reset', label: '' },
-        { key: '/help', label: '' },
-        { key: '/quit', label: '' },
+        { key: 'S-↑↓', label: 'scroll' },
+        { key: 'PgUp/Dn', label: 'page' },
         { key: 'Esc', label: 'back' },
       ]}
       statusText={status}
     >
-      {messages.map((msg, i) => (
-        <Box key={i} marginBottom={0}>
+      {scrollOffset > 0 && (
+        <Box>
+          <Text color={theme.muted} dimColor>
+            ↑ {scrollOffset} message{scrollOffset !== 1 ? 's' : ''} above — Shift+↑ to scroll
+          </Text>
+        </Box>
+      )}
+      {messages.slice(scrollOffset).map((msg, i) => (
+        <Box key={scrollOffset + i} marginBottom={0}>
           {msg.role === 'user' && (
             <Text wrap="wrap">
               <Text color={theme.userMsg} bold>

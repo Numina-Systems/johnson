@@ -143,7 +143,7 @@ describe('compactContext', () => {
     await compactContext(messages, { store, subAgent, sessionId: 'test-session' });
 
     expect(upserts.length).toBeGreaterThanOrEqual(1);
-    expect(upserts[0]!.rkey).toMatch(/^context:test-session:\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/);
+    expect(upserts[0]!.rkey).toMatch(/^context:test-session:\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}-\d{3}$/);
   });
 
   test('sessions do not see each other\'s context documents', async () => {

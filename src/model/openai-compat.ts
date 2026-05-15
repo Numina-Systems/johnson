@@ -207,6 +207,28 @@ function mapResponseContent(choice: OpenAIChoice): Array<ContentBlock> {
   return blocks;
 }
 
+const MAX_RETRIES = 3;
+const BASE_DELAY_MS = 2_000;
+
+function isRetryable(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message.toLowerCase();
+  return msg.includes('model_not_loaded')
+    || msg.includes('model not loaded')
+    || msg.includes('loading model')
+    || /\b(429|502|503|504)\b/.test(msg)
+    || msg.includes('econnrefused')
+    || msg.includes('econnreset')
+    || msg.includes('etimedout')
+    || msg.includes('enotfound')
+    || msg.includes('fetch failed')
+    || err.name === 'AbortError';
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function createOpenAICompatProvider(config: Readonly<ModelConfig>): ModelProvider {
   const apiKey = config.apiKey ?? process.env['OPENAI_COMPAT_API_KEY'];
   const baseUrl = config.baseUrl;
@@ -217,78 +239,96 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
 
   const endpoint = baseUrl.replace(/\/+$/, '') + '/chat/completions';
 
+  async function attempt(request: Readonly<ModelRequest>): Promise<ModelResponse> {
+    const body: Record<string, unknown> = {
+      model: request.model,
+      max_tokens: request.max_tokens,
+      messages: convertMessages(request.messages, request.system),
+    };
+
+    if (request.tools && request.tools.length > 0) {
+      body.tools = convertTools(request.tools);
+    }
+
+    if (request.temperature !== undefined) {
+      body.temperature = request.temperature;
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      request.timeout ?? 120_000,
+    );
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`OpenAI-compat API error ${res.status}: ${text}`);
+      }
+
+      let data: OpenAIResponse;
+      try {
+        const raw = await res.json();
+        data = raw as OpenAIResponse;
+      } catch (parseErr) {
+        throw new Error(`OpenAI-compat API returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+      }
+
+      if (!data?.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+        throw new Error(`OpenAI-compat API returned no choices. Response: ${JSON.stringify(data).slice(0, 500)}`);
+      }
+
+      const choice = data.choices[0]!;
+
+      const reasoning_content = typeof choice.message.reasoning_content === 'string' && choice.message.reasoning_content.length > 0
+        ? choice.message.reasoning_content
+        : undefined;
+
+      return {
+        content: mapResponseContent(choice),
+        stop_reason: mapFinishReason(choice.finish_reason),
+        usage: {
+          input_tokens: data.usage.prompt_tokens,
+          output_tokens: data.usage.completion_tokens,
+        },
+        reasoning_content,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
-      const body: Record<string, unknown> = {
-        model: request.model,
-        max_tokens: request.max_tokens,
-        messages: convertMessages(request.messages, request.system),
-      };
-
-      if (request.tools && request.tools.length > 0) {
-        body.tools = convertTools(request.tools);
-      }
-
-      if (request.temperature !== undefined) {
-        body.temperature = request.temperature;
-      }
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (apiKey) {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-      }
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        request.timeout ?? 120_000,
-      );
-
-      try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-          signal: controller.signal,
-        });
-
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`OpenAI-compat API error ${res.status}: ${text}`);
-        }
-
-        let data: OpenAIResponse;
+      let lastErr: unknown;
+      for (let i = 0; i <= MAX_RETRIES; i++) {
         try {
-          const raw = await res.json();
-          data = raw as OpenAIResponse;
-        } catch (parseErr) {
-          throw new Error(`OpenAI-compat API returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+          return await attempt(request);
+        } catch (err) {
+          lastErr = err;
+          if (i < MAX_RETRIES && isRetryable(err)) {
+            const delay = BASE_DELAY_MS * Math.pow(2, i);
+            await sleep(delay);
+            continue;
+          }
+          throw err;
         }
-
-        if (!data?.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-          throw new Error(`OpenAI-compat API returned no choices. Response: ${JSON.stringify(data).slice(0, 500)}`);
-        }
-
-        const choice = data.choices[0]!;
-
-        const reasoning_content = typeof choice.message.reasoning_content === 'string' && choice.message.reasoning_content.length > 0
-          ? choice.message.reasoning_content
-          : undefined;
-
-        return {
-          content: mapResponseContent(choice),
-          stop_reason: mapFinishReason(choice.finish_reason),
-          usage: {
-            input_tokens: data.usage.prompt_tokens,
-            output_tokens: data.usage.completion_tokens,
-          },
-          reasoning_content,
-        };
-      } finally {
-        clearTimeout(timeoutId);
       }
+      throw lastErr;
     },
   };
 }

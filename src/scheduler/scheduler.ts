@@ -12,7 +12,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { Cron } from "croner";
-import type { ScheduledTask, TaskRun, TaskState, TaskStore } from "./types.ts";
+import type { ScheduledTask, TaskRun, TaskState, TaskStore, TaskUpdate } from "./types.ts";
 import type { Agent, ChatContext } from "../agent/types.ts";
 import { loadConversation } from "../agent/messages.ts";
 import type { CodeRuntime } from "../runtime/types.ts";
@@ -79,6 +79,14 @@ function truncateForDiscord(text: string, maxLen: number = 1900): string {
 
 export function createScheduler(deps: SchedulerDeps): TaskStore {
   const tasks = new Map<string, LiveTask>();
+  const inFlight = new Set<Promise<void>>();
+
+  function trackRun(live: LiveTask): void {
+    const p = runTask(live).catch((err) => {
+      log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
+    }).finally(() => inFlight.delete(p));
+    inFlight.add(p);
+  }
 
   /**
    * Resolve granted secrets for a skill → env var map.
@@ -117,159 +125,137 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
   }
 
   async function runTask(live: LiveTask): Promise<void> {
-    // Skip if previous run is still in-flight
     if (live.running) {
-      log(
-        `[scheduler] Skipping "${live.state.name}" — previous run still in-flight`,
-      );
+      log(`[scheduler] Skipping "${live.state.name}" — previous run still in-flight`);
       return;
     }
     live.running = true;
 
-    const startedAt = new Date().toISOString();
-    const start = performance.now();
-
-    log(`[scheduler] Firing "${live.state.name}"`);
-
-    let output: string;
-    let success: boolean;
-
     try {
-      // Phase 1: Run trigger if present
-      let triggerData: string | null = null;
+      const startedAt = new Date().toISOString();
+      const start = performance.now();
 
-      if (live.state.trigger) {
-        if (!deps.runtime) {
-          log(
-            `[scheduler] Task "${live.state.name}" has trigger but no runtime — skipping`,
-          );
-          live.running = false;
-          return;
-        }
+      log(`[scheduler] Firing "${live.state.name}"`);
 
-        const env = resolveSecrets(live.state.skill);
-        const result = await deps.runtime.execute(live.state.trigger, env);
+      let output: string;
+      let success: boolean;
 
-        if (!result.success) {
-          log(
-            `[scheduler] Trigger failed for "${live.state.name}": ${result.error}`,
-          );
-          // Record the failure but don't fire the prompt
-          const durationMs = Math.round(performance.now() - start);
-          live.state = {
-            ...live.state,
-            lastRun: {
-              taskId: live.state.id,
-              startedAt,
-              output: `Trigger error: ${result.error}`,
-              success: false,
-              durationMs,
-            },
-            runCount: live.state.runCount + 1,
-          };
-          persist().catch(() => {});
-          live.running = false;
-          return;
-        }
-
-        const trimmed = (result.output ?? "").trim();
-        if (!trimmed) {
-          // Trigger produced nothing — skip silently
-          log(
-            `[scheduler] Trigger for "${live.state.name}" returned empty — skipping`,
-          );
-          if (result.error) {
-            log(`[scheduler] Trigger stderr: ${result.error.slice(0, 2000)}`);
-          }
-          live.running = false;
-          return;
-        }
-
-        triggerData = trimmed;
-      }
-
-      // Phase 2: Fire prompt through agent with persistent session
-      const sessionId = `task:${live.state.id}`;
-      const context: ChatContext = { channelId: live.state.deliverTo };
-
-      const prompt = triggerData
-        ? `Context from trigger:\n${triggerData}\n\n${live.state.prompt}`
-        : live.state.prompt;
-
-      // Load run-to-run conversation history for this task
-      let history: import("../model/types.ts").Message[] = [];
-      if (deps.store) {
-        deps.store.ensureSession(sessionId, live.state.name);
-        history = loadConversation(deps.store, sessionId);
-        deps.store.appendMessage(sessionId, 'user', prompt);
-      }
-
-      const result = await deps.agent.chat(prompt, {
-        context,
-        conversationOverride: history,
-        sessionId,
-      });
-      output = result.text;
-      success = true;
-
-      // Save agent response for run-to-run memory
-      if (deps.store) {
-        deps.store.appendMessage(sessionId, 'assistant', output);
-      }
-    } catch (err) {
-      output = `Error: ${err instanceof Error ? err.message : String(err)}`;
-      success = false;
-      log(`[scheduler] Task "${live.state.name}" failed: ${output}`);
-    }
-
-    const durationMs = Math.round(performance.now() - start);
-    const run: TaskRun = {
-      taskId: live.state.id,
-      startedAt,
-      output,
-      success,
-      durationMs,
-    };
-
-    live.state = {
-      ...live.state,
-      lastRun: run,
-      runCount: live.state.runCount + 1,
-    };
-
-    log(
-      `[scheduler] "${live.state.name}" completed in ${durationMs}ms (${success ? "✅" : "❌"})`,
-    );
-
-    // Deliver to Discord
-    if (live.state.deliverTo && deps.sendDiscord && output) {
-      const header = `📋 **${live.state.name}**`;
-      const body = truncateForDiscord(output);
       try {
-        await deps.sendDiscord(live.state.deliverTo, `${header}\n${body}`);
-      } catch (err) {
-        log(`[scheduler] Failed to deliver to Discord: ${err}`);
-      }
-    }
+        let triggerData: string | null = null;
 
-    persist().catch(() => {});
-    live.running = false;
+        if (live.state.trigger) {
+          if (!deps.runtime) {
+            log(`[scheduler] Task "${live.state.name}" has trigger but no runtime — skipping`);
+            return;
+          }
+
+          const env = resolveSecrets(live.state.skill);
+          const result = await deps.runtime.execute(live.state.trigger, env);
+
+          if (!result.success) {
+            log(`[scheduler] Trigger failed for "${live.state.name}": ${result.error}`);
+            const durationMs = Math.round(performance.now() - start);
+            live.state = {
+              ...live.state,
+              lastRun: {
+                taskId: live.state.id,
+                startedAt,
+                output: `Trigger error: ${result.error}`,
+                success: false,
+                durationMs,
+              },
+              runCount: live.state.runCount + 1,
+            };
+            persist().catch((err) => log(`[scheduler] persist failed: ${err}`));
+            return;
+          }
+
+          const trimmed = (result.output ?? "").trim();
+          if (!trimmed) {
+            log(`[scheduler] Trigger for "${live.state.name}" returned empty — skipping`);
+            if (result.error) {
+              log(`[scheduler] Trigger stderr: ${result.error.slice(0, 2000)}`);
+            }
+            return;
+          }
+
+          triggerData = trimmed;
+        }
+
+        const sessionId = `task:${live.state.id}`;
+        const context: ChatContext = { channelId: live.state.deliverTo };
+
+        const prompt = triggerData
+          ? `Context from trigger:\n${triggerData}\n\n${live.state.prompt}`
+          : live.state.prompt;
+
+        let history: import("../model/types.ts").Message[] = [];
+        if (deps.store) {
+          deps.store.ensureSession(sessionId, live.state.name);
+          history = loadConversation(deps.store, sessionId);
+          deps.store.appendMessage(sessionId, 'user', prompt);
+        }
+
+        const result = await deps.agent.chat(prompt, {
+          context,
+          conversationOverride: history,
+          sessionId,
+        });
+        output = result.text;
+        success = true;
+
+        if (deps.store) {
+          deps.store.appendMessage(sessionId, 'assistant', output);
+        }
+      } catch (err) {
+        output = `Error: ${err instanceof Error ? err.message : String(err)}`;
+        success = false;
+        log(`[scheduler] Task "${live.state.name}" failed: ${output}`);
+      }
+
+      const durationMs = Math.round(performance.now() - start);
+      const run: TaskRun = {
+        taskId: live.state.id,
+        startedAt,
+        output,
+        success,
+        durationMs,
+      };
+
+      live.state = {
+        ...live.state,
+        lastRun: run,
+        runCount: live.state.runCount + 1,
+      };
+
+      log(`[scheduler] "${live.state.name}" completed in ${durationMs}ms (${success ? "✅" : "❌"})`);
+
+      if (live.state.deliverTo && deps.sendDiscord && output && !live.state.selfDelivery) {
+        const header = `📋 **${live.state.name}**`;
+        const body = truncateForDiscord(output);
+        try {
+          await deps.sendDiscord(live.state.deliverTo, `${header}\n${body}`);
+        } catch (err) {
+          log(`[scheduler] Failed to deliver to Discord: ${err}`);
+        }
+      }
+
+      persist().catch((err) => log(`[scheduler] persist failed: ${err}`));
+    } finally {
+      live.running = false;
+    }
   }
 
   function scheduleCron(task: TaskState): LiveTask {
     const cronExpr = normalizeSchedule(task.schedule);
-    const cron = new Cron(cronExpr, { catch: true });
+    const cron = new Cron(cronExpr, { catch: true, protect: true });
 
     const live: LiveTask = { state: task, cron, running: false };
 
     // Schedule with callback — croner calls this on each tick.
     // Respect the enabled flag (treat undefined as enabled for backward compat).
     if (task.enabled !== false) {
-      cron.schedule(() => {
-        runTask(live).catch((err) => {
-          log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
-        });
-      });
+      cron.schedule(() => trackRun(live));
     } else {
       cron.stop();
     }
@@ -301,7 +287,7 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
 
       const live = scheduleCron(state);
       tasks.set(task.id, live);
-      persist().catch(() => {});
+      persist().catch((err) => log(`[scheduler] persist failed: ${err}`));
 
       log(
         `[scheduler] Scheduled "${task.name}" (${task.schedule}) → ${normalizeSchedule(task.schedule)}`,
@@ -314,9 +300,31 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
 
       live.cron.stop();
       tasks.delete(id);
-      persist().catch(() => {});
+      persist().catch((err) => log(`[scheduler] persist failed: ${err}`));
 
       log(`[scheduler] Cancelled "${live.state.name}"`);
+      return true;
+    },
+
+    update(id: string, changes: TaskUpdate): boolean {
+      const live = tasks.get(id);
+      if (!live) return false;
+
+      const scheduleChanged = changes.schedule !== undefined && changes.schedule !== live.state.schedule;
+      live.state = { ...live.state, ...changes };
+
+      if (scheduleChanged && live.state.enabled) {
+        live.cron.stop();
+        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true, protect: true });
+        live.cron.schedule(() => {
+          runTask(live).catch((err) => {
+            log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
+          });
+        });
+      }
+
+      persist().catch((err) => log('[scheduler] persist failed: ' + String(err)));
+      log(`[scheduler] Updated "${live.state.name}"`);
       return true;
     },
 
@@ -334,7 +342,7 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
 
       if (enabled && !live.state.enabled) {
         live.state = { ...live.state, enabled: true };
-        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true });
+        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true, protect: true });
         live.cron.schedule(() => {
           runTask(live).catch((err) => {
             log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
@@ -368,9 +376,13 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
         });
     },
 
-    stop(): void {
+    async stop(): Promise<void> {
       for (const live of tasks.values()) {
         live.cron.stop();
+      }
+      if (inFlight.size > 0) {
+        log(`[scheduler] Waiting for ${inFlight.size} in-flight task(s) to finish...`);
+        await Promise.allSettled([...inFlight]);
       }
       tasks.clear();
     },

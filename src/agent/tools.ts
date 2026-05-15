@@ -289,6 +289,7 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
           deliver_to: { type: 'string', description: 'Discord channel ID to send output to. Defaults to the current channel.' },
           trigger: { type: 'string', description: 'Optional TypeScript code to run before the prompt. If it produces stdout output, the prompt fires with that data. If empty output, the prompt is skipped. Use for cheap checks (HTTP polls, file watches) to avoid wasting tokens.' },
           skill: { type: 'string', description: 'Skill rkey whose granted secrets are injected as env vars for the trigger code (e.g. "skill:exa-news-search").' },
+          self_delivery: { type: 'boolean', description: 'If true, the prompt handles its own delivery (e.g. via notify_discord) and the scheduler will not send the output to Discord.' },
         },
         required: ['name', 'prompt', 'schedule'],
       },
@@ -296,14 +297,21 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
     async (params) => {
       if (!deps.scheduler) throw new Error('Scheduler unavailable: not initialized.');
       const name = str(params, 'name');
+
+      const existing = deps.scheduler.list().find((t) => t.name === name);
+      if (existing) {
+        throw new Error(`Task "${name}" already exists (id: ${existing.id}). Use update_task to modify it, or cancel_task to remove it first.`);
+      }
+
       const prompt = str(params, 'prompt');
       const schedule = str(params, 'schedule');
       const deliverTo = optStr(params, 'deliver_to') || context.channelId || undefined;
       const trigger = optStr(params, 'trigger') || undefined;
       const skill = optStr(params, 'skill') || undefined;
+      const selfDelivery = params.self_delivery === true ? true : undefined;
       const id = randomUUID().slice(0, 8);
 
-      deps.scheduler.schedule({ id, name, prompt, schedule, deliverTo, trigger, skill, enabled: true, createdAt: new Date().toISOString() });
+      deps.scheduler.schedule({ id, name, prompt, schedule, deliverTo, trigger, skill, selfDelivery, enabled: true, createdAt: new Date().toISOString() });
 
       const parts = [`id: ${id}`, `schedule: ${schedule}`];
       if (deliverTo) parts.push(`delivering to channel ${deliverTo}`);
@@ -335,25 +343,82 @@ For skill documents, include a \`// Description: ...\` header comment. Saving a 
     },
   );
 
-  // ── cancel_task ─────────────────────────────────────────────────────────
+  // ── update_task ─────────────────────────────────────────────────────────
   registry.register(
-    'cancel_task',
+    'update_task',
     {
-      name: 'cancel_task',
-      description: 'Cancel a scheduled task by its ID. Use list_tasks first to find the ID.',
+      name: 'update_task',
+      description: 'Update fields on an existing scheduled task. Accepts task ID or name. Only provided fields are changed — omitted fields are left as-is.',
       input_schema: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'Task ID to cancel' },
+          id: { type: 'string', description: 'Task ID (or name) to update' },
+          name: { type: 'string', description: 'New task name' },
+          prompt: { type: 'string', description: 'New prompt' },
+          schedule: { type: 'string', description: 'New schedule (cron or interval)' },
+          deliver_to: { type: 'string', description: 'New Discord channel ID' },
+          trigger: { type: 'string', description: 'New trigger code (empty string to remove)' },
+          skill: { type: 'string', description: 'New skill rkey' },
+          self_delivery: { type: 'boolean', description: 'Whether the prompt handles its own delivery' },
         },
         required: ['id'],
       },
     },
     async (params) => {
       if (!deps.scheduler) throw new Error('Scheduler unavailable.');
-      const id = str(params, 'id');
+      let id = str(params, 'id');
+
+      if (!deps.scheduler.get(id)) {
+        const byName = deps.scheduler.list().find((t) => t.name === id);
+        if (byName) id = byName.id;
+      }
+
+      const changes: Record<string, unknown> = {};
+      if (params.name !== undefined) changes.name = str(params, 'name');
+      if (params.prompt !== undefined) changes.prompt = str(params, 'prompt');
+      if (params.schedule !== undefined) changes.schedule = str(params, 'schedule');
+      if (params.deliver_to !== undefined) changes.deliverTo = str(params, 'deliver_to');
+      if (params.trigger !== undefined) changes.trigger = optStr(params, 'trigger') || undefined;
+      if (params.skill !== undefined) changes.skill = optStr(params, 'skill') || undefined;
+      if (params.self_delivery !== undefined) changes.selfDelivery = params.self_delivery === true;
+
+      if (Object.keys(changes).length === 0) {
+        return 'No changes provided.';
+      }
+
+      const updated = deps.scheduler.update(id, changes as any);
+      if (!updated) throw new Error(`No task found with id or name: ${id}`);
+
+      const fields = Object.keys(changes).join(', ');
+      return `✅ Task "${id}" updated (${fields}).`;
+    },
+  );
+
+  // ── cancel_task ─────────────────────────────────────────────────────────
+  registry.register(
+    'cancel_task',
+    {
+      name: 'cancel_task',
+      description: 'Permanently remove a scheduled task by its ID or name.',
+      input_schema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Task ID or name to cancel' },
+        },
+        required: ['id'],
+      },
+    },
+    async (params) => {
+      if (!deps.scheduler) throw new Error('Scheduler unavailable.');
+      let id = str(params, 'id');
+
+      if (!deps.scheduler.get(id)) {
+        const byName = deps.scheduler.list().find((t) => t.name === id);
+        if (byName) id = byName.id;
+      }
+
       const cancelled = deps.scheduler.cancel(id);
-      if (!cancelled) throw new Error(`No task found with id: ${id}`);
+      if (!cancelled) throw new Error(`No task found with id or name: ${id}`);
       return `✅ Task ${id} cancelled.`;
     },
   );

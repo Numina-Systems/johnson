@@ -95,6 +95,7 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
       code: string,
       env?: Record<string, string>,
       onToolCall?: ToolCallHandler,
+      stubsCode?: string,
     ): Promise<ExecutionResult> {
       // Validate code size
       if (new TextEncoder().encode(code).byteLength > config.maxCodeSize) {
@@ -106,15 +107,19 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
         };
       }
 
-      // Write temp file in the deno/ directory so it can import runtime.ts and tools.ts
-      const tempFile = join(DENO_DIR, `_constellation_${randomUUID()}.ts`);
+      const execId = randomUUID();
+      const tempFile = join(DENO_DIR, `_constellation_${execId}.ts`);
+      const stubsFile = (onToolCall && stubsCode)
+        ? join(DENO_DIR, `_constellation_${execId}_tools.ts`)
+        : null;
 
       try {
-        // Build the code with IPC preamble if onToolCall is provided
-        // Always import both runtime helpers AND the tools namespace.
-        // The model should never need to write imports — everything is pre-loaded.
+        if (stubsFile && stubsCode) {
+          await Bun.write(stubsFile, stubsCode);
+        }
+
         const fileContents = onToolCall
-          ? `import { output, debug } from "./runtime.ts";\nimport * as tools from "./tools.ts";\nexport { tools };\n\n${code}`
+          ? `import { output, debug } from "./runtime.ts";\nimport * as tools from "./_constellation_${execId}_tools.ts";\nexport { tools };\n\n${code}`
           : code;
 
         await Bun.write(tempFile, fileContents);
@@ -202,8 +207,11 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
                 rawLines.push(trimmed);
               }
             }
-          } catch {
-            // Stream read error (e.g., process killed by timeout)
+          } catch (streamErr) {
+            const msg = streamErr instanceof Error ? streamErr.message : String(streamErr);
+            if (!msg.includes('abort')) {
+              rawLines.push(`[stream error: ${msg}]`);
+            }
           }
 
           // Collect stderr
@@ -211,7 +219,7 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
           try {
             stderr = await new Response(proc.stderr).text();
           } catch {
-            // ignore
+            stderr = '[stderr collection failed]';
           }
 
           clearTimeout(timeoutId);
@@ -300,8 +308,8 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
           duration_ms: 0,
         };
       } finally {
-        // Clean up temp file
         await unlink(tempFile).catch(() => {});
+        if (stubsFile) await unlink(stubsFile).catch(() => {});
       }
     },
   };

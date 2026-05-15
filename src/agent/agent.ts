@@ -1,6 +1,5 @@
 // pattern: Imperative Shell — agent loop with execute_code dispatch
 
-import { join } from 'node:path';
 import type {
   Message,
   ToolUseBlock,
@@ -17,8 +16,6 @@ import { needsCompaction, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 import { maybeGenerateSessionTitle } from './session-title.ts';
 import { performRecall } from '../recall/index.ts';
-
-const DENO_DIR = join(import.meta.dir, '..', 'runtime', 'deno');
 
 const EXECUTE_CODE_TOOL: ToolDefinition = {
   name: 'execute_code',
@@ -138,9 +135,8 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Create tool registry (fresh each call — context may change)
     const registry = createAgentTools(deps, currentContext);
 
-    // Generate TypeScript stubs for the Deno sandbox
+    // Generate TypeScript stubs for the Deno sandbox (passed to executor per-execution)
     const stubsCode = registry.generateTypeScriptStubs();
-    await Bun.write(join(DENO_DIR, 'tools.ts'), stubsCode);
 
     // Generate tool docs for system prompt
     const toolDocs = registry.generateToolDocumentation();
@@ -311,7 +307,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
                     return registry.execute(name, params);
                   };
 
-                  const result = await deps.runtime.execute(code, undefined, onToolCall);
+                  const result = await deps.runtime.execute(code, undefined, onToolCall, stubsCode);
                   await emit('tool_done', { tool: 'execute_code', success: result.success, preview: (result.output ?? '').slice(0, 200) });
                   const output = result.success
                     ? result.output || '(no output)'
@@ -411,7 +407,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     const result: ChatResult = { text: resultText, stats };
 
     maybeGenerateSessionTitle(deps.store, options?.sessionId, deps.subAgent, history)
-      .catch(() => {});
+      .catch((err) => log(`[agent] Session title generation failed: ${err instanceof Error ? err.message : err}`));
 
     return result;
     } finally {

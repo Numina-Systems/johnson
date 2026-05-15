@@ -128,6 +128,17 @@ async function main(): Promise<void> {
 
   if (config.agent.devMode) {
     log('⚠ Dev mode enabled — skills and custom tools auto-approved with all secrets');
+    const { createHash } = await import('node:crypto');
+    const allSecrets = secrets.listKeys();
+    const docs = store.docList(500);
+    for (const doc of docs.documents) {
+      if (!doc.rkey.startsWith('skill:')) continue;
+      const codeHash = createHash('sha256').update(doc.content).digest('hex').slice(0, 16);
+      const existing = store.getGrant(doc.rkey);
+      if (!existing || existing.status !== 'granted' || existing.codeHash !== codeHash) {
+        store.saveGrant(doc.rkey, codeHash, 'granted', allSecrets);
+      }
+    }
   }
 
   // Ensure directories exist
@@ -225,12 +236,16 @@ async function main(): Promise<void> {
   archivist?.start();
 
   // Graceful shutdown
-  const shutdown = () => {
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+
     log('Shutting down...');
     archivist?.stop();
-    scheduler.stop();
-    store.close();
+    await scheduler.stop();
     if (bot) bot.stop();
+    store.close();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

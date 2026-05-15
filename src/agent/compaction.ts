@@ -48,10 +48,13 @@ export function formatConversation(messages: ReadonlyArray<Message>): string {
 /**
  * Generate a timestamp-based rkey for context documents.
  */
+let rkeySuffix = 0;
+
 function contextRkey(sessionId: string): string {
   const now = new Date();
-  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  return `${CONTEXT_PREFIX}${sessionId}:${ts}`;
+  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 23);
+  const suffix = String(rkeySuffix++).padStart(3, '0');
+  return `${CONTEXT_PREFIX}${sessionId}:${ts}-${suffix}`;
 }
 
 /**

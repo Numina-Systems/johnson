@@ -8,6 +8,7 @@ export type ScheduledTask = {
   readonly deliverTo?: string;  // Discord channel ID to send output to
   readonly trigger?: string;    // optional TypeScript code — if set, prompt only fires when trigger produces output
   readonly skill?: string;      // skill name whose granted secrets are injected as env vars for the trigger
+  readonly selfDelivery?: boolean; // if true, prompt handles its own delivery (e.g. via notify_discord) — scheduler skips sendDiscord
   readonly createdAt: string;   // ISO timestamp
   readonly enabled: boolean;
 };
@@ -25,12 +26,15 @@ export type TaskState = ScheduledTask & {
   readonly runCount: number;
 };
 
+export type TaskUpdate = Partial<Pick<ScheduledTask, 'name' | 'prompt' | 'schedule' | 'deliverTo' | 'trigger' | 'skill' | 'selfDelivery'>>;
+
 export type TaskStore = {
   schedule(task: ScheduledTask): void;
   cancel(id: string): boolean;
+  update(id: string, changes: TaskUpdate): boolean;
   list(): Array<TaskState>;
   get(id: string): TaskState | undefined;
   setEnabled(id: string, enabled: boolean): boolean;
   start(): void;
-  stop(): void;
+  stop(): Promise<void>;
 };

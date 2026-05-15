@@ -17,5 +17,6 @@ export type CodeRuntime = {
     code: string,
     env?: Record<string, string>,
     onToolCall?: ToolCallHandler,
+    stubsCode?: string,
   ): Promise<ExecutionResult>;
 };

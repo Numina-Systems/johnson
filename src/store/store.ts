@@ -237,8 +237,11 @@ CREATE TABLE IF NOT EXISTS discord_threads (
 export function createStore(dbPath: string): Store {
   const db = new Database(dbPath, { create: true });
   db.exec("PRAGMA journal_mode=WAL");
+  db.exec("PRAGMA busy_timeout=5000");
   db.exec("PRAGMA foreign_keys=ON");
   db.exec(SCHEMA);
+
+  const txn = <T>(fn: () => T): T => db.transaction(fn)();
 
   // ── Prepared statements ──────────────────────────────────────────
 
@@ -481,8 +484,10 @@ export function createStore(dbPath: string): Store {
 
     appendMessage(sessionId: string, role: string, content: string): void {
       const now = iso();
-      stmtAppendMsg.run(sessionId, role, content, now);
-      stmtUpdateSessionTs.run(now, sessionId);
+      txn(() => {
+        stmtAppendMsg.run(sessionId, role, content, now);
+        stmtUpdateSessionTs.run(now, sessionId);
+      });
     },
 
     getMessages(sessionId: string, limit = 200): Array<{ role: string; content: string; createdAt: string }> {
@@ -495,8 +500,10 @@ export function createStore(dbPath: string): Store {
     },
 
     deleteSession(id: string): boolean {
-      stmtClearMessages.run(id);
-      return stmtDeleteSession.run(id).changes > 0;
+      return txn(() => {
+        stmtClearMessages.run(id);
+        return stmtDeleteSession.run(id).changes > 0;
+      });
     },
 
     getSessionMessageCount(sessionId: string): number {
