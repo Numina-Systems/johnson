@@ -47,10 +47,7 @@ export default function App(deps: AppProps): React.ReactElement {
     }
 
     const selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter((d) => d.rkey.startsWith('skill:'))
-      .map((d) => d.rkey);
+    const skillNames = deps.store.docListByPrefix('skill:').map((d) => d.rkey);
 
     const customToolSummaries = deps.customTools
       ? deps.customTools.getApprovedToolSummaries()

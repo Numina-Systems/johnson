@@ -241,6 +241,17 @@ Intents:
       // Normalize path: strip leading @/
       let userPath = rawPath.startsWith('@/') ? rawPath.slice(2) : rawPath;
 
+      // Guard against unresolved template interpolation — model-generated
+      // paths occasionally contain a literal 'undefined'/'null' segment
+      // (e.g. `${vault}/Decisions` with vault unset), which silently
+      // creates junk directories like workspace/undefined/.
+      const suspicious = userPath.split('/').find((seg) => seg === 'undefined' || seg === 'null');
+      if (suspicious) {
+        throw new Error(
+          `path contains a literal '${suspicious}' segment (${userPath}) — a variable in the path was likely undefined`,
+        );
+      }
+
       // Resolve path against workingDir
       // Note: if userPath is absolute (e.g. /etc/passwd), resolve() will ignore workingDir
       const resolvedPath = resolve(workingDir, userPath);

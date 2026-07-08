@@ -36,10 +36,7 @@ export default function SecretsScreen(props: SecretsScreenProps): React.ReactEle
   const keys = useMemo(() => secrets.listKeys(), [secrets, refreshTick]);
 
   const assignableNames = useMemo(() => {
-    const result = store.docList(500);
-    const skillNames = result.documents
-      .filter((d) => d.rkey.startsWith('skill:'))
-      .map((d) => d.rkey);
+    const skillNames = store.docListByPrefix('skill:').map((d) => d.rkey);
     const toolNames = (customTools?.listTools() ?? []).map((t) => `customtool:${t.name}`);
     return [...skillNames, ...toolNames];
   }, [store, customTools, refreshTick]);

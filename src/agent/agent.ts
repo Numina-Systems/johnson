@@ -11,10 +11,10 @@ import type {
 } from '../model/types.ts';
 import { ModelError } from '../model/types.ts';
 import type { Agent, AgentDependencies, ChatContext, ChatImage, ChatResult, ChatStats, ChatOptions, AgentEventKind, RecalledContextEntry } from './types.ts';
-import { estimateTokens, repairConversation, trimOldToolResults } from './context.ts';
+import { estimateTokens, estimateMessagesTokens, repairConversation, trimOldToolResults } from './context.ts';
 import { log } from '../util/log.ts';
-import { buildSystemPrompt } from './prompt.ts';
-import { needsCompaction, compactContext } from './compaction.ts';
+import { buildSystemPromptParts, type SystemPromptParts } from './prompt.ts';
+import { needsCompaction, exceedsTokenBudget, compactContext } from './compaction.ts';
 import { createAgentTools } from './tools.ts';
 import { maybeGenerateSessionTitle } from './session-title.ts';
 import { performRecall } from '../recall/index.ts';
@@ -95,25 +95,68 @@ export function formatNativeToolResult(
   return { type: 'tool_result', tool_use_id: toolUseId, content: serialized };
 }
 
+/**
+ * Append the current user message to a compacted history, folding it into
+ * the trailing compaction message when both are user-role. The API-facing
+ * history must alternate roles — two consecutive user messages are rejected
+ * by Anthropic.
+ */
+export function mergeUserMessages(
+  compacted: ReadonlyArray<Message>,
+  current: Message | undefined,
+): Array<Message> {
+  if (!current) return [...compacted];
+
+  const last = compacted[compacted.length - 1];
+  if (!last || last.role !== 'user' || current.role !== 'user') {
+    return [...compacted, current];
+  }
+
+  const toBlocks = (content: Message['content']): Array<ContentBlock> =>
+    typeof content === 'string' ? [{ type: 'text', text: content }] : [...content];
+
+  if (typeof last.content === 'string' && typeof current.content === 'string') {
+    return [
+      ...compacted.slice(0, -1),
+      { role: 'user', content: last.content + '\n\n' + current.content },
+    ];
+  }
+
+  return [
+    ...compacted.slice(0, -1),
+    { role: 'user', content: [...toBlocks(last.content), ...toBlocks(current.content)] },
+  ];
+}
+
 export function createAgent(deps: Readonly<AgentDependencies>): Agent {
   let history: Array<Message> = [];
   let currentContext: ChatContext = {};
 
-  // Serialize all chat() calls — history is shared mutable state.
-  // Without this lock, a Discord message arriving during a TUI chat's
-  // LLM await could corrupt the conversation.
-  let chatLock: Promise<void> = Promise.resolve();
+  // Serialize chat() calls per conversation, not globally. Calls with a
+  // conversationOverride operate on their own message array keyed by
+  // sessionId; calls without one share the agent-level history and are
+  // serialized under a single shared key. A slow scheduled task therefore
+  // no longer blocks unrelated Discord channels.
+  const chatLocks = new Map<string, Promise<void>>();
 
   async function chat(userMessage: string, options?: ChatOptions): Promise<ChatResult> {
-    let releaseLock: () => void;
-    const prevLock = chatLock;
-    chatLock = new Promise<void>((r) => { releaseLock = r; });
+    const lockKey = options?.conversationOverride !== undefined
+      ? `session:${options?.sessionId ?? 'default'}`
+      : 'shared';
+
+    const prevLock = chatLocks.get(lockKey) ?? Promise.resolve();
+    let releaseLock!: () => void;
+    const nextLock = new Promise<void>((r) => { releaseLock = r; });
+    chatLocks.set(lockKey, nextLock);
 
     await prevLock;
     try {
       return await _chatImpl(userMessage, options);
     } finally {
-      releaseLock!();
+      releaseLock();
+      if (chatLocks.get(lockKey) === nextLock) {
+        chatLocks.delete(lockKey);
+      }
     }
   }
 
@@ -130,11 +173,13 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     currentContext = options?.context ?? {};
     const images = options?.images;
 
-    // Swap history if conversationOverride provided
-    const savedHistory = options?.conversationOverride !== undefined ? history : null;
-    if (options?.conversationOverride !== undefined) {
-      history = [...options.conversationOverride];
-    }
+    // Work on a per-call message array. With a conversationOverride we copy
+    // the caller's history; otherwise we operate on the shared agent history
+    // (serialized by the 'shared' chat lock).
+    const usesSharedHistory = options?.conversationOverride === undefined;
+    let msgs: Array<Message> = usesSharedHistory
+      ? history
+      : [...(options?.conversationOverride ?? [])];
 
     try {
 
@@ -163,35 +208,22 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         { type: 'text', text: userMessage },
         ...images.map(img => ({ type: 'image_url' as const, image_url: { url: img.url } })),
       ];
-      history.push({ role: 'user', content: blocks });
+      msgs.push({ role: 'user', content: blocks });
     } else {
-      history.push({ role: 'user', content: userMessage });
+      msgs.push({ role: 'user', content: userMessage });
     }
 
     // d.1 Repair any orphaned tool_use blocks from previous crashes
-    const repairedCount = repairConversation(history);
+    const repairedCount = repairConversation(msgs);
     if (repairedCount > 0) {
       log(`[agent] Repaired ${repairedCount} orphaned tool_use block(s)`);
     }
 
     // d.2 Trim verbose tool results in older messages
-    trimOldToolResults(history);
+    trimOldToolResults(msgs);
 
-    // Handle context overflow via compaction
-    if (needsCompaction(history, '', deps.config.contextLimit, deps.config.contextBudget)) {
-      if (!deps.subAgent) throw new Error('subAgent required for compaction');
-      const compacted = await compactContext(history, {
-        store: deps.store,
-        subAgent: deps.subAgent,
-        sessionId: options?.sessionId,
-      });
-      // Replace history with compacted context + current user message
-      const currentMessage = history[history.length - 1];
-      history = [...compacted, ...(currentMessage ? [currentMessage] : [])];
-
-    }
-
-    // Recall step — runs after compaction, before tool loop
+    // Recall step — runs before the compaction check so the recalled
+    // context is part of the measured system prompt
     let recalledContext: ReadonlyArray<RecalledContextEntry> | undefined;
     if (deps.config.recallEnabled) {
       const recallResult = await performRecall(userMessage, {
@@ -215,10 +247,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
     // Build system prompt — track selfDoc hash to detect changes during tool loop
     let selfDoc = deps.store.docGet('self')?.content?.trim() ?? '';
     let selfDocHash = quickHash(selfDoc);
-    const allDocs = deps.store.docList(500);
-    const skillNames = allDocs.documents
-      .filter(d => d.rkey.startsWith('skill:'))
-      .map(d => d.rkey);
+    const skillNames = deps.store.docListByPrefix('skill:').map(d => d.rkey);
 
     const customToolSummaries = deps.customTools
       ? deps.customTools.getApprovedToolSummaries()
@@ -228,7 +257,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       ? deps.secrets.listKeys()
       : undefined;
 
-    let systemPrompt = buildSystemPrompt({
+    let promptParts: SystemPromptParts = buildSystemPromptParts({
       selfDoc,
       skillNames,
       toolDocs,
@@ -238,6 +267,23 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       secretNames,
       nativeToolNames: nativeTools.map(t => t.name),
     });
+    const fullSystemPrompt = (): string => promptParts.stable + '\n' + promptParts.volatile;
+
+    // Handle context overflow via compaction — measured against the real
+    // system prompt (self doc + tool docs + recall), not an empty string
+    if (needsCompaction(msgs, fullSystemPrompt(), deps.config.contextLimit, deps.config.contextBudget)) {
+      if (!deps.subAgent) throw new Error('subAgent required for compaction');
+      const compacted = await compactContext(msgs, {
+        store: deps.store,
+        subAgent: deps.subAgent,
+        sessionId: options?.sessionId,
+      });
+      // Merge the compaction summary into the current user message so the
+      // conversation never contains consecutive user-role messages
+      // (Anthropic rejects non-alternating roles).
+      const currentMessage = msgs[msgs.length - 1];
+      msgs = mergeUserMessages(compacted, currentMessage);
+    }
 
     // e. Tool loop
     let exitedNormally = false;
@@ -249,7 +295,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
         if (currentHash !== selfDocHash) {
           selfDoc = currentSelfDoc;
           selfDocHash = currentHash;
-          systemPrompt = buildSystemPrompt({
+          promptParts = buildSystemPromptParts({
             selfDoc,
             skillNames,
             toolDocs,
@@ -267,8 +313,9 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       try {
         await emit('llm_start', { round });
         response = await deps.model.complete({
-          system: systemPrompt,
-          messages: history,
+          system: promptParts.stable,
+          system_suffix: promptParts.volatile,
+          messages: msgs,
           tools: [EXECUTE_CODE_TOOL, ...nativeTools],
           model: deps.config.model,
           max_tokens: deps.config.maxTokens,
@@ -309,7 +356,7 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       if (response.reasoning_content) {
         assistantMessage.reasoning_content = response.reasoning_content;
       }
-      history.push(assistantMessage);
+      msgs.push(assistantMessage);
 
       // Check stop reason
       if (response.stop_reason === 'end_turn' || response.stop_reason === 'max_tokens') {
@@ -366,13 +413,29 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
           );
 
           // Append tool results as user message
-          history.push({ role: 'user', content: toolResults });
+          msgs.push({ role: 'user', content: toolResults });
 
           // Check for pending messages between tool rounds
           if (options?.shouldInterrupt?.()) {
             log('[agent] interrupted by pending message, exiting tool loop');
             exitedNormally = true;
             break;
+          }
+
+          // Mid-loop context guard: the API reported the true prompt size
+          // for this round — if the loop has grown past the budget, trim
+          // aggressively and compact before the next model call.
+          const budgetThreshold = Math.floor(deps.config.contextBudget * deps.config.contextLimit);
+          if (exceedsTokenBudget(response.usage.input_tokens, budgetThreshold)) {
+            log(`[agent] mid-loop context at ${response.usage.input_tokens} tokens (budget ${budgetThreshold}), compacting`);
+            trimOldToolResults(msgs, { preserveCount: 4 });
+            if (deps.subAgent) {
+              msgs = await compactContext(msgs, {
+                store: deps.store,
+                subAgent: deps.subAgent,
+                sessionId: options?.sessionId,
+              });
+            }
           }
         } catch (err) {
           // Tool dispatch crashed — assistant message with tool_use is in history
@@ -382,20 +445,24 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       }
     }
 
-    // g. Handle max-iteration exhaustion — force a text-only wrap-up
+    // g. Handle max-iteration exhaustion — force a text-only wrap-up.
+    // Tools stay in the request with tool_choice 'none': Anthropic rejects
+    // histories containing tool_use blocks when no tools are defined.
     if (!exitedNormally) {
       log(`[agent] max tool rounds (${deps.config.maxToolRounds}) exhausted, forcing final response`);
 
-      history.push({
+      msgs.push({
         role: 'user',
         content: '[System: Max tool calls reached. Provide final response now.]',
       });
 
       await emit('llm_start', { round: rounds, forced: true });
       const finalResponse = await deps.model.complete({
-        system: systemPrompt,
-        messages: history,
-        tools: [],
+        system: promptParts.stable,
+        system_suffix: promptParts.volatile,
+        messages: msgs,
+        tools: [EXECUTE_CODE_TOOL, ...nativeTools],
+        tool_choice: 'none',
         model: deps.config.model,
         max_tokens: deps.config.maxTokens,
         temperature: deps.config.temperature,
@@ -419,19 +486,15 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
       if (finalResponse.reasoning_content) {
         finalAssistantMsg.reasoning_content = finalResponse.reasoning_content;
       }
-      history.push(finalAssistantMsg);
+      msgs.push(finalAssistantMsg);
     }
 
     // f. Extract final text from last assistant message
-    const lastAssistant = history.findLast((msg) => msg.role === 'assistant');
+    const lastAssistant = msgs.findLast((msg) => msg.role === 'assistant');
     const durationMs = Math.round(performance.now() - chatStart);
 
     // Estimate current context size
-    const contextEstimate = estimateTokens(systemPrompt) +
-      history.reduce((sum, msg) => {
-        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-        return sum + estimateTokens(content);
-      }, 0);
+    const contextEstimate = estimateTokens(fullSystemPrompt()) + estimateMessagesTokens(msgs);
 
     const stats: ChatStats = {
       inputTokens: totalInputTokens,
@@ -458,14 +521,15 @@ export function createAgent(deps: Readonly<AgentDependencies>): Agent {
 
     const result: ChatResult = { text: resultText, stats };
 
-    maybeGenerateSessionTitle(deps.store, options?.sessionId, deps.subAgent, history)
+    maybeGenerateSessionTitle(deps.store, options?.sessionId, deps.subAgent, msgs)
       .catch((err) => log(`[agent] Session title generation failed: ${err instanceof Error ? err.message : err}`));
 
     return result;
     } finally {
-      // Restore original history if we swapped
-      if (savedHistory !== null) {
-        history = savedHistory;
+      // Shared-history calls publish the (possibly compacted/reassigned)
+      // message array back to the agent; override calls leave it untouched.
+      if (usesSharedHistory) {
+        history = msgs;
       }
     }
   }

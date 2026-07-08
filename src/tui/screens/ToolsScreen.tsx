@@ -76,8 +76,7 @@ export default function ToolsScreen(props: ToolsScreenProps): React.ReactElement
   const [codeScrollOffset, setCodeScrollOffset] = useState(0);
 
   const refreshSkills = useCallback(() => {
-    const result = store.docList(500);
-    const skillDocs = result.documents.filter((d) => d.rkey.startsWith('skill:'));
+    const skillDocs = store.docListByPrefix('skill:');
     const entries: Array<SkillEntry> = skillDocs.map((doc) => {
       const grant = store.getGrant(doc.rkey);
       return {

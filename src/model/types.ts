@@ -48,7 +48,19 @@ export type Message = {
 export type ModelRequest = {
   messages: ReadonlyArray<Message>;
   system?: string;
+  /**
+   * Volatile system prompt tail (current time, recalled context).
+   * Providers with prompt caching place the cache breakpoint after
+   * `system` and append this uncached; others concatenate.
+   */
+  system_suffix?: string;
   tools?: ReadonlyArray<ToolDefinition>;
+  /**
+   * 'none' forbids tool calls while keeping tool definitions in the
+   * request — required by providers (Anthropic) that reject histories
+   * containing tool_use blocks when no tools are defined.
+   */
+  tool_choice?: 'auto' | 'none';
   model: string;
   max_tokens: number;
   temperature?: number;

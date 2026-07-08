@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildSystemPrompt, type SystemPromptParams } from './prompt.ts';
+import { buildSystemPrompt, buildSystemPromptParts, type SystemPromptParams } from './prompt.ts';
 import type { RecalledContextEntry } from './types.ts';
 
 /**
@@ -303,18 +303,48 @@ describe('buildSystemPrompt', () => {
       const customToolsIdx = prompt.indexOf('## Custom Tools\n\nYou can create');
       const customToolsListIdx = prompt.indexOf('## Custom Tools (call via tools.call_custom_tool)');
 
-      // Verify ordering (all indices must be increasing)
+      // Verify ordering (all indices must be increasing).
+      // Stable prefix ordered least- to most-frequently changing, then the
+      // volatile suffix (recalled context, current time) at the very end so
+      // provider prefix caching survives across turns.
       expect(memoryCheckIdx < toolCallingIdx).toBe(true);
       expect(toolCallingIdx < documentsIdx).toBe(true);
       expect(documentsIdx < chainingIdx).toBe(true);
       expect(chainingIdx < errorHandlingIdx).toBe(true);
-      expect(errorHandlingIdx < currentTimeIdx).toBe(true);
-      expect(currentTimeIdx < selfDocIdx).toBe(true);
-      expect(selfDocIdx < recalledContextIdx).toBe(true);
-      expect(recalledContextIdx < skillsIdx).toBe(true);
-      expect(skillsIdx < toolRefIdx).toBe(true);
+      expect(errorHandlingIdx < toolRefIdx).toBe(true);
       expect(toolRefIdx < customToolsIdx).toBe(true);
       expect(customToolsIdx < customToolsListIdx).toBe(true);
+      expect(customToolsListIdx < skillsIdx).toBe(true);
+      expect(skillsIdx < selfDocIdx).toBe(true);
+      expect(selfDocIdx < recalledContextIdx).toBe(true);
+      expect(recalledContextIdx < currentTimeIdx).toBe(true);
+    });
+
+    test('volatile sections (recall, time) come after every stable section', () => {
+      const { stable, volatile } = buildSystemPromptParts(makeParams({
+        skillNames: ['skill:test'],
+        toolDocs: 'Tool documentation',
+        recalledContext: [{ rkey: 'knowledge:test', content: 'Test content' }],
+        customToolSummaries: [{ name: 'tool1', description: 'Tool 1' }],
+      }));
+
+      expect(stable).toContain('## Your Memory (auto-loaded)');
+      expect(stable).not.toContain('## Current Time');
+      expect(stable).not.toContain('## Recalled Context');
+      expect(volatile).toContain('## Recalled Context');
+      expect(volatile).toContain('## Current Time');
+    });
+
+    test('stable part is deterministic across calls with different timestamps', () => {
+      const params = makeParams({
+        skillNames: ['skill:test'],
+        toolDocs: 'Tool documentation',
+      });
+      const first = buildSystemPromptParts({ ...params, now: new Date('2026-01-01T10:00:00Z') });
+      const second = buildSystemPromptParts({ ...params, now: new Date('2026-06-15T22:30:00Z') });
+
+      expect(first.stable).toBe(second.stable);
+      expect(first.volatile).not.toBe(second.volatile);
     });
   });
 

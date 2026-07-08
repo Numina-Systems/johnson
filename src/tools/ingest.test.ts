@@ -118,6 +118,27 @@ describe('ingest_file tool', () => {
     });
   });
 
+  describe('Unresolved interpolation rejection', () => {
+    test("rejects paths containing a literal 'undefined' segment", async () => {
+      const deps = makeDeps(testFilesDir);
+      const registry = createToolRegistry();
+      registerIngestTools(registry, deps);
+
+      let error: unknown;
+      try {
+        await registry.execute('ingest_file', {
+          path: 'undefined/Decisions/note.md',
+          intent: 'context',
+        });
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).toBeDefined();
+      expect(String(error)).toMatch(/undefined/);
+    });
+  });
+
   describe('AC1.4: Absolute path rejection', () => {
     test('rejects absolute path outside workingDir', async () => {
       const deps = makeDeps(testFilesDir);

@@ -185,7 +185,10 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
-      const messages = convertMessages(request.messages, request.system);
+      const system = request.system
+        ? request.system + (request.system_suffix ? '\n' + request.system_suffix : '')
+        : request.system_suffix;
+      const messages = convertMessages(request.messages, system);
 
       const chatRequest: Record<string, unknown> = {
         model: request.model,
@@ -196,6 +199,9 @@ export function createOpenRouterProvider(config: Readonly<ModelConfig>): ModelPr
 
       if (request.tools && request.tools.length > 0) {
         chatRequest.tools = convertTools(request.tools);
+        if (request.tool_choice) {
+          chatRequest.toolChoice = request.tool_choice;
+        }
       }
 
       if (request.temperature !== undefined) {

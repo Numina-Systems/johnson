@@ -1,15 +1,22 @@
 // pattern: Imperative Shell
 
-import { unlink } from 'fs/promises';
+import { unlink, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'crypto';
+import { tmpdir } from 'os';
 import type { RuntimeConfig } from '../config/types.ts';
 import type { CodeRuntime, ExecutionResult, ToolCallHandler } from './types.ts';
 
 const MAX_TOOL_CALLS = 25;
 
 const DENO_DIR = join(dirname(fileURLToPath(import.meta.url)), 'deno');
+
+// Per-execution temp files (entry module, tool stubs) live outside the
+// source tree — crashed runs must not litter src/, and a read-only install
+// must still be able to execute code. Module loading is not gated by
+// --allow-read, so the sandbox needs no read grant on this directory.
+const SCRATCH_DIR = join(tmpdir(), 'constellation-exec');
 
 /**
  * Build a sanitized environment for sandbox execution.
@@ -32,11 +39,23 @@ function buildSandboxEnv(grantedSecrets?: Record<string, string>): Record<string
   return safe;
 }
 
-function buildPermissionFlags(config: Readonly<RuntimeConfig>): ReadonlyArray<string> {
+function buildPermissionFlags(
+  config: Readonly<RuntimeConfig>,
+  envKeys: ReadonlyArray<string>,
+): ReadonlyArray<string> {
   const flags: Array<string> = [];
 
   if (config.unrestricted) {
-    flags.push('--allow-all');
+    // Broad but explicit. Deliberately NOT --allow-all: subprocesses
+    // (--allow-run) and native code (--allow-ffi) are not subject to Deno
+    // permission flags, so either one would let sandbox code bypass the
+    // data-dir deny below (e.g. `cat data/secrets.json`).
+    flags.push('--allow-net');
+    flags.push('--allow-read');
+    flags.push('--allow-write');
+    flags.push('--allow-env');
+    flags.push('--allow-sys');
+    flags.push('--no-prompt');
   } else {
     if (config.allowedHosts.length > 0) {
       flags.push(`--allow-net=${config.allowedHosts.join(',')}`);
@@ -45,6 +64,11 @@ function buildPermissionFlags(config: Readonly<RuntimeConfig>): ReadonlyArray<st
     const readPaths = [config.workingDir, DENO_DIR];
     flags.push(`--allow-read=${readPaths.join(',')}`);
     flags.push(`--allow-write=${config.workingDir}`);
+    // Granted secrets arrive as env vars — without an explicit env grant,
+    // Deno.env.get() on them throws under --no-prompt.
+    if (envKeys.length > 0) {
+      flags.push(`--allow-env=${envKeys.join(',')}`);
+    }
     flags.push('--no-prompt');
   }
 
@@ -108,26 +132,32 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
       }
 
       const execId = randomUUID();
-      const tempFile = join(DENO_DIR, `_constellation_${execId}.ts`);
+      const tempFile = join(SCRATCH_DIR, `_constellation_${execId}.ts`);
       const stubsFile = (onToolCall && stubsCode)
-        ? join(DENO_DIR, `_constellation_${execId}_tools.ts`)
+        ? join(SCRATCH_DIR, `_constellation_${execId}_tools.ts`)
         : null;
 
       const startTime = performance.now();
       let timedOut = false;
       try {
+        await mkdir(SCRATCH_DIR, { recursive: true });
+
+        // The scratch dir is outside DENO_DIR, so the runtime bridge must be
+        // imported by absolute file URL rather than a sibling-relative path.
+        const runtimeUrl = pathToFileURL(join(DENO_DIR, 'runtime.ts')).href;
+
         if (stubsFile && stubsCode) {
-          await Bun.write(stubsFile, stubsCode);
+          await Bun.write(stubsFile, stubsCode.replace('"./runtime.ts"', JSON.stringify(runtimeUrl)));
         }
 
         const fileContents = onToolCall
-          ? `import { output, debug } from "./runtime.ts";\nimport * as tools from "./_constellation_${execId}_tools.ts";\nexport { tools };\n\n${code}`
+          ? `import { output, debug } from ${JSON.stringify(runtimeUrl)};\nimport * as tools from "./_constellation_${execId}_tools.ts";\nexport { tools };\n\n${code}`
           : code;
 
         await Bun.write(tempFile, fileContents);
 
-        // Build permission flags
-        const permFlags = buildPermissionFlags(config);
+        const sandboxEnv = buildSandboxEnv(env);
+        const permFlags = buildPermissionFlags(config, Object.keys(sandboxEnv));
 
         // Spawn deno with timeout via AbortController
         const controller = new AbortController();
@@ -139,11 +169,15 @@ export function createDenoExecutor(config: Readonly<RuntimeConfig>): CodeRuntime
           stderr: 'pipe',
           stdin: onToolCall ? 'pipe' : undefined,
           signal: controller.signal,
-          env: buildSandboxEnv(env),
+          env: sandboxEnv,
         });
 
         if (onToolCall) {
-          // IPC mode: process stdout line-by-line
+          // IPC mode: process stdout line-by-line.
+          // Caveat: while a tool call is awaited below, stdout is not being
+          // drained — sandbox code that floods debug()/output() concurrently
+          // with a slow tool call can fill the pipe and block until the tool
+          // returns. Tool handlers must never wait on further sandbox output.
           const outputs: unknown[] = [];
           const debugMessages: string[] = [];
           const rawLines: string[] = [];

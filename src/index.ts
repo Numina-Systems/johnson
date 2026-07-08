@@ -130,9 +130,7 @@ async function main(): Promise<void> {
     log('⚠ Dev mode enabled — skills and custom tools auto-approved with all secrets');
     const { createHash } = await import('node:crypto');
     const allSecrets = secrets.listKeys();
-    const docs = store.docList(500);
-    for (const doc of docs.documents) {
-      if (!doc.rkey.startsWith('skill:')) continue;
+    for (const doc of store.docListByPrefix('skill:')) {
       const codeHash = createHash('sha256').update(doc.content).digest('hex').slice(0, 16);
       const existing = store.getGrant(doc.rkey);
       if (!existing || existing.status !== 'granted' || existing.codeHash !== codeHash) {

@@ -1,7 +1,7 @@
 // pattern: Imperative Shell (test) — exercises agent loop with mocks
 
 import { describe, expect, test } from 'bun:test';
-import { createAgent, formatNativeToolResult } from './agent.ts';
+import { createAgent, formatNativeToolResult, mergeUserMessages } from './agent.ts';
 import type { AgentConfig, AgentDependencies, AgentEvent } from './types.ts';
 import type {
   Message,
@@ -25,6 +25,7 @@ function createNoopStore(): Store {
     docUpsert: () => {},
     docGet: (_rkey: string): DocumentRow | null => null,
     docList: () => ({ documents: [], cursor: undefined }),
+    docListByPrefix: () => [],
     docDelete: () => false,
     docSearch: () => [],
     saveEmbedding: () => {},
@@ -189,7 +190,7 @@ describe('graceful max-iteration exhaustion', () => {
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Forced wrap-up response' }],
             stop_reason: 'end_turn',
@@ -212,17 +213,18 @@ describe('graceful max-iteration exhaustion', () => {
     expect(overrideHistory).toBeUndefined();
 
     expect(calls.length).toBe(3);
-    expect(calls[2]?.toolsCount).toBe(0);
+    expect(calls[2]?.request.tool_choice).toBe('none');
+    expect(calls[2]?.toolsCount).toBeGreaterThanOrEqual(1);
 
     expect(result.text).toBe('Forced wrap-up response');
   });
 
-  test('GH01.AC2.1: final call uses tools: [] and produces text', async () => {
+  test('GH01.AC2.1: final call forbids tool use via tool_choice none and produces text', async () => {
     const calls: ModelCall[] = [];
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Final text' }],
             stop_reason: 'end_turn',
@@ -243,13 +245,14 @@ describe('graceful max-iteration exhaustion', () => {
 
     expect(result.text).toBe('Final text');
     const finalCall = calls[calls.length - 1];
-    expect(finalCall?.request.tools).toEqual([]);
+    expect(finalCall?.request.tool_choice).toBe('none');
+    expect(finalCall?.request.tools?.length).toBeGreaterThanOrEqual(1);
   });
 
   test('GH01.AC2.2: usage stats include the forced final call', async () => {
     const model: ModelProvider = {
       complete: async (req) => {
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'final' }],
             stop_reason: 'end_turn',
@@ -275,7 +278,7 @@ describe('graceful max-iteration exhaustion', () => {
   test('GH01.AC2.3: rounds count includes the final call (maxToolRounds + 1)', async () => {
     const model: ModelProvider = {
       complete: async (req) => {
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'done' }],
             stop_reason: 'end_turn',
@@ -326,7 +329,7 @@ describe('graceful max-iteration exhaustion', () => {
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Forced wrap-up response' }],
             stop_reason: 'end_turn',
@@ -354,7 +357,8 @@ describe('graceful max-iteration exhaustion', () => {
     expect(calls[0]?.toolsCount).toBeGreaterThanOrEqual(1);
     expect(calls[1]?.toolsCount).toBeGreaterThanOrEqual(1);
     expect(calls[2]?.toolsCount).toBeGreaterThanOrEqual(1);
-    expect(calls[3]?.toolsCount).toBe(0);
+    expect(calls[3]?.request.tool_choice).toBe('none');
+    expect(calls[3]?.toolsCount).toBeGreaterThanOrEqual(1);
 
     const finalReq = calls[3]?.request;
     const nudgeMessage = finalReq?.messages.find(
@@ -614,7 +618,7 @@ describe('graceful max-iteration exhaustion', () => {
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Forced wrap-up response' }],
             stop_reason: 'end_turn',
@@ -633,17 +637,18 @@ describe('graceful max-iteration exhaustion', () => {
     const result = await agent.chat('hello');
 
     expect(calls.length).toBe(3);
-    expect(calls[2]?.toolsCount).toBe(0);
+    expect(calls[2]?.request.tool_choice).toBe('none');
+    expect(calls[2]?.toolsCount).toBeGreaterThanOrEqual(1);
 
     expect(result.text).toBe('Forced wrap-up response');
   });
 
-  test('GH01.AC2.1: final call uses tools: [] and produces text', async () => {
+  test('GH01.AC2.1: final call forbids tool use via tool_choice none and produces text', async () => {
     const calls: ModelCall[] = [];
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Final text' }],
             stop_reason: 'end_turn',
@@ -663,13 +668,14 @@ describe('graceful max-iteration exhaustion', () => {
 
     expect(result.text).toBe('Final text');
     const finalCall = calls[calls.length - 1];
-    expect(finalCall?.request.tools).toEqual([]);
+    expect(finalCall?.request.tool_choice).toBe('none');
+    expect(finalCall?.request.tools?.length).toBeGreaterThanOrEqual(1);
   });
 
   test('GH01.AC2.2: usage stats include the forced final call', async () => {
     const model: ModelProvider = {
       complete: async (req) => {
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'final' }],
             stop_reason: 'end_turn',
@@ -694,7 +700,7 @@ describe('graceful max-iteration exhaustion', () => {
   test('GH01.AC2.3: rounds count includes the final call (maxToolRounds + 1)', async () => {
     const model: ModelProvider = {
       complete: async (req) => {
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'done' }],
             stop_reason: 'end_turn',
@@ -743,7 +749,7 @@ describe('graceful max-iteration exhaustion', () => {
     const model: ModelProvider = {
       complete: async (req) => {
         calls.push({ request: req, toolsCount: req.tools?.length ?? 0 });
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Forced wrap-up response' }],
             stop_reason: 'end_turn',
@@ -770,7 +776,8 @@ describe('graceful max-iteration exhaustion', () => {
     expect(calls[0]?.toolsCount).toBeGreaterThanOrEqual(1);
     expect(calls[1]?.toolsCount).toBeGreaterThanOrEqual(1);
     expect(calls[2]?.toolsCount).toBeGreaterThanOrEqual(1);
-    expect(calls[3]?.toolsCount).toBe(0);
+    expect(calls[3]?.request.tool_choice).toBe('none');
+    expect(calls[3]?.toolsCount).toBeGreaterThanOrEqual(1);
 
     const finalReq = calls[3]?.request;
     const nudgeMessage = finalReq?.messages.find(
@@ -920,7 +927,7 @@ describe('forced final response: events and reasoning_content', () => {
   test('emits llm_start and llm_done with forced:true around forced final model call', async () => {
     const model: ModelProvider = {
       complete: async (req) => {
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'Forced wrap-up' }],
             stop_reason: 'end_turn',
@@ -968,7 +975,7 @@ describe('forced final response: events and reasoning_content', () => {
     const model: ModelProvider = {
       complete: async (req) => {
         receivedMessages.push(req.messages);
-        if ((req.tools?.length ?? 0) === 0) {
+        if (req.tool_choice === 'none') {
           return {
             content: [{ type: 'text', text: 'forced final' }],
             stop_reason: 'end_turn',
@@ -1302,5 +1309,48 @@ describe('recall integration', () => {
 
     // Verify the basic structure: llm_start must exist
     expect(llmStartIndex).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('mergeUserMessages', () => {
+  test('folds two consecutive string user messages into one', () => {
+    const compacted: Message[] = [{ role: 'user', content: '[Context was compacted.]' }];
+    const current: Message = { role: 'user', content: 'what were we doing?' };
+
+    const merged = mergeUserMessages(compacted, current);
+
+    expect(merged.length).toBe(1);
+    expect(merged[0]!.role).toBe('user');
+    expect(merged[0]!.content).toBe('[Context was compacted.]\n\nwhat were we doing?');
+  });
+
+  test('merges block content by concatenating blocks', () => {
+    const compacted: Message[] = [{ role: 'user', content: '[Context was compacted.]' }];
+    const current: Message = {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look at this' },
+        { type: 'image_url', image_url: { url: 'https://example.com/i.png' } },
+      ],
+    };
+
+    const merged = mergeUserMessages(compacted, current);
+
+    expect(merged.length).toBe(1);
+    const blocks = merged[0]!.content as Array<{ type: string }>;
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'text', 'image_url']);
+  });
+
+  test('returns compacted history unchanged when there is no current message', () => {
+    const compacted: Message[] = [{ role: 'user', content: 'summary' }];
+    expect(mergeUserMessages(compacted, undefined)).toEqual(compacted);
+  });
+
+  test('appends without merging when roles differ', () => {
+    const compacted: Message[] = [{ role: 'assistant', content: 'prior reply' }];
+    const current: Message = { role: 'user', content: 'next' };
+
+    const merged = mergeUserMessages(compacted, current);
+    expect(merged.length).toBe(2);
   });
 });

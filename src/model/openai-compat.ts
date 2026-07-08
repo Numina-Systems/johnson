@@ -228,14 +228,23 @@ export function createOpenAICompatProvider(config: Readonly<ModelConfig>): Model
   const endpoint = baseUrl.replace(/\/+$/, '') + '/chat/completions';
 
   async function attempt(request: Readonly<ModelRequest>): Promise<ModelResponse> {
+    // No explicit cache API here — concatenate the volatile suffix after the
+    // stable prefix so automatic prefix caching still covers the stable part.
+    const system = request.system
+      ? request.system + (request.system_suffix ? '\n' + request.system_suffix : '')
+      : request.system_suffix;
+
     const body: Record<string, unknown> = {
       model: request.model,
       max_tokens: request.max_tokens,
-      messages: convertMessages(request.messages, request.system),
+      messages: convertMessages(request.messages, system),
     };
 
     if (request.tools && request.tools.length > 0) {
       body.tools = convertTools(request.tools);
+      if (request.tool_choice) {
+        body.tool_choice = request.tool_choice;
+      }
     }
 
     if (request.temperature !== undefined) {

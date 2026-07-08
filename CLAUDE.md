@@ -22,23 +22,27 @@ constellation-lite is a code-first AI agent. The model's primary tool is `execut
 
 ### Agent Loop (`src/agent/agent.ts`)
 
-Each `Agent` owns its own `history: Message[]`. The `chat()` function:
-1. Regenerates TypeScript stubs for the Deno sandbox (`src/runtime/deno/tools.ts`) on every call
+Each `Agent` owns a shared `history: Message[]` used by calls without a `conversationOverride`. Chats are serialized **per conversation**: override calls lock on `session:<sessionId>` and work on a local copy of the caller's history; non-override calls share a single `shared` lock. Concurrent Discord channels and scheduler tasks therefore run in parallel. The `chat()` function:
+1. Regenerates TypeScript stubs for the Deno sandbox on every call
 2. Collects native tool definitions from the registry (tools with mode `native` or `both`)
-3. Handles context overflow by calling `compactContext()` before the tool loop
-4. Runs reflexive recall (if `recallEnabled`) to retrieve relevant knowledge fragments, emitting `recall_done`
-5. Builds the system prompt by calling `buildSystemPrompt()` from `src/agent/prompt.ts` directly with a `SystemPromptParams` object (self doc, skill names, tool docs, timezone, recalled context, custom tool summaries, secret names)
-6. Runs a tool loop (up to `maxToolRounds`): model call → dispatch (`execute_code` via sandbox IPC, native tools via registry) → tool result → repeat
+3. Runs reflexive recall (if `recallEnabled`) to retrieve relevant knowledge fragments, emitting `recall_done`
+4. Builds the system prompt via `buildSystemPromptParts()` from `src/agent/prompt.ts` (self doc, skill names, tool docs, timezone, recalled context, custom tool summaries, secret names) — see System Prompt Builder below for the stable/volatile split
+5. Handles context overflow by calling `compactContext()` (measured against the real system prompt); the compaction summary is merged into the current user message via `mergeUserMessages()` so roles keep alternating
+6. Runs a tool loop (up to `maxToolRounds`): model call → dispatch (`execute_code` via sandbox IPC, native tools via registry) → tool result → repeat. After each round, if the provider-reported `usage.input_tokens` exceeds `contextBudget × contextLimit`, the loop trims tool results aggressively and compacts mid-loop
 7. Emits lifecycle events (`llm_start`, `llm_done`, `tool_start`, `tool_done`, `recall_done`) via the `onEvent` callback in `ChatOptions`
 8. Propagates `reasoning_content` from model responses onto assistant messages (extended thinking support)
-9. On max-iteration exhaustion, forces a final text-only response (no tools) so the agent always replies
+9. On max-iteration exhaustion, forces a final text response — tools stay in the request with `tool_choice: 'none'` (Anthropic rejects tool_use history without tool definitions)
 10. After each chat, fires `maybeGenerateSessionTitle()` (`src/agent/session-title.ts`) to auto-title sessions via the sub-agent
+
+Token estimation (`src/agent/context.ts`) is image-aware: base64 image blocks count at a fixed ~1600 tokens instead of `length / 4`, so screenshots don't trigger spurious compaction.
 
 ### System Prompt Builder (`src/agent/prompt.ts`)
 
-Functional Core module that assembles the system prompt from template constants and a `SystemPromptParams` input. Replaces the old `buildSystemPrompt()` that lived in `context.ts` and the `systemPromptProvider` callback pattern. The persona content that previously lived in `persona.md` is now split: static instructional sections (tool calling, documents, chaining, error handling) are template constants in this module; domain knowledge (identity, obsidian vault, skills, scheduling) is seeded into the `self` document via `seed-self-doc.ts`.
+Functional Core module that assembles the system prompt from template constants and a `SystemPromptParams` input. The persona content that previously lived in `persona.md` is split: static instructional sections (tool calling, documents, chaining, error handling) are template constants in this module; domain knowledge (identity, obsidian vault, skills, scheduling) is seeded into the `self` document via `seed-self-doc.ts`.
 
-Exported: `buildSystemPrompt(params: SystemPromptParams) → string` and the `SystemPromptParams` type.
+The prompt is built as two parts for prompt-cache friendliness: a **stable prefix** ordered least- to most-frequently changing (base identity, memory check, tool calling, documents, chaining, error handling, tool docs, custom tools, skills, self doc) and a **volatile suffix** that changes every turn (recalled context, current time). The Anthropic provider places `cache_control` breakpoints on the last tool definition, the stable system block, and the last message block; OpenAI-compat providers concatenate stable + volatile so automatic prefix caching still covers the stable part. Never add per-turn content to the stable prefix.
+
+Exported: `buildSystemPromptParts(params) → { stable, volatile }`, `buildSystemPrompt(params) → string` (concatenation, used by the TUI prompt screen), and the `SystemPromptParams`/`SystemPromptParts` types. Pass `now` in params for deterministic output in tests.
 
 ### Self-Doc Seeding (`src/agent/seed-self-doc.ts`)
 
@@ -46,9 +50,9 @@ Imperative Shell module that runs once at startup via `seedSelfDoc(store)`. Chec
 
 ### Sandbox IPC (`src/runtime/executor.ts`)
 
-The Deno executor writes a temp `.ts` file, spawns `deno run` with capability flags, and communicates via line-delimited JSON on stdin/stdout. The sandbox's `output()` and `debug()` helpers emit `{"__output__": ...}` and `{"__debug__": ...}` lines; tool calls emit `{"__tool_call__": true, tool, params}` and read back `{"__tool_result__": ...}` or `{"__tool_error__": ...}` from stdin. Parent process API keys are never inherited — the sandbox env is minimal (`PATH`, `HOME`) plus any explicitly granted secrets.
+The Deno executor writes a temp `.ts` file to an OS scratch dir (`$TMPDIR/constellation-exec`, never the source tree), spawns `deno run` with capability flags, and communicates via line-delimited JSON on stdin/stdout. The sandbox's `output()` and `debug()` helpers emit `{"__output__": ...}` and `{"__debug__": ...}` lines; tool calls emit `{"__tool_call__": true, tool, params}` and read back `{"__tool_result__": ...}` or `{"__tool_error__": ...}` from stdin. Parent process API keys are never inherited — the sandbox env is minimal (`PATH`, `HOME`, `TZ`) plus any explicitly granted secrets, and restricted mode grants `--allow-env` scoped to exactly those variable names so skills can read their granted secrets.
 
-`data/` is always `--deny-read` and `--deny-write` even in unrestricted mode, protecting grants and secrets from sandbox code.
+`data/` is always `--deny-read` and `--deny-write` even in unrestricted mode, protecting grants and secrets from sandbox code. Unrestricted mode is deliberately NOT `--allow-all`: it grants broad net/read/write/env/sys but never `--allow-run` or `--allow-ffi`, because subprocesses and native code are not subject to Deno permission flags and would bypass the data-dir deny.
 
 ### Tool Registry (`src/agent/tools.ts` + `src/runtime/tool-registry.ts`)
 
@@ -87,6 +91,8 @@ Archive documents are stored with rkey prefix `archive:session:` (distinct from 
 ### Persistent Store (`src/store/store.ts`)
 
 Single SQLite database at `data/constellation.db` (via `bun:sqlite`). Stores documents (unified notes + skills) with FTS5 full-text search, embeddings (Float32 blobs), sessions/messages, scheduled tasks, and grants. WAL mode is always on. `listSessionsWithCounts()` joins sessions with messages to return `SessionWithCounts` (id, title, timestamps, message count, last message time).
+
+Use `docListByPrefix(prefix)` for any "all documents under `skill:`/`context:<sid>:`/`customtool:`" lookup — it queries with an escaped `LIKE` and is not capped. Do NOT fetch `docList(500)` and filter in JS; that silently truncates past 500 documents.
 
 ### Documents & Memory
 

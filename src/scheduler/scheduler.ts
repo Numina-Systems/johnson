@@ -263,6 +263,17 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
     return live;
   }
 
+  /**
+   * Replace a live task's cron with a fresh one for its current schedule.
+   * All cron recreation funnels through here so every run goes via
+   * trackRun and is awaited by stop() at shutdown.
+   */
+  function recreateCron(live: LiveTask): void {
+    live.cron.stop();
+    live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true, protect: true });
+    live.cron.schedule(() => trackRun(live));
+  }
+
   async function persist(): Promise<void> {
     const data = Array.from(tasks.values()).map((t) => t.state);
     await mkdir(dirname(deps.persistPath), { recursive: true });
@@ -313,14 +324,10 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
       const scheduleChanged = changes.schedule !== undefined && changes.schedule !== live.state.schedule;
       live.state = { ...live.state, ...changes };
 
-      if (scheduleChanged && live.state.enabled) {
-        live.cron.stop();
-        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true, protect: true });
-        live.cron.schedule(() => {
-          runTask(live).catch((err) => {
-            log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
-          });
-        });
+      // enabled === undefined means enabled (backward compat with tasks
+      // persisted before the flag existed) — only skip when explicitly false.
+      if (scheduleChanged && live.state.enabled !== false) {
+        recreateCron(live);
       }
 
       persist().catch((err) => log('[scheduler] persist failed: ' + String(err)));
@@ -340,16 +347,14 @@ export function createScheduler(deps: SchedulerDeps): TaskStore {
       const live = tasks.get(id);
       if (!live) return false;
 
-      if (enabled && !live.state.enabled) {
+      // undefined means enabled (legacy tasks persisted before the flag)
+      const wasEnabled = live.state.enabled !== false;
+
+      if (enabled && !wasEnabled) {
         live.state = { ...live.state, enabled: true };
-        live.cron = new Cron(normalizeSchedule(live.state.schedule), { catch: true, protect: true });
-        live.cron.schedule(() => {
-          runTask(live).catch((err) => {
-            log(`[scheduler] Unhandled error in task "${live.state.name}": ${err}`);
-          });
-        });
+        recreateCron(live);
         log(`[scheduler] Enabled "${live.state.name}"`);
-      } else if (!enabled && live.state.enabled) {
+      } else if (!enabled && wasEnabled) {
         live.cron.stop();
         live.state = { ...live.state, enabled: false };
         log(`[scheduler] Disabled "${live.state.name}"`);

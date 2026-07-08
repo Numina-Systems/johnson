@@ -52,6 +52,8 @@ export interface Store {
   docUpsert(rkey: string, content: string): void;
   docGet(rkey: string): DocumentRow | null;
   docList(limit?: number, cursor?: string): { documents: DocumentRow[]; cursor?: string };
+  /** All documents whose rkey starts with the given prefix, sorted by rkey. Not capped. */
+  docListByPrefix(prefix: string): DocumentRow[];
   docDelete(rkey: string): boolean;
   docSearch(query: string, limit?: number): Array<{ rkey: string; content: string; rank: number }>;
 
@@ -260,6 +262,10 @@ export function createStore(dbPath: string): Store {
   const stmtDocListAll = db.prepare(
     `SELECT rkey, content, created_at, updated_at FROM documents ORDER BY rkey LIMIT ?`,
   );
+  const stmtDocListByPrefix = db.prepare(
+    `SELECT rkey, content, created_at, updated_at FROM documents
+     WHERE rkey LIKE ? ESCAPE '\\' ORDER BY rkey`,
+  );
   const stmtDocDelete = db.prepare(`DELETE FROM documents WHERE rkey = ?`);
   const stmtDocSearch = db.prepare(
     `SELECT d.rkey, d.content, rank
@@ -407,6 +413,19 @@ export function createStore(dbPath: string): Store {
       const result: { documents: DocumentRow[]; cursor?: string } = { documents };
       if (nextCursor) result.cursor = nextCursor;
       return result;
+    },
+
+    docListByPrefix(prefix: string): DocumentRow[] {
+      // rkeys may legitimately contain '_' (a LIKE wildcard) — escape it
+      // along with '%' and the escape character itself.
+      const escaped = prefix.replace(/[\\%_]/g, (m) => '\\' + m);
+      const rows = stmtDocListByPrefix.all(escaped + '%') as any[];
+      return rows.map((r: any) => ({
+        rkey: r.rkey,
+        content: r.content,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }));
     },
 
     docDelete(rkey: string): boolean {

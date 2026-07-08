@@ -52,6 +52,7 @@ function makeMockStore(documents: Array<{ rkey: string; content: string }>): {
     },
     docGet: () => null,
     docList: () => ({ documents: docs.slice(), cursor: undefined }),
+    docListByPrefix: (prefix: string) => docs.filter((d) => d.rkey.startsWith(prefix)),
     docDelete: () => false,
     docSearch: () => [],
     saveEmbedding: () => {},

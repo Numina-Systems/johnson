@@ -223,6 +223,13 @@ export function createDiscordBot(
       });
       const response = result.text;
 
+      // An interrupt exit (pending message arrived mid-tool-loop) can yield
+      // an empty reply; the pending message is processed immediately after,
+      // so skip the '(no response)' + stats noise and the empty DB row.
+      if (!response.trim() && pendingChannels.has(channelId)) {
+        return;
+      }
+
       // Save assistant response to DB
       store.appendMessage(channelId, 'assistant', response);
 

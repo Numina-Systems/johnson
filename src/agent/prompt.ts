@@ -218,37 +218,55 @@ export type SystemPromptParams = {
   }>;
   readonly secretNames?: ReadonlyArray<string>;
   readonly nativeToolNames?: ReadonlyArray<string>;
+  readonly now?: Date;
 };
 
 /**
- * Build a system prompt by assembling template sections in order.
- *
- * Pure function: no I/O, no store access, no side effects (except Date construction).
- *
- * Assembly order:
- * 1. Memory Check
- * 2. Tool Calling (with native tools interpolation)
- * 3. Documents
- * 4. Chaining
- * 5. Error Handling
- * 6. Current Time
- * 7. Self Doc
- * 8. Recalled Context (if provided)
- * 9. Skills List
- * 10. Tool Docs (if provided)
- * 11. Custom Tools Template
- * 12. Custom Tools List (if provided)
+ * The system prompt split into a cache-friendly stable prefix and a
+ * per-turn volatile suffix. Providers place a cache breakpoint after
+ * `stable`; `volatile` (recalled context, current time) changes every
+ * turn and must never invalidate the cached prefix.
  */
-export function buildSystemPrompt(params: SystemPromptParams): string {
+export type SystemPromptParts = {
+  readonly stable: string;
+  readonly volatile: string;
+};
+
+/**
+ * Build the system prompt as a stable prefix + volatile suffix.
+ *
+ * Pure function: no I/O, no store access. Pass `now` for deterministic output.
+ *
+ * Stable prefix — ordered least- to most-frequently changing so that
+ * provider prefix caching survives as long as possible:
+ * 1. Base identity
+ * 2. Memory Check
+ * 3. Tool Calling (with native tools interpolation)
+ * 4. Documents
+ * 5. Chaining
+ * 6. Error Handling
+ * 7. Tool Docs (if provided)
+ * 8. Custom Tools Template
+ * 9. Custom Tools List (if provided)
+ * 10. Skills List
+ * 11. Self Doc
+ *
+ * Volatile suffix — changes every turn, must stay after the cache breakpoint:
+ * 12. Recalled Context (if provided)
+ * 13. Current Time
+ */
+export function buildSystemPromptParts(
+  params: SystemPromptParams,
+): SystemPromptParts {
   const sections: Array<string> = [];
 
-  // 0. Base identity (static, always first)
+  // 1. Base identity (static, always first)
   sections.push(BASE_SELF_TEMPLATE);
 
-  // 1. Memory Check (always present)
+  // 2. Memory Check (always present)
   sections.push(MEMORY_CHECK_SECTION);
 
-  // 2. Tool Calling with native tools interpolation
+  // 3. Tool Calling with native tools interpolation
   const nativeToolsSection =
     params.nativeToolNames && params.nativeToolNames.length > 0
       ? `Currently:\n\n${params.nativeToolNames.map((name) => `- **\`${name}\`** *(native only)* — See tool reference below.`).join("\n")}`
@@ -262,18 +280,81 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
   );
   sections.push("\n\n" + toolCallingWithInterpolation);
 
-  // 3. Documents (always present)
+  // 4. Documents (always present)
   sections.push("\n\n" + DOCUMENTS_SECTION);
 
-  // 4. Chaining (always present)
+  // 5. Chaining (always present)
   sections.push("\n\n" + CHAINING_SECTION);
 
-  // 5. Error Handling (always present)
+  // 6. Error Handling (always present)
   sections.push("\n\n" + ERROR_HANDLING_SECTION);
 
-  // 6. Current Time (always present, interpolate timezone and formatted time)
+  // 7. Tool Docs (omit if not provided or empty)
+  if (params.toolDocs && params.toolDocs.trim()) {
+    const toolDocsSection = TOOL_DOCS_TEMPLATE.replace(
+      "{tool_docs}",
+      params.toolDocs,
+    );
+    sections.push("\n\n" + toolDocsSection);
+  }
+
+  // 8. Custom Tools Template (always include instructional text, interpolate secretNames if provided)
+  let customToolsTemplate = CUSTOM_TOOLS_TEMPLATE;
+  if (params.secretNames && params.secretNames.length > 0) {
+    const secretsList = `Configured secrets: ${params.secretNames.map((name) => `\`${name}\``).join(", ")}`;
+    customToolsTemplate = customToolsTemplate.replace(
+      "{secret_names}",
+      secretsList,
+    );
+  } else {
+    customToolsTemplate = customToolsTemplate.replace("{secret_names}", "");
+  }
+  sections.push("\n\n" + customToolsTemplate);
+
+  // 9. Custom Tools List (omit if not provided or empty)
+  if (params.customToolSummaries && params.customToolSummaries.length > 0) {
+    const customToolsList = params.customToolSummaries
+      .map((tool) => `- **${tool.name}** — ${tool.description}`)
+      .join("\n");
+    const customToolsListSection = CUSTOM_TOOLS_LIST_TEMPLATE.replace(
+      "{custom_tools_list}",
+      customToolsList,
+    );
+    sections.push("\n\n" + customToolsListSection);
+  }
+
+  // 10. Skills List (always present, empty or populated)
+  const skillsContent =
+    params.skillNames.length === 0
+      ? SKILLS_LIST_EMPTY
+      : SKILLS_LIST_TEMPLATE.replace(
+          "{skills}",
+          params.skillNames.map((name) => `- ${name}`).join("\n"),
+        );
+  sections.push("\n\n## Available Skills\n\n" + skillsContent);
+
+  // 11. Self Doc (include section header even if content is empty, per AC2.6)
+  sections.push(
+    "\n\n" + SELF_DOC_TEMPLATE.replace("{self_doc}", params.selfDoc),
+  );
+
+  const volatileSections: Array<string> = [];
+
+  // 12. Recalled Context (omit section if not provided or empty)
+  if (params.recalledContext && params.recalledContext.length > 0) {
+    const fragments = params.recalledContext
+      .map((entry) => `### ${entry.rkey}\n${entry.content}`)
+      .join("\n\n");
+    const recalledSection = RECALLED_CONTEXT_TEMPLATE.replace(
+      "{fragments}",
+      fragments,
+    );
+    volatileSections.push("\n\n" + recalledSection);
+  }
+
+  // 13. Current Time (always present, interpolate timezone and formatted time)
   const timezone = params.timezone || "UTC";
-  const now = new Date();
+  const now = params.now ?? new Date();
   const formatted = now.toLocaleString("en-US", {
     timeZone: timezone,
     weekday: "long",
@@ -288,68 +369,19 @@ export function buildSystemPrompt(params: SystemPromptParams): string {
     "{formatted_time}",
     formatted,
   ).replace(/\{timezone\}/g, timezone); // Replace all occurrences
-  sections.push("\n\n" + currentTimeSection);
+  volatileSections.push("\n\n" + currentTimeSection);
 
-  // 7. Self Doc (include section header even if content is empty, per AC2.6)
-  sections.push(
-    "\n\n" + SELF_DOC_TEMPLATE.replace("{self_doc}", params.selfDoc),
-  );
+  return {
+    stable: sections.join("\n"),
+    volatile: volatileSections.join("\n"),
+  };
+}
 
-  // 8. Recalled Context (omit section if not provided or empty)
-  if (params.recalledContext && params.recalledContext.length > 0) {
-    const fragments = params.recalledContext
-      .map((entry) => `### ${entry.rkey}\n${entry.content}`)
-      .join("\n\n");
-    const recalledSection = RECALLED_CONTEXT_TEMPLATE.replace(
-      "{fragments}",
-      fragments,
-    );
-    sections.push("\n\n" + recalledSection);
-  }
-
-  // 9. Skills List (always present, empty or populated)
-  const skillsContent =
-    params.skillNames.length === 0
-      ? SKILLS_LIST_EMPTY
-      : SKILLS_LIST_TEMPLATE.replace(
-          "{skills}",
-          params.skillNames.map((name) => `- ${name}`).join("\n"),
-        );
-  sections.push("\n\n## Available Skills\n\n" + skillsContent);
-
-  // 10. Tool Docs (omit if not provided or empty)
-  if (params.toolDocs && params.toolDocs.trim()) {
-    const toolDocsSection = TOOL_DOCS_TEMPLATE.replace(
-      "{tool_docs}",
-      params.toolDocs,
-    );
-    sections.push("\n\n" + toolDocsSection);
-  }
-
-  // 11. Custom Tools Template (always include instructional text, interpolate secretNames if provided)
-  let customToolsTemplate = CUSTOM_TOOLS_TEMPLATE;
-  if (params.secretNames && params.secretNames.length > 0) {
-    const secretsList = `Configured secrets: ${params.secretNames.map((name) => `\`${name}\``).join(", ")}`;
-    customToolsTemplate = customToolsTemplate.replace(
-      "{secret_names}",
-      secretsList,
-    );
-  } else {
-    customToolsTemplate = customToolsTemplate.replace("{secret_names}", "");
-  }
-  sections.push("\n\n" + customToolsTemplate);
-
-  // 12. Custom Tools List (omit if not provided or empty)
-  if (params.customToolSummaries && params.customToolSummaries.length > 0) {
-    const customToolsList = params.customToolSummaries
-      .map((tool) => `- **${tool.name}** — ${tool.description}`)
-      .join("\n");
-    const customToolsListSection = CUSTOM_TOOLS_LIST_TEMPLATE.replace(
-      "{custom_tools_list}",
-      customToolsList,
-    );
-    sections.push("\n\n" + customToolsListSection);
-  }
-
-  return sections.join("\n");
+/**
+ * Build the full system prompt as a single string (stable + volatile).
+ * Callers that want cache-aware requests should use buildSystemPromptParts.
+ */
+export function buildSystemPrompt(params: SystemPromptParams): string {
+  const parts = buildSystemPromptParts(params);
+  return parts.stable + "\n" + parts.volatile;
 }

@@ -35,7 +35,7 @@ export type AgentLoopConfig = {
   readonly contextLimit: number;    // token count that triggers context compaction
   readonly modelTimeout: number;    // ms timeout for LLM calls
   readonly timezone: string;        // IANA timezone (e.g. "America/New_York")
-  readonly recallEnabled: boolean;  // enable reflexive recall pipeline
+  readonly recallEnabled: boolean;  // enable the IN-PROCESS reflexive recall pipeline (src/recall/index.ts) — unrelated to [recall]/RecallConfig
   readonly recallTokenBudget: number;  // max tokens for recalled context
   readonly devMode: boolean;
 };
@@ -56,6 +56,15 @@ export type DiscordConfig = {
   readonly prefix?: string;
 };
 
+/**
+ * Config for the EXTERNAL recall server (RecallClient) — an optional HTTP
+ * service that ingest_file pushes document encodings to.
+ *
+ * Not to be confused with `[agent] recallEnabled`, which controls the
+ * in-process reflexive recall pipeline (src/recall/index.ts) that runs on
+ * every chat() call against the local store + embeddings. The two are
+ * independent systems that happen to share a name.
+ */
 export type RecallConfig = {
   readonly endpoint: string;
   readonly enabled: boolean;

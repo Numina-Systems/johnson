@@ -121,3 +121,50 @@ describe('listSessionsWithCounts', () => {
     expect(results[0]!.title).toBeNull();
   });
 });
+
+describe('docListByPrefix', () => {
+  let store: Store;
+
+  beforeEach(() => {
+    store = createStore(':memory:');
+  });
+
+  afterEach(() => {
+    store.close();
+  });
+
+  test('returns only documents matching the prefix, sorted by rkey', () => {
+    store.docUpsert('skill:beta', 'b');
+    store.docUpsert('skill:alpha', 'a');
+    store.docUpsert('context:s1:2026', 'c');
+    store.docUpsert('self', 's');
+
+    const skills = store.docListByPrefix('skill:');
+    expect(skills.map((d) => d.rkey)).toEqual(['skill:alpha', 'skill:beta']);
+  });
+
+  test('is not capped at 500 documents', () => {
+    for (let i = 0; i < 600; i++) {
+      store.docUpsert(`context:s1:${String(i).padStart(4, '0')}`, `doc ${i}`);
+    }
+
+    const docs = store.docListByPrefix('context:s1:');
+    expect(docs.length).toBe(600);
+  });
+
+  test('treats LIKE wildcards in the prefix literally', () => {
+    store.docUpsert('task:a_b', 'underscore');
+    store.docUpsert('task:axb', 'x');
+
+    const docs = store.docListByPrefix('task:a_');
+    expect(docs.map((d) => d.rkey)).toEqual(['task:a_b']);
+  });
+
+  test('longer sessionId prefixes do not leak into shorter ones', () => {
+    store.docUpsert('context:abc:2026-01-01', 'one');
+    store.docUpsert('context:abcd:2026-01-01', 'two');
+
+    const docs = store.docListByPrefix('context:abc:');
+    expect(docs.map((d) => d.rkey)).toEqual(['context:abc:2026-01-01']);
+  });
+});

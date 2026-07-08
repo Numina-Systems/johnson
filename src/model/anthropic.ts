@@ -39,6 +39,42 @@ function mapContentBlock(block: Anthropic.ContentBlock): ContentBlock | null {
   return { type: 'text', text: String((block as unknown as Record<string, unknown>)['text'] ?? '') };
 }
 
+const EPHEMERAL_CACHE = { type: 'ephemeral' as const };
+
+/**
+ * Convert messages for the API, marking the last content block of the
+ * final message with cache_control so the conversation prefix is cached
+ * incrementally across tool rounds and turns.
+ */
+function convertMessagesWithCache(
+  messages: ReadonlyArray<ModelRequest['messages'][number]>,
+): Anthropic.MessageCreateParams['messages'] {
+  return messages.map((m, i) => {
+    const isLast = i === messages.length - 1;
+    if (!isLast) {
+      return {
+        role: m.role,
+        content: m.content as Anthropic.MessageCreateParams['messages'][number]['content'],
+      };
+    }
+
+    if (typeof m.content === 'string') {
+      return {
+        role: m.role,
+        content: [{ type: 'text' as const, text: m.content, cache_control: EPHEMERAL_CACHE }],
+      };
+    }
+
+    const blocks = m.content.map((block, j) =>
+      j === m.content.length - 1 ? { ...block, cache_control: EPHEMERAL_CACHE } : block,
+    );
+    return {
+      role: m.role,
+      content: blocks as Anthropic.MessageCreateParams['messages'][number]['content'],
+    };
+  });
+}
+
 export function createAnthropicProvider(config: Readonly<ModelConfig>): ModelProvider {
   const apiKey = config.apiKey ?? process.env['ANTHROPIC_API_KEY'];
   const client = new Anthropic({ apiKey, maxRetries: 3 });
@@ -48,22 +84,35 @@ export function createAnthropicProvider(config: Readonly<ModelConfig>): ModelPro
       const params: Anthropic.MessageCreateParams = {
         model: request.model,
         max_tokens: request.max_tokens,
-        messages: request.messages.map((m) => ({
-          role: m.role,
-          content: m.content as Anthropic.MessageCreateParams['messages'][number]['content'],
-        })),
+        messages: convertMessagesWithCache(request.messages),
       };
 
       if (request.system) {
-        params.system = request.system;
+        // Stable prefix gets a cache breakpoint; the volatile suffix
+        // (time, recalled context) sits after it so it never invalidates
+        // the cached prefix.
+        const systemBlocks: Array<Anthropic.TextBlockParam> = [
+          { type: 'text', text: request.system, cache_control: EPHEMERAL_CACHE },
+        ];
+        if (request.system_suffix) {
+          systemBlocks.push({ type: 'text', text: request.system_suffix });
+        }
+        params.system = systemBlocks;
+      } else if (request.system_suffix) {
+        params.system = request.system_suffix;
       }
 
       if (request.tools && request.tools.length > 0) {
-        params.tools = request.tools.map((t) => ({
+        params.tools = request.tools.map((t, i) => ({
           name: t.name,
           description: t.description,
           input_schema: t.input_schema as Anthropic.Tool['input_schema'],
+          ...(i === request.tools!.length - 1 ? { cache_control: EPHEMERAL_CACHE } : {}),
         }));
+
+        if (request.tool_choice) {
+          params.tool_choice = { type: request.tool_choice };
+        }
       }
 
       if (request.temperature !== undefined) {

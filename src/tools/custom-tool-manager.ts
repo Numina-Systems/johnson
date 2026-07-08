@@ -52,10 +52,8 @@ export function createCustomToolManager(store: Store): CustomToolManager {
   }
 
   function listTools(): CustomTool[] {
-    const result = store.docList(500);
     const tools: CustomTool[] = [];
-    for (const doc of result.documents) {
-      if (!doc.rkey.startsWith('customtool:')) continue;
+    for (const doc of store.docListByPrefix('customtool:')) {
       const tool = deserialize(doc.content);
       if (tool) tools.push(tool);
     }

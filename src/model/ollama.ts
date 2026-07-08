@@ -164,13 +164,19 @@ export function createOllamaProvider(config: Readonly<ModelConfig>): ModelProvid
 
   return {
     async complete(request: Readonly<ModelRequest>): Promise<ModelResponse> {
+      const system = request.system
+        ? request.system + (request.system_suffix ? '\n' + request.system_suffix : '')
+        : request.system_suffix;
+
       const body: Record<string, unknown> = {
         model: request.model,
-        messages: convertMessages(request.messages, request.system),
+        messages: convertMessages(request.messages, system),
         stream: false,
       };
 
-      if (request.tools && request.tools.length > 0) {
+      // Ollama has no tool_choice — omitting tools is the only way to
+      // forbid tool calls, and it tolerates tool-role history without them.
+      if (request.tools && request.tools.length > 0 && request.tool_choice !== 'none') {
         body.tools = convertTools(request.tools);
       }
 

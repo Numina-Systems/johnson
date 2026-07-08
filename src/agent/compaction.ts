@@ -10,7 +10,7 @@ import type { Message } from '../model/types.ts';
 import { toolResultContentToString } from '../model/types.ts';
 import type { SubAgentLLM } from '../model/sub-agent.ts';
 import type { Store } from '../store/store.ts';
-import { estimateTokens } from './context.ts';
+import { estimateTokens, estimateMessagesTokens } from './context.ts';
 
 const CONTEXT_PREFIX = 'context:';
 const RECENT_NOTES_COUNT = 3;
@@ -62,9 +62,7 @@ function contextRkey(sessionId: string): string {
  */
 function listContextDocs(store: Store, sessionId: string): Array<{ rkey: string; content: string }> {
   const prefix = `${CONTEXT_PREFIX}${sessionId}:`;
-  const result = store.docList(500);
-  return result.documents
-    .filter((d) => d.rkey.startsWith(prefix))
+  return store.docListByPrefix(prefix)
     .sort((a, b) => a.rkey.localeCompare(b.rkey))
     .map((d) => ({ rkey: d.rkey, content: d.content }));
 }
@@ -86,13 +84,22 @@ export function needsCompaction(
   contextBudget: number = 1.0,
 ): boolean {
   const systemTokens = estimateTokens(systemPrompt);
-  const messageTokens = messages.reduce((sum, msg) => {
-    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-    return sum + estimateTokens(content);
-  }, 0);
+  const messageTokens = estimateMessagesTokens(messages);
   const totalTokens = systemTokens + messageTokens;
   const budgetThreshold = Math.floor(contextBudget * contextLimit);
   return totalTokens > budgetThreshold;
+}
+
+/**
+ * Mid-loop variant of the compaction check: instead of a char-based
+ * estimate, the caller passes the exact prompt size the provider
+ * reported (usage.input_tokens) for the round that just completed.
+ */
+export function exceedsTokenBudget(
+  actualInputTokens: number,
+  budgetThreshold: number,
+): boolean {
+  return actualInputTokens > budgetThreshold;
 }
 
 /**

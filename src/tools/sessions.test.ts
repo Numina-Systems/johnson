@@ -15,6 +15,7 @@ function createNoopStore(): Store {
     docUpsert: () => {},
     docGet: () => null,
     docList: () => ({ documents: [], cursor: undefined }),
+    docListByPrefix: () => [],
     docDelete: () => false,
     docSearch: () => [],
     saveEmbedding: () => {},

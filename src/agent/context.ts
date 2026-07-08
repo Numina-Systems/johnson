@@ -7,10 +7,59 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Approximate token cost of one image as seen by the model.
+ * Vision tokenizers charge far fewer tokens than base64 length / 4 —
+ * a 200KB image is ~1.5k tokens, not ~50k. Counting base64 as text
+ * triggers spurious compaction.
+ */
+const IMAGE_TOKEN_ESTIMATE = 1600;
+
+/**
+ * Estimate tokens for a single message, counting image blocks at a fixed
+ * cost instead of their serialized (base64) length.
+ */
+export function estimateMessageTokens(msg: Readonly<Message>): number {
+  if (typeof msg.content === 'string') {
+    return estimateTokens(msg.content);
+  }
+
+  let total = 0;
+  for (const block of msg.content) {
+    if (block.type === 'image_url' || block.type === 'image') {
+      total += IMAGE_TOKEN_ESTIMATE;
+    } else if (block.type === 'text') {
+      total += estimateTokens(block.text);
+    } else if (block.type === 'tool_result') {
+      if (typeof block.content === 'string') {
+        total += estimateTokens(block.content);
+      } else {
+        for (const inner of block.content) {
+          total += inner.type === 'text'
+            ? estimateTokens(inner.text)
+            : IMAGE_TOKEN_ESTIMATE;
+        }
+      }
+    } else {
+      total += estimateTokens(JSON.stringify(block));
+    }
+  }
+  return total;
+}
+
+export function estimateMessagesTokens(messages: ReadonlyArray<Message>): number {
+  return messages.reduce((sum, msg) => sum + estimateMessageTokens(msg), 0);
+}
+
+/**
  * Number of recent messages whose tool results are kept intact.
  * Older tool results are replaced with a byte-count placeholder.
  */
 const TOOL_RESULT_PRESERVE_COUNT = 8;
+
+export type TrimOptions = {
+  /** Recent messages whose tool results survive (default 8). */
+  readonly preserveCount?: number;
+};
 
 /**
  * Repair orphaned tool_use blocks in conversation history.
@@ -79,9 +128,10 @@ export function repairConversation(messages: Array<Message>): number {
  *
  * Mutates the array in place.
  */
-export function trimOldToolResults(messages: Array<Message>): number {
+export function trimOldToolResults(messages: Array<Message>, options?: TrimOptions): number {
   let trimmed = 0;
-  const cutoff = messages.length - TOOL_RESULT_PRESERVE_COUNT;
+  const preserveCount = options?.preserveCount ?? TOOL_RESULT_PRESERVE_COUNT;
+  const cutoff = messages.length - preserveCount;
 
   for (let i = 0; i < cutoff; i++) {
     const msg = messages[i]!;

@@ -16,6 +16,7 @@ function makeStore(overrides: StoreOverrides = {}): Store {
     docUpsert: () => {},
     docGet: (_rkey: string): DocumentRow | null => null,
     docList: () => ({ documents: [], cursor: undefined }),
+    docListByPrefix: () => [],
     docDelete: () => false,
     docSearch: () => [],
     saveEmbedding: () => {},
